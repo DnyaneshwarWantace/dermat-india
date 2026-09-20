@@ -18,6 +18,7 @@ export class Bom {
     | 'deletedAt'
     | 'catalogProductId'
     | 'batchQuantity'
+    | 'metadata'
 
   @PrimaryKey({ type: 'uuid', defaultRaw: 'gen_random_uuid()' })
   id!: string
@@ -47,6 +48,12 @@ export class Bom {
 
   @Property({ name: 'is_active', type: 'boolean', default: true })
   isActive: boolean = true
+
+  // Header-spec fields (internal code, BOM type, version label, base UOM,
+  // status, effective-from date) that don't warrant their own columns yet —
+  // kept as a single JSON blob rather than five more nullable columns.
+  @Property({ type: 'json', nullable: true })
+  metadata?: Record<string, unknown> | null
 
   @Property({ name: 'created_at', type: Date, onCreate: () => new Date() })
   createdAt: Date = new Date()

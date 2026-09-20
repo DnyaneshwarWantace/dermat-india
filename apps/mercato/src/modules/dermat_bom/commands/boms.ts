@@ -3,7 +3,7 @@ import type { CommandHandler } from '@open-mercato/shared/lib/commands'
 import { emitCrudSideEffects } from '@open-mercato/shared/lib/commands/helpers'
 import type { DataEngine } from '@open-mercato/shared/lib/data/engine'
 import type { EntityManager } from '@mikro-orm/postgresql'
-import { CrudHttpError, notFound } from '@open-mercato/shared/lib/crud/errors'
+import { CrudHttpError, notFound, conflict } from '@open-mercato/shared/lib/crud/errors'
 import type { CrudIndexerConfig, CrudEventsConfig } from '@open-mercato/shared/lib/crud/types'
 import { E } from '@/.mercato/generated/entities.ids.generated'
 import { Bom } from '../data/entities'
@@ -53,6 +53,24 @@ const createBomCommand: CommandHandler<BomCreateInput, { bomId: string }> = {
     ensureOrganizationScope(ctx, parsed.organizationId)
 
     const em = (ctx.container.resolve('em') as EntityManager).fork()
+
+    // The bom_name unique constraint (org, tenant, bom_name) means a second
+    // BOM for a product whose title collides with an existing BOM's name
+    // (e.g. no Formulation Name entered to distinguish it) hits a raw
+    // Postgres duplicate-key error that surfaces to the client as a generic
+    // 500. Check first so the real reason reaches the user.
+    const existing = await em.findOne(Bom, {
+      organizationId: parsed.organizationId,
+      tenantId: parsed.tenantId,
+      bomName: parsed.bomName,
+      deletedAt: null,
+    })
+    if (existing) {
+      throw conflict(
+        `A BOM named "${parsed.bomName}" already exists. Add a Formulation Name (e.g. "Bulk", "Gel Formulation") to create another version for this product.`,
+      )
+    }
+
     const bom = em.create(Bom, {
       organizationId: parsed.organizationId,
       tenantId: parsed.tenantId,
@@ -61,6 +79,7 @@ const createBomCommand: CommandHandler<BomCreateInput, { bomId: string }> = {
       batchQuantity: parsed.batchQuantity != null ? String(parsed.batchQuantity) : '1',
       version: parsed.version ?? 1,
       isActive: parsed.isActive ?? true,
+      metadata: parsed.metadata ?? null,
       createdAt: new Date(),
       updatedAt: new Date(),
     })
@@ -95,11 +114,26 @@ const updateBomCommand: CommandHandler<BomUpdateInput, { bomId: string }> = {
     ensureTenantScope(ctx, bom.tenantId)
     ensureOrganizationScope(ctx, bom.organizationId)
 
+    if (parsed.bomName !== undefined && parsed.bomName !== bom.bomName) {
+      const nameCollision = await em.findOne(Bom, {
+        organizationId: bom.organizationId,
+        tenantId: bom.tenantId,
+        bomName: parsed.bomName,
+        deletedAt: null,
+      })
+      if (nameCollision) {
+        throw conflict(`A BOM named "${parsed.bomName}" already exists.`)
+      }
+    }
+
     if (parsed.bomName !== undefined) bom.bomName = parsed.bomName
     if (parsed.catalogProductId !== undefined) bom.catalogProductId = parsed.catalogProductId
     if (parsed.batchQuantity !== undefined) bom.batchQuantity = String(parsed.batchQuantity)
     if (parsed.version !== undefined) bom.version = parsed.version
     if (parsed.isActive !== undefined) bom.isActive = parsed.isActive
+    if (parsed.metadata !== undefined) {
+      bom.metadata = parsed.metadata === null ? null : { ...(bom.metadata ?? {}), ...parsed.metadata }
+    }
 
     await em.flush()
 

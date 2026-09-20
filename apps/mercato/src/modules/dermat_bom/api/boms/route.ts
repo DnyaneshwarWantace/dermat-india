@@ -59,6 +59,7 @@ const crud = makeCrudRoute({
       'batch_quantity',
       'version',
       'is_active',
+      'metadata',
       'organization_id',
       'tenant_id',
       'created_at',

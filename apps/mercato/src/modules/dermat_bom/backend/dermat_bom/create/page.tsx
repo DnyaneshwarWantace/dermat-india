@@ -34,11 +34,12 @@ export default function CreateBomPage() {
 
   // Form states matching Part A Header Spec
   const [selectedProductId, setSelectedProductId] = React.useState('')
-  const [internalCode, setInternalCode] = React.useState('BOM-004')
+  const [internalCode, setInternalCode] = React.useState('')
   const [bomType, setBomType] = React.useState<'Finished Good' | 'Bulk' | 'Packaging Sub-Assembly'>('Finished Good')
   const [version, setVersion] = React.useState('V1')
-  const [baseBatchQty, setBaseBatchQty] = React.useState('100')
+  const [baseBatchQty, setBaseBatchQty] = React.useState('')
   const [baseUom, setBaseUom] = React.useState('L')
+  const [orderQtySourceLabel, setOrderQtySourceLabel] = React.useState<string | null>(null)
   const [status, setStatus] = React.useState<'Draft' | 'Under Review' | 'Approved'>('Draft')
   const [effectiveFrom, setEffectiveFrom] = React.useState(() => new Date().toISOString().slice(0, 10))
   const [customLabel, setCustomLabel] = React.useState('')
@@ -66,10 +67,31 @@ export default function CreateBomPage() {
     }))
   }, [])
 
+  // "This much [is what the] customer want[s]" — when a product is picked,
+  // pull the batch quantity from that product's most recent order line
+  // instead of leaving an arbitrary placeholder number in the field.
+  const handleProductChange = React.useCallback(async (productId: string) => {
+    setSelectedProductId(productId)
+    setOrderQtySourceLabel(null)
+    if (!productId) return
+    const call = await apiCall<{ found: boolean; quantity?: number; unit?: string | null; orderNumber?: string }>(
+      `/api/dermat_bom/order-quantity?productId=${encodeURIComponent(productId)}`,
+    )
+    if (call.ok && call.result?.found && call.result.quantity) {
+      setBaseBatchQty(String(call.result.quantity))
+      if (call.result.unit) setBaseUom(call.result.unit)
+      setOrderQtySourceLabel(`Auto-filled from order ${call.result.orderNumber}`)
+    }
+  }, [])
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!selectedProductId && !customLabel.trim()) {
       flash('Please select a product or enter a formulation label', 'error')
+      return
+    }
+    if (!baseBatchQty.trim() || Number(baseBatchQty) <= 0) {
+      flash('Please enter a base batch quantity', 'error')
       return
     }
 
@@ -84,7 +106,7 @@ export default function CreateBomPage() {
         tenantId,
         bomName,
         catalogProductId: selectedProductId || null,
-        batchQuantity: Number(baseBatchQty) || 100,
+        batchQuantity: Number(baseBatchQty),
         version: 1,
         isActive: status === 'Approved',
         metadata: {
@@ -154,7 +176,7 @@ export default function CreateBomPage() {
                     </Label>
                     <ComboboxInput
                       value={selectedProductId}
-                      onChange={setSelectedProductId}
+                      onChange={handleProductChange}
                       loadSuggestions={loadProductSuggestions}
                       placeholder="Search finished products from catalog…"
                       allowCustomValues={false}
@@ -223,10 +245,13 @@ export default function CreateBomPage() {
                         min="0.001"
                         step="any"
                         value={baseBatchQty}
-                        onChange={(e) => setBaseBatchQty(e.target.value)}
-                        placeholder="100"
+                        onChange={(e) => { setBaseBatchQty(e.target.value); setOrderQtySourceLabel(null) }}
+                        placeholder="e.g. 100"
                         className="font-mono text-xs font-bold text-right"
                       />
+                      {orderQtySourceLabel && (
+                        <p className="text-[11px] text-emerald-600">{orderQtySourceLabel}</p>
+                      )}
                     </div>
                     <div className="space-y-1.5">
                       <Label className="text-xs font-semibold">Base UOM</Label>

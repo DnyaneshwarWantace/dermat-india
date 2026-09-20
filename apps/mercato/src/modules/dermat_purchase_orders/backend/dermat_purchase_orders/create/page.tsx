@@ -105,6 +105,10 @@ const DEFAULT_TERMS = `1. Materials must strictly comply with agreed Certificate
 3. Delivery must be accompanied by original Invoice, Packing List, and Batch Test Reports.
 4. Payment will be processed as per agreed payment terms following successful Quality Control clearance.`
 
+function generatePoNumber(): string {
+  return `DER/PO/2425/${Math.floor(1000 + Math.random() * 9000)}`
+}
+
 export default function CreateDermatPurchaseOrderPage() {
   const t = useT()
   const router = useRouter()
@@ -116,7 +120,7 @@ export default function CreateDermatPurchaseOrderPage() {
 
   // Header state
   const [orderType, setOrderType] = React.useState<'blanket' | 'purchase_order' | 'work_order'>('purchase_order')
-  const [poNumber, setPoNumber] = React.useState('DER/PO/2425/1366')
+  const [poNumber, setPoNumber] = React.useState(generatePoNumber)
   const [location, setLocation] = React.useState('DERMAT INDIA - Plant 1')
   const [department, setDepartment] = React.useState<'rm_store' | 'pm_store' | 'rd_lab'>(
     paramUnit.toLowerCase() === 'pcs' ? 'pm_store' : 'rm_store'
@@ -192,17 +196,17 @@ export default function CreateDermatPurchaseOrderPage() {
 
   // Sequence change modal
   const [sequenceModalOpen, setSequenceModalOpen] = React.useState(false)
-  const [customSequence, setCustomSequence] = React.useState('DER/PO/2425/1366')
+  const [customSequence, setCustomSequence] = React.useState(generatePoNumber)
 
   // Load live vendors & RM/PM catalog from database
   React.useEffect(() => {
     async function loadData() {
       try {
         const [vendorRes, catalogRes, rmRes, pmRes] = await Promise.all([
-          apiCall<{ items?: VendorOption[] }>('/api/dermat_vendors/vendors?pageSize=200'),
+          apiCall<{ items?: VendorOption[] }>('/api/dermat_vendors/vendors?pageSize=100'),
           apiCall<{ items?: Array<{ id: string; title: string; sku?: string | null; description?: string | null }> }>('/api/catalog/products?pageSize=100'),
-          apiCall<{ items?: any[] }>('/api/dermat_rm_master/rm_master?pageSize=200'),
-          apiCall<{ items?: any[] }>('/api/dermat_pm_master/pm_master?pageSize=200'),
+          apiCall<{ items?: any[] }>('/api/dermat_rm_master/rm_master?pageSize=100'),
+          apiCall<{ items?: any[] }>('/api/dermat_pm_master/pm_master?pageSize=100'),
         ])
 
         if (vendorRes.ok && vendorRes.result?.items && vendorRes.result.items.length > 0) {
@@ -499,7 +503,7 @@ export default function CreateDermatPurchaseOrderPage() {
     setSubmitting(true)
     try {
       const payload = {
-        poNumber: poNumber || `DER/PO/2425/${Math.floor(1000 + Math.random() * 9000)}`,
+        poNumber: poNumber || generatePoNumber(),
         department: department === 'rd_lab' ? 'rm_store' : department,
         vendorId: selectedVendorId || vendors[0]?.id || 'v1',
         poDate: poDate || new Date().toISOString().slice(0, 10),
