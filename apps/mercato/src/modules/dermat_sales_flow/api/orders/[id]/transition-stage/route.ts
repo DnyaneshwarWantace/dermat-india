@@ -16,6 +16,7 @@ const logger = createLogger('dermat_sales_flow')
 const requestSchema = z.object({
   targetStage: z.enum([
     'new',
+    'advance_payment',
     'verified',
     'rnd_sample',
     'artwork_packaging',
@@ -34,6 +35,7 @@ const requestSchema = z.object({
   verifyNote: z.string().optional().nullable(),
   sampleSentNote: z.string().optional().nullable(),
   sampleId: z.string().optional().nullable(),
+  revertReason: z.string().optional().nullable(),
 })
 
 export const metadata = {
@@ -82,6 +84,7 @@ export async function POST(req: Request, routeCtx: { params: { id: string } }) {
           verifyNote: parsed.verifyNote,
           sampleSentNote: parsed.sampleSentNote,
           sampleId: parsed.sampleId,
+          revertReason: parsed.revertReason,
         },
         ctx,
       },

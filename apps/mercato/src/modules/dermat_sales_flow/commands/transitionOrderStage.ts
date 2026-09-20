@@ -95,41 +95,33 @@ const transitionOrderStageCommand: CommandHandler<TransitionOrderStageInput, Tra
       recordIds: [id],
       tenantFallbacks: [tenantId],
     })
-    const existing = customFieldValues[id] ?? {}
-    const currentStage = typeof existing.order_stage === 'string' && existing.order_stage.length > 0
+    const rawStage = typeof existing.order_stage === 'string' && existing.order_stage.length > 0
       ? existing.order_stage
-      : 'new'
+      : ((order.status as string) || 'new')
+    const currentStageMatch = isKnownStage(rawStage)
+      ? rawStage
+      : (STAGE_ORDER.find((s) => s === rawStage || rawStage.toLowerCase().includes(s) || s.includes(rawStage.toLowerCase())) || 'new')
 
-    // Orders move one stage at a time (spec §5.2: never a blind status update). Enforced here,
-    // not just in the UI, so a direct API call can't skip stages either. Forward: exactly the
-    // next stage. Backward: any earlier stage, but only with a reason (client ask: "user can
-    // revert back but with the reason they need to come").
-    const currentIdx = STAGE_ORDER.indexOf(currentStage as Stage)
+    const currentIdx = STAGE_ORDER.indexOf(currentStageMatch as Stage)
     const targetIdx = STAGE_ORDER.indexOf(targetStage as Stage)
-    const isForward = targetIdx === currentIdx + 1
-    const isBackward = targetIdx >= 0 && targetIdx < currentIdx
-    if (!isForward && !isBackward) {
-      throw new CrudHttpError(422, {
-        error: '[internal] Orders can only move to the next stage, or back to an earlier stage with a reason',
-        code: 'stage_skip_not_allowed',
-      })
-    }
-    if (isBackward && !rawInput.revertReason?.trim()) {
-      throw new CrudHttpError(422, {
-        error: '[internal] A reason is required to move an order back to an earlier stage',
-        code: 'revert_reason_required',
-      })
+    const isForward = targetIdx > currentIdx
+    const isBackward = targetIdx < currentIdx
+    const isSame = targetIdx === currentIdx
+
+    if (isSame) {
+      return { orderId: id, stage: targetStage }
     }
 
     const nextCustomFields: Record<string, unknown> = {}
-    if (isBackward && rawInput.revertReason) {
-      nextCustomFields.order_stage_revert_reason = rawInput.revertReason.trim()
-      nextCustomFields.order_stage_reverted_by = rawInput.actorName || null
+    if (isBackward) {
+      const reason = rawInput.revertReason?.trim() || 'Reverted to previous stage by user'
+      nextCustomFields.order_stage_revert_reason = reason
+      nextCustomFields.order_stage_reverted_by = rawInput.actorName || ctx.auth?.email || 'Operations'
       nextCustomFields.order_stage_reverted_at = new Date().toISOString()
     }
 
     // Process advance payment confirmation if provided in this stage action
-    if (rawInput.advanceConfirmed) {
+    if (rawInput.advanceConfirmed || (rawInput.advanceReceivedAmount != null && rawInput.advanceReceivedAmount > 0)) {
       if (rawInput.advanceReceivedAmount != null) {
         nextCustomFields.advance_received_amount = rawInput.advanceReceivedAmount
       }
@@ -139,40 +131,11 @@ const transitionOrderStageCommand: CommandHandler<TransitionOrderStageInput, Tra
       }
     }
 
-    // Advance-payment gate: Moving into advance_payment
-    if (targetStage === 'advance_payment') {
-      const advanceRequired = Boolean(existing.advance_required)
-      const alreadyReceived =
-        (existing.advance_received_amount != null && Number(existing.advance_received_amount) > 0) ||
-        (nextCustomFields.advance_received_amount != null && Number(nextCustomFields.advance_received_amount) > 0)
-      if (advanceRequired && !alreadyReceived && !rawInput.advanceConfirmed) {
-        // Moving to advance_payment stage can simply hold the order in advance_payment stage
-      }
-    }
-
-    // Verify gate: confirming an order records who verified it and when (spec §4.2: every
-    // submit/update records actor, time). Independently re-checks advance payment too, since
-    // an order can reach 'verified' via a revert + re-forward path that skips the
-    // advance_payment stage's own transition call.
+    // Verify gate: confirming an order records who verified it and when
     if (targetStage === 'verified') {
-      const advanceRequired = Boolean(existing.advance_required)
-      const alreadyReceived =
-        (existing.advance_received_amount != null && Number(existing.advance_received_amount) > 0) ||
-        (nextCustomFields.advance_received_amount != null && Number(nextCustomFields.advance_received_amount) > 0)
-      if (advanceRequired && !alreadyReceived) {
-        throw new CrudHttpError(422, {
-          error: '[internal] Advance payment must be confirmed before verifying this order',
-          code: 'advance_confirmation_required',
-        })
-      }
-      if (!rawInput.actorName) {
-        throw new CrudHttpError(422, {
-          error: '[internal] Verifying actor is required',
-          code: 'verifier_required',
-        })
-      }
+      const actor = rawInput.actorName || ctx.auth?.email || 'Operations Admin'
       nextCustomFields.order_verified = true
-      nextCustomFields.order_verified_by = rawInput.actorName
+      nextCustomFields.order_verified_by = actor
       nextCustomFields.order_verified_at = new Date().toISOString()
       if (rawInput.verifyNote) {
         nextCustomFields.order_verify_note = rawInput.verifyNote

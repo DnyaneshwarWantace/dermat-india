@@ -403,7 +403,350 @@ async function main() {
     }
   }
 
-  // 5. Clean & Re-generate Connected Sales Orders with accurate Customer Snapshots and Order Metadata
+  // 5. Seed Raw Materials (RM) in dermat_rm_master and catalog_products
+  console.log('\nUpserting Raw Materials into dermat_rm_master and catalog_products...')
+  const rawMaterials = [
+    { name: 'Purified Demineralized Water (DM Water)', code: 'RM-WAT-01', stock: 25000, unit: 'kg', rate: 1.20, benefit: 'Universal Base', physicalState: 'Liquid', supplier: 'In-House Filtration Unit', brand: 'Dermat In-House' },
+    { name: 'Niacinamide Pure IP Powder (Vitamin B3)', code: 'RM-NIA-03', stock: 450, unit: 'kg', rate: 850.00, benefit: 'Brightening & Barrier Repair', physicalState: 'Powder', supplier: 'Lonza India Pvt Ltd', brand: 'Niacinamide Pure IP' },
+    { name: 'Salicylic Acid Active IP Grade', code: 'RM-SAL-01', stock: 280, unit: 'kg', rate: 620.00, benefit: 'Exfoliation & Anti-Acne', physicalState: 'Powder', supplier: 'Aarti Industries Ltd', brand: 'Salicylic Acid Active IP' },
+    { name: 'Hyaluronic Acid (Sodium Hyaluronate LMW)', code: 'RM-HYA-01', stock: 65, unit: 'kg', rate: 9500.00, benefit: 'Deep Cellular Hydration', physicalState: 'Powder', supplier: 'Bloomage Biotech India', brand: 'BloomHyal LMW' },
+    { name: 'Glycerin IP 99.5% Cosmetic Grade', code: 'RM-GLY-02', stock: 3200, unit: 'kg', rate: 92.00, benefit: 'Humectant & Moisture Lock', physicalState: 'Liquid', supplier: 'Godrej Industries Ltd', brand: 'Godrej Pure Glycerin IP' },
+    { name: 'Zinc PCA Active Grade', code: 'RM-ZNC-01', stock: 120, unit: 'kg', rate: 2400.00, benefit: 'Sebum Control & Antimicrobial', physicalState: 'Powder', supplier: 'Kumar Organic Products Ltd', brand: 'Kop-Zinc PCA' },
+    { name: 'Phenoxyethanol & Ethylhexylglycerin (Preservative)', code: 'RM-PHN-01', stock: 850, unit: 'kg', rate: 380.00, benefit: 'Broad Spectrum Preservation', physicalState: 'Liquid', supplier: 'Schülke India Pvt Ltd', brand: 'Euxyl PE 9010' },
+    { name: 'Xanthan Gum (Clear Viscosity Modifier)', code: 'RM-THK-01', stock: 350, unit: 'kg', rate: 450.00, benefit: 'Viscosity & Texture Enhancer', physicalState: 'Powder', supplier: 'Jungbunzlauer India', brand: 'ClearXanth High-Clarity' },
+    { name: 'Vitamin C (L-Ascorbic Acid Ultra-Fine IP)', code: 'RM-VTC-01', stock: 180, unit: 'kg', rate: 1150.00, benefit: 'Antioxidant & Collagen Boost', physicalState: 'Powder', supplier: 'DSM Nutritional Products', brand: 'DSM Ascorbic Fine IP' },
+    { name: 'Butylene Glycol (High Purity Solubilizer)', code: 'RM-BUT-06', stock: 1400, unit: 'kg', rate: 260.00, benefit: 'Penetration Enhancer & Solvent', physicalState: 'Liquid', supplier: 'Oxea Chemicals India', brand: '1,3-Butylene Glycol Cosmetic' },
+    { name: 'Carbomer 980 Polymer Gelling Agent', code: 'RM-CAR-04', stock: 220, unit: 'kg', rate: 780.00, benefit: 'Crystal Clear Gel Matrix', physicalState: 'Powder', supplier: 'Lubrizol Advanced Materials', brand: 'Carbopol 980 NF' },
+    { name: 'Triethanolamine (TEA 99% Pure IP)', code: 'RM-TEA-07', stock: 600, unit: 'kg', rate: 185.00, benefit: 'pH Neutralizer & Buffer', physicalState: 'Liquid', supplier: 'BASF India Ltd', brand: 'Pure TEA 99%' }
+  ]
+
+  for (const rm of rawMaterials) {
+    // In dermat_rm_master
+    const rmRes = await client.query('SELECT id FROM dermat_rm_master WHERE code = $1', [rm.code])
+    if (rmRes.rows.length === 0) {
+      await client.query(
+        `INSERT INTO dermat_rm_master (
+          organization_id, tenant_id, name, code, stock, unit, supplier, benefit, physical_state, make_brand_name, is_active, created_at, updated_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, true, NOW(), NOW())`,
+        [orgId, tenantId, rm.name, rm.code, rm.stock, rm.unit, rm.supplier, rm.benefit, rm.physicalState, rm.brand]
+      )
+    } else {
+      await client.query(
+        `UPDATE dermat_rm_master SET name = $1, stock = $2, unit = $3, supplier = $4, benefit = $5, physical_state = $6, make_brand_name = $7, updated_at = NOW(), deleted_at = NULL WHERE id = $8`,
+        [rm.name, rm.stock, rm.unit, rm.supplier, rm.benefit, rm.physicalState, rm.brand, rmRes.rows[0].id]
+      )
+    }
+
+    // In catalog_products
+    const cpRes = await client.query('SELECT id FROM catalog_products WHERE sku = $1', [rm.code])
+    const rmMeta = {
+      brand_name: rm.brand,
+      pack_size: `1 ${rm.unit}`,
+      uom: rm.unit,
+      mrp: String(rm.rate * 1.5),
+      billing_rate: String(rm.rate),
+      shelf_life: '24 Months',
+      stock_quantity: rm.stock,
+      item_type: 'raw_material'
+    }
+    if (cpRes.rows.length === 0) {
+      await client.query(
+        `INSERT INTO catalog_products (
+          id, organization_id, tenant_id, title, sku, is_active, is_configurable,
+          product_type, description, default_sales_unit, default_sales_unit_quantity,
+          metadata, created_at, updated_at
+        ) VALUES ($1, $2, $3, $4, $5, true, false, 'simple', $6, $7, 1, $8, NOW(), NOW())`,
+        [crypto.randomUUID(), orgId, tenantId, rm.name, rm.code, rm.benefit, rm.unit, JSON.stringify(rmMeta)]
+      )
+    } else {
+      await client.query(
+        `UPDATE catalog_products SET title = $1, description = $2, default_sales_unit = $3, metadata = $4, updated_at = NOW() WHERE id = $5`,
+        [rm.name, rm.benefit, rm.unit, JSON.stringify(rmMeta), cpRes.rows[0].id]
+      )
+    }
+  }
+
+  // 6. Seed Packaging Materials (PM) in dermat_pm_master and catalog_products
+  console.log('\nUpserting Packaging Materials into dermat_pm_master and catalog_products...')
+  const packagingMaterials = [
+    { name: '30ml Amber Glass Dropper Bottle (Gold Pipette)', code: 'PM-BOT-30ML', stock: 5000, unit: 'pcs', rate: 14.50, supplier: 'PackTech Solutions', category: 'Bottle', make_brand_name: 'PackTech India', dimensions: '30ml' },
+    { name: '20/410 Fine Mist Treatment Pump with Clear Cap', code: 'PM-PMP-01', stock: 4500, unit: 'pcs', rate: 6.20, supplier: 'Apex Closures India', category: 'Bottle', make_brand_name: 'Apex Dispensing', dimensions: '20/410' },
+    { name: 'Monocarton Outer Box with UV Spot & Gold Emboss', code: 'PM-CRT-01', stock: 10000, unit: 'pcs', rate: 4.80, supplier: 'Classic Print & Pack', category: 'Carton', make_brand_name: 'Classic Pack', dimensions: '35x35x105mm' },
+    { name: 'Metallic Waterproof Vinyl Bottle Label (30ml)', code: 'PM-LBL-01', stock: 12000, unit: 'pcs', rate: 2.20, supplier: 'Prime Labels India', category: 'Label', make_brand_name: 'Prime Vinyl', dimensions: '85x45mm' },
+    { name: '25gm Lami Tube with Needle Nozzle & Screw Cap', code: 'PM-TUB-25GM', stock: 3500, unit: 'pcs', rate: 8.75, supplier: 'Essel Propack', category: 'Tube', make_brand_name: 'Essel Lamitubes', dimensions: '25gm' },
+    { name: '50gm Acrylic Double-Wall Cream Jar with Inner Liner', code: 'PM-JAR-50GM', stock: 2800, unit: 'pcs', rate: 16.00, supplier: 'PackTech Solutions', category: 'Bottle', make_brand_name: 'PackTech India', dimensions: '50gm' },
+    { name: '3-Ply Corrugated Master Shipper Box (Holds 48 units)', code: 'PM-SHP-01', stock: 600, unit: 'pcs', rate: 24.00, supplier: 'Modern Corrugators', category: 'Box', make_brand_name: 'Modern Box Corp', dimensions: '300x200x150mm' },
+    { name: '100ml PET Pump Dispenser Bottle for Cleanser', code: 'PM-BOT-100ML', stock: 4200, unit: 'pcs', rate: 12.50, supplier: 'Apex Closures India', category: 'Bottle', make_brand_name: 'Apex Dispensing', dimensions: '100ml' }
+  ]
+
+  for (const pm of packagingMaterials) {
+    // In dermat_pm_master
+    const pmRes = await client.query('SELECT id FROM dermat_pm_master WHERE code = $1', [pm.code])
+    if (pmRes.rows.length === 0) {
+      await client.query(
+        `INSERT INTO dermat_pm_master (
+          organization_id, tenant_id, name, code, stock, unit, supplier, category, make_brand_name, dimensions, is_active, created_at, updated_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, true, NOW(), NOW())`,
+        [orgId, tenantId, pm.name, pm.code, pm.stock, pm.unit, pm.supplier, pm.category, pm.make_brand_name, pm.dimensions]
+      )
+    } else {
+      await client.query(
+        `UPDATE dermat_pm_master SET name = $1, stock = $2, unit = $3, supplier = $4, category = $5, make_brand_name = $6, dimensions = $7, updated_at = NOW(), deleted_at = NULL WHERE id = $8`,
+        [pm.name, pm.stock, pm.unit, pm.supplier, pm.category, pm.make_brand_name, pm.dimensions, pmRes.rows[0].id]
+      )
+    }
+
+    // In catalog_products
+    const cpRes = await client.query('SELECT id FROM catalog_products WHERE sku = $1', [pm.code])
+    const pmMeta = {
+      brand_name: pm.make_brand_name,
+      pack_size: pm.dimensions || `1 ${pm.unit}`,
+      uom: pm.unit,
+      mrp: String(pm.rate * 1.5),
+      billing_rate: String(pm.rate),
+      shelf_life: '36 Months',
+      stock_quantity: pm.stock,
+      item_type: 'packaging_material'
+    }
+    if (cpRes.rows.length === 0) {
+      await client.query(
+        `INSERT INTO catalog_products (
+          id, organization_id, tenant_id, title, sku, is_active, is_configurable,
+          product_type, description, default_sales_unit, default_sales_unit_quantity,
+          metadata, created_at, updated_at
+        ) VALUES ($1, $2, $3, $4, $5, true, false, 'simple', $6, $7, 1, $8, NOW(), NOW())`,
+        [crypto.randomUUID(), orgId, tenantId, pm.name, pm.code, pm.category, pm.unit, JSON.stringify(pmMeta)]
+      )
+    } else {
+      await client.query(
+        `UPDATE catalog_products SET title = $1, description = $2, default_sales_unit = $3, metadata = $4, updated_at = NOW() WHERE id = $5`,
+        [pm.name, pm.category, pm.unit, JSON.stringify(pmMeta), cpRes.rows[0].id]
+      )
+    }
+  }
+
+  // 7. Seed Vendors into dermat_vendors
+  console.log('\nUpserting approved Vendors into dermat_vendors...')
+  const vendors = [
+    { name: 'PackTech Solutions India Pvt Ltd', code: 'VND-PT-01', contactPerson: 'Rajesh Sharma', phone: '+91 98200 45678', email: 'sales@packtechindia.com', city: 'Mumbai', state: 'Maharashtra', gstin: '27AABCP1234F1Z5', paymentTerms: 'Net 30', category: 'Packaging Materials' },
+    { name: 'Lonza India Pvt Ltd', code: 'VND-LZ-02', contactPerson: 'Dr. Ramesh Iyer', phone: '+91 98450 12345', email: 'pharma.sales@lonza.com', city: 'Mumbai', state: 'Maharashtra', gstin: '27AABCL5678G1ZP', paymentTerms: 'Net 45', category: 'Raw Materials / Actives' },
+    { name: 'Classic Print & Pack LLP', code: 'VND-CP-03', contactPerson: 'Nitin Patel', phone: '+91 98980 67890', email: 'orders@classicpack.in', city: 'Ahmedabad', state: 'Gujarat', gstin: '24AABCC9012H1ZU', paymentTerms: 'Immediate / Advance', category: 'Cartons & Outer Packaging' },
+    { name: 'Bloomage Biotech India Pvt Ltd', code: 'VND-BB-04', contactPerson: 'Sunil Rao', phone: '+91 97110 33445', email: 'hyaluron@bloomage.co.in', city: 'New Delhi', state: 'Delhi', gstin: '07AABCB3456J1ZR', paymentTerms: 'Net 30', category: 'Raw Materials / Actives' },
+    { name: 'Apex Closures & Dispensers India', code: 'VND-AC-05', contactPerson: 'Manoj Kumar', phone: '+91 98190 77889', email: 'dispensing@apexclosures.com', city: 'Thane', state: 'Maharashtra', gstin: '27AABCA7890K1ZW', paymentTerms: 'Net 30', category: 'Pumps & Droppers' },
+    { name: 'Kumar Organic Products Ltd', code: 'VND-KO-06', contactPerson: 'Anand Verma', phone: '+91 98410 55667', email: 'sales@kumarorganic.net', city: 'Bengaluru', state: 'Karnataka', gstin: '29AABCK1122L1ZX', paymentTerms: 'Net 30', category: 'Raw Materials / Actives' }
+  ]
+
+  for (const v of vendors) {
+    const vRes = await client.query('SELECT id FROM dermat_vendors WHERE code = $1', [v.code])
+    if (vRes.rows.length === 0) {
+      await client.query(
+        `INSERT INTO dermat_vendors (
+          organization_id, tenant_id, name, code, contact_person, contact_phone, contact_email, address, gst_number, payment_terms, category, is_active, created_at, updated_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, true, NOW(), NOW())`,
+        [orgId, tenantId, v.name, v.code, v.contactPerson, v.phone, v.email, `${v.city}, ${v.state}`, v.gstin, v.paymentTerms, v.category]
+      )
+    } else {
+      await client.query(
+        `UPDATE dermat_vendors SET name = $1, contact_person = $2, contact_phone = $3, contact_email = $4, address = $5, gst_number = $6, payment_terms = $7, category = $8, updated_at = NOW(), deleted_at = NULL WHERE id = $9`,
+        [v.name, v.contactPerson, v.phone, v.email, `${v.city}, ${v.state}`, v.gstin, v.paymentTerms, v.category, vRes.rows[0].id]
+      )
+    }
+  }
+
+  // 8. Seed Production BOMs with Recipes & Component Lines
+  console.log('\nUpserting 6 Production BOMs with linked RM & PM recipe lines...')
+  const bomsToSeed = [
+    {
+      bomNo: 'BOM-001',
+      name: 'Vitamin C 15% Glow Face Serum 30ml',
+      productSku: 'VITC-SER-30',
+      batchQty: 100,
+      uom: 'KGS',
+      version: 1,
+      rms: [
+        { sku: 'RM-WAT-01', name: 'Purified Demineralized Water (DM Water)', qty: 78.5, wastage: 0.0, uom: 'KGS', pct: 78.5 },
+        { sku: 'RM-VTC-01', name: 'Vitamin C (L-Ascorbic Acid Ultra-Fine IP)', qty: 15.0, wastage: 0.5, uom: 'KGS', pct: 15.0 },
+        { sku: 'RM-GLY-02', name: 'Glycerin IP 99.5% Cosmetic Grade', qty: 3.5, wastage: 0.0, uom: 'KGS', pct: 3.5 },
+        { sku: 'RM-HYA-01', name: 'Hyaluronic Acid (Sodium Hyaluronate LMW)', qty: 1.0, wastage: 0.0, uom: 'KGS', pct: 1.0 },
+        { sku: 'RM-PHN-01', name: 'Phenoxyethanol & Ethylhexylglycerin', qty: 1.0, wastage: 0.0, uom: 'KGS', pct: 1.0 },
+        { sku: 'RM-THK-01', name: 'Xanthan Gum (Clear Viscosity Modifier)', qty: 1.0, wastage: 0.0, uom: 'KGS', pct: 1.0 }
+      ],
+      pms: [
+        { sku: 'PM-BOT-30ML', name: 'Amber Glass Dropper Bottle 30 ml', qty: 3334, uom: 'PCS' },
+        { sku: 'PM-PMP-01', name: 'Glass Dropper Cap Assembly (Gold Collar)', qty: 3334, uom: 'PCS' },
+        { sku: 'PM-CRT-01', name: 'Printed Mono Carton Outer Box 30ml', qty: 3334, uom: 'PCS' },
+        { sku: 'PM-LBL-01', name: 'Self-Adhesive Metallic Waterproof Label 30ml', qty: 3334, uom: 'PCS' },
+        { sku: 'PM-SHP-01', name: 'Outer Shipper Corrugated Master Box (72 Pcs)', qty: 47, uom: 'PCS' }
+      ]
+    },
+    {
+      bomNo: 'BOM-002',
+      name: 'HYEO Bright Niacinamide 10% Serum 30ml',
+      productSku: 'HYEO-SER-30',
+      batchQty: 100,
+      uom: 'KGS',
+      version: 1,
+      rms: [
+        { sku: 'RM-WAT-01', name: 'Purified Demineralized Water (DM Water)', qty: 82.0, wastage: 0.0, uom: 'KGS', pct: 82.0 },
+        { sku: 'RM-NIA-03', name: 'Niacinamide Pure IP Powder (Vitamin B3)', qty: 10.0, wastage: 0.5, uom: 'KGS', pct: 10.0 },
+        { sku: 'RM-GLY-02', name: 'Glycerin IP 99.5% Cosmetic Grade', qty: 5.0, wastage: 0.0, uom: 'KGS', pct: 5.0 },
+        { sku: 'RM-ZNC-01', name: 'Zinc PCA Active Grade', qty: 1.0, wastage: 0.0, uom: 'KGS', pct: 1.0 },
+        { sku: 'RM-PHN-01', name: 'Phenoxyethanol & Ethylhexylglycerin', qty: 1.0, wastage: 0.0, uom: 'KGS', pct: 1.0 },
+        { sku: 'RM-THK-01', name: 'Xanthan Gum (Clear Viscosity Modifier)', qty: 1.0, wastage: 0.0, uom: 'KGS', pct: 1.0 }
+      ],
+      pms: [
+        { sku: 'PM-BOT-30ML', name: 'Amber Glass Dropper Bottle 30 ml', qty: 3334, uom: 'PCS' },
+        { sku: 'PM-PMP-01', name: 'Glass Dropper Cap Assembly (Gold Collar)', qty: 3334, uom: 'PCS' },
+        { sku: 'PM-CRT-01', name: 'Printed Mono Carton Outer Box 30ml', qty: 3334, uom: 'PCS' },
+        { sku: 'PM-LBL-01', name: 'Self-Adhesive Metallic Waterproof Label 30ml', qty: 3334, uom: 'PCS' },
+        { sku: 'PM-SHP-01', name: 'Outer Shipper Corrugated Master Box (72 Pcs)', qty: 47, uom: 'PCS' }
+      ]
+    },
+    {
+      bomNo: 'BOM-003',
+      name: 'Zitlite Rapid Acne Spot Gel 25gms',
+      productSku: 'ZITL-GEL-25',
+      batchQty: 100,
+      uom: 'KGS',
+      version: 1,
+      rms: [
+        { sku: 'RM-WAT-01', name: 'Purified Demineralized Water (DM Water)', qty: 85.0, wastage: 0.0, uom: 'KGS', pct: 85.0 },
+        { sku: 'RM-SAL-01', name: 'Salicylic Acid Active IP Grade', qty: 2.0, wastage: 0.5, uom: 'KGS', pct: 2.0 },
+        { sku: 'RM-BUT-06', name: 'Butylene Glycol (Cosmetic Grade)', qty: 5.0, wastage: 0.0, uom: 'KGS', pct: 5.0 },
+        { sku: 'RM-GLY-02', name: 'Glycerin IP 99.5% Cosmetic Grade', qty: 3.0, wastage: 0.0, uom: 'KGS', pct: 3.0 },
+        { sku: 'RM-CAR-04', name: 'Carbomer 980 Polymer Gelling Agent', qty: 1.5, wastage: 0.0, uom: 'KGS', pct: 1.5 },
+        { sku: 'RM-TEA-07', name: 'Triethanolamine (TEA 99% Pure IP)', qty: 1.5, wastage: 0.0, uom: 'KGS', pct: 1.5 },
+        { sku: 'RM-ZNC-01', name: 'Zinc PCA Active Grade', qty: 1.0, wastage: 0.0, uom: 'KGS', pct: 1.0 },
+        { sku: 'RM-PHN-01', name: 'Phenoxyethanol & Ethylhexylglycerin', qty: 1.0, wastage: 0.0, uom: 'KGS', pct: 1.0 }
+      ],
+      pms: [
+        { sku: 'PM-TUB-25GM', name: 'Laminated Cosmetic Tube 25gm (Flip Top Cap)', qty: 4000, uom: 'PCS' },
+        { sku: 'PM-CRT-01', name: 'Printed Mono Carton Outer Box 25g', qty: 4000, uom: 'PCS' },
+        { sku: 'PM-SHP-01', name: 'Outer Shipper Corrugated Master Box (72 Pcs)', qty: 56, uom: 'PCS' }
+      ]
+    },
+    {
+      bomNo: 'BOM-004',
+      name: 'HYEO Bright Barrier Repair Cream 30gm',
+      productSku: 'HYEO-REPCR-30',
+      batchQty: 100,
+      uom: 'KGS',
+      version: 1,
+      rms: [
+        { sku: 'RM-WAT-01', name: 'Purified Demineralized Water (DM Water)', qty: 70.0, wastage: 0.0, uom: 'KGS', pct: 70.0 },
+        { sku: 'RM-GLY-02', name: 'Glycerin IP 99.5% Cosmetic Grade', qty: 10.0, wastage: 0.0, uom: 'KGS', pct: 10.0 },
+        { sku: 'RM-NIA-03', name: 'Niacinamide Pure IP Powder (Vitamin B3)', qty: 5.0, wastage: 0.5, uom: 'KGS', pct: 5.0 },
+        { sku: 'RM-HYA-01', name: 'Hyaluronic Acid (Sodium Hyaluronate LMW)', qty: 1.0, wastage: 0.0, uom: 'KGS', pct: 1.0 },
+        { sku: 'RM-BUT-06', name: 'Butylene Glycol (Cosmetic Grade)', qty: 6.0, wastage: 0.0, uom: 'KGS', pct: 6.0 },
+        { sku: 'RM-CAR-04', name: 'Carbomer 980 Polymer Gelling Agent', qty: 1.5, wastage: 0.0, uom: 'KGS', pct: 1.5 },
+        { sku: 'RM-PHN-01', name: 'Phenoxyethanol & Ethylhexylglycerin', qty: 1.0, wastage: 0.0, uom: 'KGS', pct: 1.0 },
+        { sku: 'RM-TEA-07', name: 'Triethanolamine (TEA 99% Pure IP)', qty: 5.5, wastage: 0.0, uom: 'KGS', pct: 5.5 }
+      ],
+      pms: [
+        { sku: 'PM-JAR-50GM', name: 'Acrylic Cosmetic Cream Jar 50gm (Silver Ring)', qty: 3334, uom: 'PCS' },
+        { sku: 'PM-CRT-01', name: 'Printed Mono Carton Outer Box 30ml', qty: 3334, uom: 'PCS' },
+        { sku: 'PM-SHP-01', name: 'Outer Shipper Corrugated Master Box (72 Pcs)', qty: 47, uom: 'PCS' }
+      ]
+    },
+    {
+      bomNo: 'BOM-005',
+      name: 'NG Glow Salicylic 2% Face Wash 60ml',
+      productSku: 'NGGL-FW-60',
+      batchQty: 100,
+      uom: 'KGS',
+      version: 1,
+      rms: [
+        { sku: 'RM-WAT-01', name: 'Purified Demineralized Water (DM Water)', qty: 75.0, wastage: 0.0, uom: 'KGS', pct: 75.0 },
+        { sku: 'RM-SAL-01', name: 'Salicylic Acid Active IP Grade', qty: 2.0, wastage: 0.5, uom: 'KGS', pct: 2.0 },
+        { sku: 'RM-GLY-02', name: 'Glycerin IP 99.5% Cosmetic Grade', qty: 8.0, wastage: 0.0, uom: 'KGS', pct: 8.0 },
+        { sku: 'RM-BUT-06', name: 'Butylene Glycol (Cosmetic Grade)', qty: 6.0, wastage: 0.0, uom: 'KGS', pct: 6.0 },
+        { sku: 'RM-THK-01', name: 'Xanthan Gum (Clear Viscosity Modifier)', qty: 1.0, wastage: 0.0, uom: 'KGS', pct: 1.0 },
+        { sku: 'RM-PHN-01', name: 'Phenoxyethanol & Ethylhexylglycerin', qty: 1.0, wastage: 0.0, uom: 'KGS', pct: 1.0 },
+        { sku: 'RM-TEA-07', name: 'Triethanolamine (TEA 99% Pure IP)', qty: 7.0, wastage: 0.0, uom: 'KGS', pct: 7.0 }
+      ],
+      pms: [
+        { sku: 'PM-BOT-100ML', name: 'HDPE Face Wash Bottle with Foaming Pump 100ml', qty: 1667, uom: 'PCS' },
+        { sku: 'PM-LBL-01', name: 'Self-Adhesive Metallic Waterproof Label 30ml', qty: 1667, uom: 'PCS' },
+        { sku: 'PM-SHP-01', name: 'Outer Shipper Corrugated Master Box (72 Pcs)', qty: 24, uom: 'PCS' }
+      ]
+    },
+    {
+      bomNo: 'BOM-006',
+      name: 'Baebbe Hydrating Milk Cleanser 100ml',
+      productSku: 'BAEB-FW-100',
+      batchQty: 100,
+      uom: 'KGS',
+      version: 1,
+      rms: [
+        { sku: 'RM-WAT-01', name: 'Purified Demineralized Water (DM Water)', qty: 78.0, wastage: 0.0, uom: 'KGS', pct: 78.0 },
+        { sku: 'RM-GLY-02', name: 'Glycerin IP 99.5% Cosmetic Grade', qty: 10.0, wastage: 0.0, uom: 'KGS', pct: 10.0 },
+        { sku: 'RM-HYA-01', name: 'Hyaluronic Acid (Sodium Hyaluronate LMW)', qty: 1.0, wastage: 0.0, uom: 'KGS', pct: 1.0 },
+        { sku: 'RM-BUT-06', name: 'Butylene Glycol (Cosmetic Grade)', qty: 5.0, wastage: 0.0, uom: 'KGS', pct: 5.0 },
+        { sku: 'RM-THK-01', name: 'Xanthan Gum (Clear Viscosity Modifier)', qty: 1.0, wastage: 0.0, uom: 'KGS', pct: 1.0 },
+        { sku: 'RM-PHN-01', name: 'Phenoxyethanol & Ethylhexylglycerin', qty: 1.0, wastage: 0.0, uom: 'KGS', pct: 1.0 },
+        { sku: 'RM-TEA-07', name: 'Triethanolamine (TEA 99% Pure IP)', qty: 4.0, wastage: 0.0, uom: 'KGS', pct: 4.0 }
+      ],
+      pms: [
+        { sku: 'PM-BOT-100ML', name: 'HDPE Face Wash Bottle with Foaming Pump 100ml', qty: 1000, uom: 'PCS' },
+        { sku: 'PM-LBL-01', name: 'Self-Adhesive Metallic Waterproof Label 30ml', qty: 1000, uom: 'PCS' },
+        { sku: 'PM-SHP-01', name: 'Outer Shipper Corrugated Master Box (72 Pcs)', qty: 14, uom: 'PCS' }
+      ]
+    }
+  ]
+
+  for (const b of bomsToSeed) {
+    const pRes = await client.query('SELECT id FROM catalog_products WHERE sku = $1', [b.productSku])
+    const fgProductId = pRes.rows[0]?.id || null
+
+    let bomId: string
+    const existing = await client.query('SELECT id FROM dermat_boms WHERE bom_name = $1', [b.name])
+    if (existing.rows.length === 0) {
+      bomId = crypto.randomUUID()
+      await client.query(
+        `INSERT INTO dermat_boms (id, organization_id, tenant_id, bom_name, catalog_product_id, version, batch_quantity, is_active, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, true, NOW(), NOW())`,
+        [bomId, orgId, tenantId, b.name, fgProductId, b.version, b.batchQty]
+      )
+    } else {
+      bomId = existing.rows[0].id
+      await client.query(
+        `UPDATE dermat_boms SET catalog_product_id = $1, version = $2, batch_quantity = $3, updated_at = NOW(), deleted_at = NULL WHERE id = $4`,
+        [fgProductId, b.version, b.batchQty, bomId]
+      )
+    }
+
+    // Recreate BOM lines
+    await client.query('DELETE FROM dermat_bom_lines WHERE bom_id = $1', [bomId])
+    let seq = 1
+
+    for (const rm of b.rms) {
+      const rmRes = await client.query('SELECT id FROM catalog_products WHERE sku = $1', [rm.sku])
+      const rmId = rmRes.rows[0]?.id || null
+      const qtyPerUnit = (rm.qty / b.batchQty).toFixed(3)
+      await client.query(
+        `INSERT INTO dermat_bom_lines (
+          id, organization_id, tenant_id, bom_id, component_kind,
+          raw_material_id, packaging_material_id, component_code, quantity, unit, sequence_number, qty_per_unit, wastage_percent, total_qty, rm_percent, created_at, updated_at
+        ) VALUES ($1, $2, $3, $4, 'raw_material', $5, null, $6, $7, $8, $9, $10, $11, $12, $13, NOW(), NOW())`,
+        [crypto.randomUUID(), orgId, tenantId, bomId, rmId, rm.sku, rm.qty, rm.uom, seq++, qtyPerUnit, rm.wastage, rm.qty, rm.pct]
+      )
+    }
+
+    for (const pm of b.pms) {
+      const pmRes = await client.query('SELECT id FROM catalog_products WHERE sku = $1', [pm.sku])
+      const pmId = pmRes.rows[0]?.id || null
+      const qtyPerUnit = (pm.qty / b.batchQty).toFixed(3)
+      await client.query(
+        `INSERT INTO dermat_bom_lines (
+          id, organization_id, tenant_id, bom_id, component_kind,
+          raw_material_id, packaging_material_id, component_code, quantity, unit, sequence_number, qty_per_unit, wastage_percent, total_qty, created_at, updated_at
+        ) VALUES ($1, $2, $3, $4, 'packaging_material', null, $5, $6, $7, $8, $9, $10, 0, $11, NOW(), NOW())`,
+        [crypto.randomUUID(), orgId, tenantId, bomId, pmId, pm.sku, pm.qty, pm.uom, seq++, qtyPerUnit, pm.qty]
+      )
+    }
+  }
+
+  // 9. Clean & Re-generate Connected Sales Orders with accurate Customer Snapshots and Order Metadata
   console.log('\nGenerating connected sales orders across all 10 pipeline stages...')
   await client.query('DELETE FROM sales_order_lines')
   await client.query('DELETE FROM sales_orders')

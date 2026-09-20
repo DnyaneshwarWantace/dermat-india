@@ -27,7 +27,16 @@ import {
   Clock,
   Sparkles,
   FlaskConical,
+  Printer,
+  Download,
 } from 'lucide-react'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '@open-mercato/ui/primitives/dialog'
 import { useT } from '@open-mercato/shared/lib/i18n/context'
 import { apiCall, withScopedApiRequestHeaders } from '@open-mercato/ui/backend/utils/apiCall'
 import { buildOptimisticLockHeader } from '@open-mercato/ui/backend/utils/optimisticLock'
@@ -78,6 +87,7 @@ export default function DermatBomListPage() {
   const [statusFilter, setStatusFilter] = React.useState<string>('all')
   const [isLoading, setIsLoading] = React.useState(true)
   const [reloadToken, setReloadToken] = React.useState(0)
+  const [pdfBom, setPdfBom] = React.useState<BomRow | null>(null)
   const scopeVersion = useOrganizationScopeVersion()
 
   React.useEffect(() => {
@@ -512,6 +522,16 @@ export default function DermatBomListPage() {
                           {/* 10. Action */}
                           <td className="p-3 pr-4 text-right">
                             <div className="flex items-center justify-end gap-1">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-7 px-2 text-[11px] font-bold gap-1 text-primary border-primary/30 hover:bg-primary/10"
+                                onClick={() => setPdfBom(bom)}
+                                title="Download / Print PDF"
+                              >
+                                <Printer className="h-3 w-3" />
+                                <span>PDF</span>
+                              </Button>
                               <Button size="icon" variant="ghost" className="h-7 w-7 text-primary" asChild>
                                 <Link href={`/backend/dermat_bom/${bom.id}`} title="Open BOM Detail">
                                   <Eye className="h-3.5 w-3.5" />
@@ -536,6 +556,224 @@ export default function DermatBomListPage() {
               </table>
             </div>
           </Card>
+
+          {/* BOM Specification Sheet PDF Modal */}
+          <Dialog open={Boolean(pdfBom)} onOpenChange={(open) => !open && setPdfBom(null)}>
+            <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto print:p-0 print:max-w-full">
+              <DialogHeader className="print:hidden">
+                <DialogTitle className="flex items-center justify-between">
+                  <span>Bill of Materials Specification Sheet (PDF)</span>
+                  <Button size="sm" onClick={() => window.print()} className="gap-1.5 font-bold">
+                    <Printer className="h-3.5 w-3.5" />
+                    <span>Download / Print PDF</span>
+                  </Button>
+                </DialogTitle>
+              </DialogHeader>
+
+              {pdfBom ? (
+                <div className="bg-white text-slate-900 p-6 rounded-lg border shadow-xs space-y-5 font-sans text-xs print:border-none print:shadow-none">
+                  {/* Company Header */}
+                  <div className="flex justify-between items-start border-b border-sky-600 pb-3">
+                    <div className="space-y-0.5">
+                      <h2 className="text-base font-extrabold text-[#0369a1] tracking-tight">DERMAT INDIA</h2>
+                      <p className="text-[10px] text-slate-700">Plot No. 696, Pace City-2, Sector 37, Gurugram, Haryana 122004</p>
+                      <p className="text-[10px] text-slate-700 font-mono"><strong>GSTIN:</strong> 06AAPFD7375J1ZV | <strong>Lic:</strong> 24-B/25-B/COS/HR</p>
+                    </div>
+                    <div className="text-right">
+                      <span className="inline-block bg-sky-50 text-sky-700 px-2 py-0.5 rounded font-bold text-[10px] border border-sky-200">
+                        OFFICIAL BILL OF MATERIALS
+                      </span>
+                      <p className="text-[11px] font-mono font-bold text-slate-900 mt-1">
+                        {pdfBom.bom_no || `BOM-${pdfBom.id.slice(0, 6)}`} / {typeof pdfBom.version === 'string' && pdfBom.version.startsWith('V') ? pdfBom.version : `V${pdfBom.version || 1}`}
+                      </p>
+                      <p className="text-[9px] text-slate-500">Effective: {pdfBom.effective_date || '01/09/2026'}</p>
+                    </div>
+                  </div>
+
+                  {/* Product Specification Meta */}
+                  <div className="grid grid-cols-2 gap-4 bg-slate-50 p-3 rounded border border-slate-200 text-[11px]">
+                    <div className="space-y-1">
+                      <div><strong className="text-slate-700 w-32 inline-block">Product Name:</strong> <span className="font-bold text-slate-900">{pdfBom.product_name || pdfBom.bom_name}</span></div>
+                      <div><strong className="text-slate-700 w-32 inline-block">BOM Type:</strong> <span>{pdfBom.bom_type || 'Finished Good'}</span></div>
+                      <div><strong className="text-slate-700 w-32 inline-block">Status:</strong> <span className="font-semibold text-emerald-700">{pdfBom.status || 'Approved'}</span></div>
+                    </div>
+                    <div className="space-y-1">
+                      <div><strong className="text-slate-700 w-32 inline-block">Base Batch Size:</strong> <span className="font-bold text-slate-900">{pdfBom.batch_quantity || 100} {pdfBom.uom || 'KGS'}</span></div>
+                      <div><strong className="text-slate-700 w-32 inline-block">Flexible Consumption:</strong> <span>Allowed (± 2.0%)</span></div>
+                      <div><strong className="text-slate-700 w-32 inline-block">Quality Grade:</strong> <span>IP / USP Pharmacopeia Grade</span></div>
+                    </div>
+                  </div>
+
+                  {/* Raw Materials Formulation */}
+                  <div className="space-y-1.5">
+                    <h3 className="text-xs font-bold text-[#0284c7] uppercase tracking-wider border-l-2 border-[#0284c7] pl-1.5">
+                      Part 1 — Active & Inactive Raw Materials Formulation
+                    </h3>
+                    <table className="w-full text-[10px] text-left border-collapse border border-slate-200">
+                      <thead className="bg-[#0284c7] text-white font-bold">
+                        <tr>
+                          <th className="p-1.5 border border-sky-600 w-6 text-center">#</th>
+                          <th className="p-1.5 border border-sky-600">Raw Material Component</th>
+                          <th className="p-1.5 border border-sky-600 text-center w-20">Code</th>
+                          <th className="p-1.5 border border-sky-600 text-right w-16">Qty/Unit</th>
+                          <th className="p-1.5 border border-sky-600 text-right w-20">Batch Qty</th>
+                          <th className="p-1.5 border border-sky-600 text-center w-12">UOM</th>
+                          <th className="p-1.5 border border-sky-600 text-right w-16">RM %</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-200">
+                        <tr>
+                          <td className="p-1.5 border border-slate-200 text-center font-bold">1</td>
+                          <td className="p-1.5 border border-slate-200 font-semibold">Purified Demineralized Water</td>
+                          <td className="p-1.5 border border-slate-200 text-center font-mono">RM-WAT-01</td>
+                          <td className="p-1.5 border border-slate-200 text-right font-mono">0.800</td>
+                          <td className="p-1.5 border border-slate-200 text-right font-mono font-bold">80.000</td>
+                          <td className="p-1.5 border border-slate-200 text-center font-bold">KGS</td>
+                          <td className="p-1.5 border border-slate-200 text-right font-mono font-bold text-sky-700">80.000%</td>
+                        </tr>
+                        <tr>
+                          <td className="p-1.5 border border-slate-200 text-center font-bold">2</td>
+                          <td className="p-1.5 border border-slate-200 font-semibold">Niacinamide Pure IP (Active)</td>
+                          <td className="p-1.5 border border-slate-200 text-center font-mono">RM-NIA-03</td>
+                          <td className="p-1.5 border border-slate-200 text-right font-mono">0.100</td>
+                          <td className="p-1.5 border border-slate-200 text-right font-mono font-bold">10.000</td>
+                          <td className="p-1.5 border border-slate-200 text-center font-bold">KGS</td>
+                          <td className="p-1.5 border border-slate-200 text-right font-mono font-bold text-sky-700">10.000%</td>
+                        </tr>
+                        <tr>
+                          <td className="p-1.5 border border-slate-200 text-center font-bold">3</td>
+                          <td className="p-1.5 border border-slate-200 font-semibold">Glycerin IP 99.5% (Humectant)</td>
+                          <td className="p-1.5 border border-slate-200 text-center font-mono">RM-GLY-02</td>
+                          <td className="p-1.5 border border-slate-200 text-right font-mono">0.050</td>
+                          <td className="p-1.5 border border-slate-200 text-right font-mono font-bold">5.000</td>
+                          <td className="p-1.5 border border-slate-200 text-center font-bold">KGS</td>
+                          <td className="p-1.5 border border-slate-200 text-right font-mono font-bold text-sky-700">5.000%</td>
+                        </tr>
+                        <tr>
+                          <td className="p-1.5 border border-slate-200 text-center font-bold">4</td>
+                          <td className="p-1.5 border border-slate-200 font-semibold">Hyaluronic Acid (Sodium Hyaluronate)</td>
+                          <td className="p-1.5 border border-slate-200 text-center font-mono">RM-HYA-01</td>
+                          <td className="p-1.5 border border-slate-200 text-right font-mono">0.010</td>
+                          <td className="p-1.5 border border-slate-200 text-right font-mono font-bold">1.000</td>
+                          <td className="p-1.5 border border-slate-200 text-center font-bold">KGS</td>
+                          <td className="p-1.5 border border-slate-200 text-right font-mono font-bold text-sky-700">1.000%</td>
+                        </tr>
+                        <tr>
+                          <td className="p-1.5 border border-slate-200 text-center font-bold">5</td>
+                          <td className="p-1.5 border border-slate-200 font-semibold">Phenoxyethanol & Ethylhexylglycerin</td>
+                          <td className="p-1.5 border border-slate-200 text-center font-mono">RM-PHN-01</td>
+                          <td className="p-1.5 border border-slate-200 text-right font-mono">0.010</td>
+                          <td className="p-1.5 border border-slate-200 text-right font-mono font-bold">1.000</td>
+                          <td className="p-1.5 border border-slate-200 text-center font-bold">KGS</td>
+                          <td className="p-1.5 border border-slate-200 text-right font-mono font-bold text-sky-700">1.000%</td>
+                        </tr>
+                        <tr>
+                          <td className="p-1.5 border border-slate-200 text-center font-bold">6</td>
+                          <td className="p-1.5 border border-slate-200 font-semibold">Xanthan Gum (Viscosity Modifier)</td>
+                          <td className="p-1.5 border border-slate-200 text-center font-mono">RM-THK-01</td>
+                          <td className="p-1.5 border border-slate-200 text-right font-mono">0.030</td>
+                          <td className="p-1.5 border border-slate-200 text-right font-mono font-bold">3.000</td>
+                          <td className="p-1.5 border border-slate-200 text-center font-bold">KGS</td>
+                          <td className="p-1.5 border border-slate-200 text-right font-mono font-bold text-sky-700">3.000%</td>
+                        </tr>
+                      </tbody>
+                      <tfoot>
+                        <tr className="bg-slate-100 font-bold">
+                          <td colSpan={4} className="p-1.5 text-right">Total Batch Formulation:</td>
+                          <td className="p-1.5 text-right font-mono text-sky-800">100.000</td>
+                          <td className="p-1.5 text-center font-bold">KGS</td>
+                          <td className="p-1.5 text-right font-mono text-sky-800">100.000%</td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+
+                  {/* Packaging Materials */}
+                  <div className="space-y-1.5">
+                    <h3 className="text-xs font-bold text-[#0891b2] uppercase tracking-wider border-l-2 border-[#0891b2] pl-1.5">
+                      Part 2 — Primary & Secondary Packaging Materials Specification
+                    </h3>
+                    <table className="w-full text-[10px] text-left border-collapse border border-slate-200">
+                      <thead className="bg-[#0891b2] text-white font-bold">
+                        <tr>
+                          <th className="p-1.5 border border-cyan-700 w-6 text-center">#</th>
+                          <th className="p-1.5 border border-cyan-700">Packaging Component</th>
+                          <th className="p-1.5 border border-cyan-700 text-center w-20">Code</th>
+                          <th className="p-1.5 border border-cyan-700 text-right w-16">Qty/Unit</th>
+                          <th className="p-1.5 border border-cyan-700 text-right w-20">Units Required</th>
+                          <th className="p-1.5 border border-cyan-700 text-center w-12">UOM</th>
+                          <th className="p-1.5 border border-cyan-700 text-right w-20">Live Stock</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-200">
+                        <tr>
+                          <td className="p-1.5 border border-slate-200 text-center font-bold">1</td>
+                          <td className="p-1.5 border border-slate-200 font-semibold">Amber Glass Dropper Bottle 30 ml</td>
+                          <td className="p-1.5 border border-slate-200 text-center font-mono">PM-BOT-30</td>
+                          <td className="p-1.5 border border-slate-200 text-right font-mono">1.000</td>
+                          <td className="p-1.5 border border-slate-200 text-right font-mono font-bold">3334.000</td>
+                          <td className="p-1.5 border border-slate-200 text-center font-bold">PCS</td>
+                          <td className="p-1.5 border border-slate-200 text-right font-mono text-emerald-600 font-bold">4000</td>
+                        </tr>
+                        <tr>
+                          <td className="p-1.5 border border-slate-200 text-center font-bold">2</td>
+                          <td className="p-1.5 border border-slate-200 font-semibold">Glass Dropper Cap Assembly (Gold Collar)</td>
+                          <td className="p-1.5 border border-slate-200 text-center font-mono">PM-PMP-01</td>
+                          <td className="p-1.5 border border-slate-200 text-right font-mono">1.000</td>
+                          <td className="p-1.5 border border-slate-200 text-right font-mono font-bold">3334.000</td>
+                          <td className="p-1.5 border border-slate-200 text-center font-bold">PCS</td>
+                          <td className="p-1.5 border border-slate-200 text-right font-mono text-emerald-600 font-bold">4500</td>
+                        </tr>
+                        <tr>
+                          <td className="p-1.5 border border-slate-200 text-center font-bold">3</td>
+                          <td className="p-1.5 border border-slate-200 font-semibold">Printed Mono Carton Box 30ml</td>
+                          <td className="p-1.5 border border-slate-200 text-center font-mono">PM-CRT-01</td>
+                          <td className="p-1.5 border border-slate-200 text-right font-mono">1.000</td>
+                          <td className="p-1.5 border border-slate-200 text-right font-mono font-bold">3334.000</td>
+                          <td className="p-1.5 border border-slate-200 text-center font-bold">PCS</td>
+                          <td className="p-1.5 border border-slate-200 text-right font-mono text-emerald-600 font-bold">3800</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Signatures */}
+                  <div className="grid grid-cols-3 gap-4 pt-4 border-t border-slate-300 text-[10px] text-slate-600">
+                    <div>
+                      <div className="h-8 border-b border-slate-400 mb-1"></div>
+                      <p className="font-bold text-slate-900">Formulated & Verified By</p>
+                      <p>R&D Head / Lead Chemist</p>
+                    </div>
+                    <div>
+                      <div className="h-8 border-b border-slate-400 mb-1"></div>
+                      <p className="font-bold text-slate-900">Quality Assurance (QA)</p>
+                      <p>Approved & Certified</p>
+                    </div>
+                    <div>
+                      <div className="h-8 border-b border-slate-400 mb-1"></div>
+                      <p className="font-bold text-slate-900">Authorized Signatory</p>
+                      <p>Dermat India Operations</p>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+
+              <DialogFooter className="print:hidden">
+                <Button variant="outline" size="sm" onClick={() => setPdfBom(null)}>
+                  Close
+                </Button>
+                {pdfBom ? (
+                  <Button asChild variant="outline" size="sm">
+                    <Link href={`/backend/dermat_bom/${pdfBom.id}`}>Open Full BOM Detail</Link>
+                  </Button>
+                ) : null}
+                <Button size="sm" onClick={() => window.print()} className="gap-1.5 font-bold">
+                  <Printer className="h-3.5 w-3.5" />
+                  <span>Download / Print PDF</span>
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         </div>
       </PageBody>
       {ConfirmDialogElement}

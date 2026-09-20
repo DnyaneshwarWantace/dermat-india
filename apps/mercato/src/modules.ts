@@ -116,7 +116,6 @@ export const enabledModules: ModuleEntry[] = [
   { id: 'inbox_ops', from: '@open-mercato/core' },
   { id: 'integrations', from: '@open-mercato/core' },
   { id: 'widgets', from: '@open-mercato/core' },
-  { id: 'workflows', from: '@open-mercato/core' },
   // Dermat India custom modules — app-local (@app), not part of upstream core.
   { id: 'dermat_rm_master', from: '@app' },
   { id: 'dermat_pm_master', from: '@app' },
@@ -165,7 +164,6 @@ export const enabledModules: ModuleEntry[] = [
           // packages/core/src/modules/sales/backend; no override needed
           // for a route that no longer exists.)
           '/backend/sales/quotes': { metadata: { navHidden: true } },
-          '/backend/sales/channels': { metadata: { navHidden: true } },
         },
       },
     },

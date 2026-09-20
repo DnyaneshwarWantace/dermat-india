@@ -4,7 +4,7 @@ export const metadata = {
   pageTitle: 'Raw Materials',
   pageTitleKey: 'dermat_rm_master.page.title',
   pageGroup: 'Raw Materials',
-  pageGroupKey: 'dermat-1-rm-pm.nav.group',
+  pageGroupKey: 'dermat_rm_master.nav.group',
   pageOrder: 20,
   icon: 'flask-conical',
   breadcrumb: [{ label: 'Raw Materials', labelKey: 'dermat_rm_master.page.title' }],

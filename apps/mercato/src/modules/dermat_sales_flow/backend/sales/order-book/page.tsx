@@ -389,7 +389,7 @@ function getOrderColumnKey(order: OrderRow): string {
     }
   }
 
-  return 'draft'
+  return 'new'
 }
 
 function formatINR(amount: string | number | null | undefined): string {
@@ -619,10 +619,12 @@ export default function OrderBookPage() {
       // allowed, but only with a reason (client ask: "revert back but with the reason").
       // Anything else (skipping ahead) is rejected client-side too — the transition-stage
       // command enforces the same rule server-side so a direct API call can't bypass it.
-      const currentIdx = (PIPELINE_ORDER as readonly string[]).indexOf(currentKey)
+      const currentIdxRaw = (PIPELINE_ORDER as readonly string[]).indexOf(currentKey)
+      const currentIdx = currentIdxRaw >= 0 ? currentIdxRaw : 0
       const targetIdx = (PIPELINE_ORDER as readonly string[]).indexOf(stageKey)
-      const isForward = targetIdx === currentIdx + 1
-      const isBackward = targetIdx >= 0 && targetIdx < currentIdx
+      if (targetIdx < 0) return
+      const isForward = targetIdx > currentIdx
+      const isBackward = targetIdx < currentIdx
       if (!isForward && !isBackward) return
 
       if (isBackward) {

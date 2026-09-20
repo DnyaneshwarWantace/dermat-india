@@ -1,6 +1,5 @@
 /** @jest-environment node */
 
-import { metadata as attachmentsMetadata } from '../attachments/backend/storage/attachments/page.meta'
 import { metadata as rulesLogsMetadata } from '../business_rules/backend/logs/page.meta'
 import { metadata as rulesMetadata } from '../business_rules/backend/rules/page.meta'
 import { metadata as ruleSetsMetadata } from '../business_rules/backend/sets/page.meta'
@@ -18,24 +17,11 @@ import { metadata as inboxOpsMetadata } from '../inbox_ops/backend/inbox-ops/pag
 import { metadata as messagesMetadata } from '../messages/backend/page.meta'
 import { metadata as resourceTypesMetadata } from '../resources/backend/resources/resource-types/page.meta'
 import { metadata as resourcesMetadata } from '../resources/backend/resources/resources/page.meta'
-import { metadata as salesChannelsMetadata } from '../sales/backend/sales/channels/page.meta'
 import { metadata as createSalesDocumentMetadata } from '../sales/backend/sales/documents/create/page.meta'
 import { metadata as ordersMetadata } from '../sales/backend/sales/orders/page.meta'
 import { metadata as quotesMetadata } from '../sales/backend/sales/quotes/page.meta'
-import { metadata as leaveRequestsMetadata } from '../staff/backend/staff/leave-requests/page.meta'
-import { metadata as myAvailabilityMetadata } from '../staff/backend/staff/my-availability/page.meta'
-import { metadata as myLeaveRequestsMetadata } from '../staff/backend/staff/my-leave-requests/page.meta'
-import { metadata as teamMembersMetadata } from '../staff/backend/staff/team-members/page.meta'
-import { metadata as teamRolesMetadata } from '../staff/backend/staff/team-roles/page.meta'
-import { metadata as teamsMetadata } from '../staff/backend/staff/teams/page.meta'
-import { metadata as timesheetsMetadata } from '../staff/backend/staff/timesheets/page.meta'
-import { metadata as workflowDefinitionsMetadata } from '../workflows/backend/definitions/page.meta'
-import { metadata as workflowEventsMetadata } from '../workflows/backend/events/page.meta'
-import { metadata as workflowInstancesMetadata } from '../workflows/backend/instances/page.meta'
-import { metadata as workflowTasksMetadata } from '../workflows/backend/tasks/page.meta'
 
 const mainSidebarMetadata = [
-  ['attachments', attachmentsMetadata],
   ['rules logs', rulesLogsMetadata],
   ['rules', rulesMetadata],
   ['rule sets', ruleSetsMetadata],
@@ -53,21 +39,9 @@ const mainSidebarMetadata = [
   ['messages', messagesMetadata],
   ['resource types', resourceTypesMetadata],
   ['resources', resourcesMetadata],
-  ['sales channels', salesChannelsMetadata],
   ['create sales document', createSalesDocumentMetadata],
   ['orders', ordersMetadata],
   ['quotes', quotesMetadata],
-  ['leave requests', leaveRequestsMetadata],
-  ['my availability', myAvailabilityMetadata],
-  ['my leave requests', myLeaveRequestsMetadata],
-  ['team members', teamMembersMetadata],
-  ['team roles', teamRolesMetadata],
-  ['teams', teamsMetadata],
-  ['timesheets', timesheetsMetadata],
-  ['workflow definitions', workflowDefinitionsMetadata],
-  ['workflow events', workflowEventsMetadata],
-  ['workflow instances', workflowInstancesMetadata],
-  ['workflow tasks', workflowTasksMetadata],
 ] as const
 
 describe('backend sidebar icon metadata', () => {

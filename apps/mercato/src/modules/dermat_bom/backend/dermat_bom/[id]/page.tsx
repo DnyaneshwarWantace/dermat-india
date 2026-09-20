@@ -202,9 +202,10 @@ export default function BomDetailPage({ params }: { params?: { id?: string } }) 
         }
 
         // Fetch DB masters with fallback to default catalog to ensure dropdown is ALWAYS full
-        const [rmCall, pmCall, allBomsCall] = await Promise.all([
+        const [rmCall, pmCall, catalogCall, allBomsCall] = await Promise.all([
           apiCall<{ items: RawMaterialOption[] }>(`/api/dermat_rm_master/rm_master?pageSize=200`),
           apiCall<{ items: PackagingMaterialOption[] }>(`/api/dermat_pm_master/pm_master?pageSize=200`),
+          apiCall<{ items: Array<{ id: string; title: string; sku?: string | null }> }>(`/api/catalog/products?pageSize=100`),
           apiCall<{ items: any[] }>(`/api/dermat_bom/boms?pageSize=200`),
         ])
 
@@ -212,6 +213,21 @@ export default function BomDetailPage({ params }: { params?: { id?: string } }) 
         DEFAULT_RAW_MATERIALS.forEach((item) => {
           rmMap[item.id] = item
         })
+        if (catalogCall.ok && catalogCall.result?.items) {
+          for (const item of catalogCall.result.items) {
+            const sku = item.sku || ''
+            const isRm = sku.startsWith('RM-') || item.title.toLowerCase().includes('water') || item.title.toLowerCase().includes('acid') || item.title.toLowerCase().includes('glycerin') || item.title.toLowerCase().includes('extract') || item.title.toLowerCase().includes('powder') || item.title.toLowerCase().includes('gum')
+            if (isRm) {
+              rmMap[item.id] = {
+                id: item.id,
+                name: item.title,
+                code: item.sku || 'RM-RAW',
+                unit: 'KGS',
+                stock: 100,
+              }
+            }
+          }
+        }
         if (rmCall.ok && rmCall.result?.items) {
           for (const item of rmCall.result.items) {
             rmMap[item.id] = {
@@ -226,6 +242,21 @@ export default function BomDetailPage({ params }: { params?: { id?: string } }) 
         DEFAULT_PACKAGING_MATERIALS.forEach((item) => {
           pmMap[item.id] = item
         })
+        if (catalogCall.ok && catalogCall.result?.items) {
+          for (const item of catalogCall.result.items) {
+            const sku = item.sku || ''
+            const isPm = sku.startsWith('PM-') || item.title.toLowerCase().includes('bottle') || item.title.toLowerCase().includes('cap') || item.title.toLowerCase().includes('carton') || item.title.toLowerCase().includes('jar') || item.title.toLowerCase().includes('tube') || item.title.toLowerCase().includes('box') || item.title.toLowerCase().includes('label')
+            if (isPm) {
+              pmMap[item.id] = {
+                id: item.id,
+                name: item.title,
+                code: item.sku || 'PM-MAT',
+                unit: 'PCS',
+                stock: 3000,
+              }
+            }
+          }
+        }
         if (pmCall.ok && pmCall.result?.items) {
           for (const item of pmCall.result.items) {
             pmMap[item.id] = {

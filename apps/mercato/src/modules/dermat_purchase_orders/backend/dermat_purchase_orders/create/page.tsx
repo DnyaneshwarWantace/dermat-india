@@ -198,8 +198,9 @@ export default function CreateDermatPurchaseOrderPage() {
   React.useEffect(() => {
     async function loadData() {
       try {
-        const [vendorRes, rmRes, pmRes] = await Promise.all([
+        const [vendorRes, catalogRes, rmRes, pmRes] = await Promise.all([
           apiCall<{ items?: VendorOption[] }>('/api/dermat_vendors/vendors?pageSize=200'),
+          apiCall<{ items?: Array<{ id: string; title: string; sku?: string | null; description?: string | null }> }>('/api/catalog/products?pageSize=100'),
           apiCall<{ items?: any[] }>('/api/dermat_rm_master/rm_master?pageSize=200'),
           apiCall<{ items?: any[] }>('/api/dermat_pm_master/pm_master?pageSize=200'),
         ])
@@ -217,31 +218,54 @@ export default function CreateDermatPurchaseOrderPage() {
 
         const combinedItems: CatalogItem[] = []
 
+        if (catalogRes.ok && catalogRes.result?.items) {
+          catalogRes.result.items.forEach((item) => {
+            const sku = item.sku || ''
+            const isPm = sku.startsWith('PM-') || item.title.toLowerCase().includes('bottle') || item.title.toLowerCase().includes('cap') || item.title.toLowerCase().includes('carton') || item.title.toLowerCase().includes('jar') || item.title.toLowerCase().includes('tube') || item.title.toLowerCase().includes('box') || item.title.toLowerCase().includes('label')
+            const isRm = sku.startsWith('RM-') || item.title.toLowerCase().includes('water') || item.title.toLowerCase().includes('acid') || item.title.toLowerCase().includes('glycerin') || item.title.toLowerCase().includes('extract') || item.title.toLowerCase().includes('powder')
+            if (isPm || isRm) {
+              combinedItems.push({
+                id: item.id,
+                title: item.title,
+                sku: item.sku,
+                type: isPm ? 'packaging_material' : 'raw_material',
+                uom: isPm ? 'Pcs' : 'Kg',
+                rate: isPm ? 15 : (sku.includes('NIA') ? 1850 : sku.includes('HYA') ? 14500 : sku.includes('SAL') ? 450 : 250),
+                default_pack: isPm ? '1000 Pcs Box' : '25 Kg Drum',
+              })
+            }
+          })
+        }
+
         if (rmRes.ok && rmRes.result?.items) {
           rmRes.result.items.forEach((rm: any) => {
-            combinedItems.push({
-              id: rm.id,
-              title: rm.name,
-              sku: rm.code,
-              type: 'raw_material',
-              uom: rm.unit || 'Kg',
-              rate: Number(rm.standard_cost || rm.rate || 0),
-              default_pack: `${rm.pack_size || 25} ${rm.unit || 'Kg'} Drum`,
-            })
+            if (!combinedItems.some((c) => c.sku === rm.code || c.title === rm.name)) {
+              combinedItems.push({
+                id: rm.id,
+                title: rm.name,
+                sku: rm.code,
+                type: 'raw_material',
+                uom: rm.unit || 'Kg',
+                rate: Number(rm.standard_cost || rm.rate || 0),
+                default_pack: `${rm.pack_size || 25} ${rm.unit || 'Kg'} Drum`,
+              })
+            }
           })
         }
 
         if (pmRes.ok && pmRes.result?.items) {
           pmRes.result.items.forEach((pm: any) => {
-            combinedItems.push({
-              id: pm.id,
-              title: pm.name,
-              sku: pm.code,
-              type: 'packaging_material',
-              uom: pm.unit || 'Pcs',
-              rate: Number(pm.standard_cost || pm.rate || 0),
-              default_pack: '1000 Pcs Box',
-            })
+            if (!combinedItems.some((c) => c.sku === pm.code || c.title === pm.name)) {
+              combinedItems.push({
+                id: pm.id,
+                title: pm.name,
+                sku: pm.code,
+                type: 'packaging_material',
+                uom: pm.unit || 'Pcs',
+                rate: Number(pm.standard_cost || pm.rate || 0),
+                default_pack: '1000 Pcs Box',
+              })
+            }
           })
         }
 
@@ -519,7 +543,7 @@ export default function CreateDermatPurchaseOrderPage() {
         },
       }
 
-      const res = await createCrud('/api/dermat_purchase_orders/purchase-orders', payload)
+      const res = await createCrud('dermat_purchase_orders/purchase-orders', payload)
       flash(
         isDraft ? 'Purchase Order draft saved successfully' : `Purchase Order ${poNumber} issued successfully!`,
         'success'
