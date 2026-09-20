@@ -24,6 +24,7 @@ export const metadata = {
   pageGroup: 'System',
   pageGroupKey: 'settings.sections.system',
   pageOrder: 1,
+  navHidden: true,
   icon: heartbeatIcon,
   pageContext: 'settings' as const,
   breadcrumb: [

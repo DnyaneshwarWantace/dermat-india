@@ -28,6 +28,7 @@ export const metadata = {
   pageGroup: 'System',
   pageGroupKey: 'settings.sections.system',
   pageOrder: 3,
+  navHidden: true,
   icon: cacheIcon,
   pageContext: 'settings' as const,
   breadcrumb: [

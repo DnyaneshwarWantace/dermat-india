@@ -165,6 +165,9 @@ export const enabledModules: ModuleEntry[] = [
           // packages/core/src/modules/sales/backend; no override needed
           // for a route that no longer exists.)
           '/backend/sales/quotes': { metadata: { navHidden: true } },
+          '/backend/config/system-status': { metadata: { navHidden: true } },
+          '/backend/config/cache': { metadata: { navHidden: true } },
+          '/backend/config/module-telemetry': { metadata: { navHidden: true } },
         },
       },
     },
