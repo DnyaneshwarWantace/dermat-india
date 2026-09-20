@@ -157,11 +157,6 @@ export async function seedAnalyticsData(
       organizationId: scope.organizationId,
       tenantId: scope.tenantId,
       entity: customer,
-      legalName: `${companyName} Inc.`,
-      brandName: companyName,
-      industry: randomElement(['Technology', 'Manufacturing', 'Retail', 'Services', 'Healthcare']),
-      sizeBucket: randomElement(['small', 'medium', 'large', 'enterprise']),
-      annualRevenue: toAmount(randomFloat(100000, 50000000)),
       createdAt: customerCreatedAt,
       updatedAt: customerCreatedAt,
     })

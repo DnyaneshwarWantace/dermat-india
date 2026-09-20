@@ -242,7 +242,7 @@ export default function CreateOrderPage() {
   const [variantMode, setVariantMode] = React.useState<'existing' | 'new_variant'>('existing')
   const [selectedExistingVariantId, setSelectedExistingVariantId] = React.useState<string>('Standard')
   const [existingVariants, setExistingVariants] = React.useState<
-    Array<{ id: string; name: string; sku?: string | null; packSize?: string; uom?: string; mrp?: string; rate?: string | null; shelfLife?: string; isDefault?: boolean }>
+    Array<{ id: string; name: string; sku?: string | null; packSize?: string; uom?: string; mrp?: string; rate?: string | null; gstPercent?: string; gstTaxCategory?: string; shelfLife?: string; isDefault?: boolean }>
   >([])
   const [loadingVariants, setLoadingVariants] = React.useState(false)
 

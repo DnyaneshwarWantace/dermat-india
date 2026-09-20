@@ -14,6 +14,8 @@ import { useT } from '@open-mercato/shared/lib/i18n/context'
 import { extractCustomFieldEntries } from '@open-mercato/shared/lib/crud/custom-fields-client'
 import { E } from '#generated/entities.ids.generated'
 import { SendObjectMessageDialog } from '@open-mercato/ui/backend/messages'
+import { CategorySelect } from '@open-mercato/core/modules/catalog/components/categories/CategorySelect'
+import { CategorySlugFieldSync } from '@open-mercato/core/modules/catalog/components/categories/CategorySlugFieldSync'
 
 type CategoryRow = {
   id: string
