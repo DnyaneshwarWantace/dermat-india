@@ -10,7 +10,6 @@ import { profilePathPrefixes } from '@open-mercato/core/modules/auth/lib/profile
 import { APP_VERSION } from '@open-mercato/shared/lib/version'
 import { parseBooleanWithDefault } from '@open-mercato/shared/lib/boolean'
 import { PageInjectionBoundary } from '@open-mercato/ui/backend/injection/PageInjectionBoundary'
-import { DemoFeedbackWidget } from '@/components/DemoFeedbackWidget'
 import { BackendHeaderChrome } from '@/components/BackendHeaderChrome'
 
 function collectStaticSettingsPathPrefixes(): string[] {
@@ -134,7 +133,6 @@ export default async function BackendLayout({
         <PageInjectionBoundary path={path} context={injectionContext}>
           {children}
         </PageInjectionBoundary>
-        {demoModeEnabled ? <DemoFeedbackWidget demoModeEnabled={demoModeEnabled} /> : null}
       </AppShell>
     </I18nProvider>
   )
