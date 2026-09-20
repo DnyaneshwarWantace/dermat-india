@@ -2,6 +2,7 @@
 
 import * as React from 'react'
 import Link from 'next/link'
+import { randomUUID } from '@open-mercato/shared/lib/id/randomUUID'
 import { Mail } from 'lucide-react'
 import { Button } from '@open-mercato/ui/primitives/button'
 import {
@@ -356,7 +357,7 @@ export function PersonEmailThreadsTab({ personId, defaultRecipient }: PersonEmai
       // replaced by the server record once the worker links it. Requires a
       // messageId so reconciliation can dedupe; otherwise fall back to polling.
       if (messageId) {
-        const clientId = crypto.randomUUID()
+        const clientId = randomUUID()
         const message = buildOptimisticMessage(clientId, messageId, values, 'sending')
         setOptimistic((prev) => [
           ...prev,

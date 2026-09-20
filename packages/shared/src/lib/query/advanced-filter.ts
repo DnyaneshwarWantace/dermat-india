@@ -1,4 +1,5 @@
 import { buildIlikeTerm } from '../db/buildIlikeTerm'
+import { randomUUID } from '../id/randomUUID'
 
 export type FilterOperator =
   | 'is' | 'is_not' | 'contains' | 'does_not_contain' | 'starts_with' | 'ends_with' | 'is_empty' | 'is_not_empty'
@@ -82,7 +83,7 @@ export function isValuelessOperator(operator: FilterOperator): boolean {
 
 export function createEmptyCondition(): FilterCondition {
   return {
-    id: crypto.randomUUID(),
+    id: randomUUID(),
     field: '',
     operator: 'contains',
     value: '',
@@ -382,7 +383,7 @@ function readTreeGroup(prefix: string, query: Record<string, unknown>): TreeFilt
       if (!isUsableFilterField(field)) continue
       const rawVal = query[`${childPrefix}[value]`]
       children.push({
-        id: crypto.randomUUID(),
+        id: randomUUID(),
         type: 'rule',
         field,
         operator: op as FilterOperator,
@@ -396,7 +397,7 @@ function readTreeGroup(prefix: string, query: Record<string, unknown>): TreeFilt
     }
   }
   return {
-    id: crypto.randomUUID(),
+    id: randomUUID(),
     type: 'group',
     combinator: combRaw as TreeFilterCombinator,
     children,
@@ -426,7 +427,7 @@ export function isAdvancedFilterState(value: unknown): value is AdvancedFilterSt
  */
 export function flatToTree(flat: AdvancedFilterState): AdvancedFilterTree {
   if (flat.conditions.length === 0) {
-    return { root: { id: crypto.randomUUID(), type: 'group', combinator: 'and', children: [] } }
+    return { root: { id: randomUUID(), type: 'group', combinator: 'and', children: [] } }
   }
 
   // Step A: split into AND-runs separated by OR connectors. The first row's `join`
@@ -439,7 +440,7 @@ export function flatToTree(flat: AdvancedFilterState): AdvancedFilterTree {
   }
 
   const ruleFromCondition = (c: FilterCondition): TreeFilterRule => ({
-    id: crypto.randomUUID(),
+    id: randomUUID(),
     type: 'rule',
     field: c.field,
     operator: c.operator,
@@ -450,7 +451,7 @@ export function flatToTree(flat: AdvancedFilterState): AdvancedFilterTree {
   const orChildren: Array<TreeFilterRule | TreeFilterGroup> = andRuns.map((run) => {
     if (run.length === 1) return ruleFromCondition(run[0])
     return {
-      id: crypto.randomUUID(),
+      id: randomUUID(),
       type: 'group',
       combinator: 'and',
       children: run.map(ruleFromCondition),
@@ -461,10 +462,10 @@ export function flatToTree(flat: AdvancedFilterState): AdvancedFilterTree {
   if (orChildren.length === 1) {
     const only = orChildren[0]
     if (only.type === 'group') return { root: only }
-    return { root: { id: crypto.randomUUID(), type: 'group', combinator: 'and', children: [only] } }
+    return { root: { id: randomUUID(), type: 'group', combinator: 'and', children: [only] } }
   }
   return {
-    root: { id: crypto.randomUUID(), type: 'group', combinator: 'or', children: orChildren },
+    root: { id: randomUUID(), type: 'group', combinator: 'or', children: orChildren },
   }
 }
 
