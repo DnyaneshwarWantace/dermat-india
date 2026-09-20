@@ -239,12 +239,12 @@ async function handleLoginRequest(req: Request) {
     : undefined
 
   const res = NextResponse.json(interceptedBody, { status: interceptedResponse.statusCode })
-  res.cookies.set('auth_token', authTokenForCookie, { httpOnly: true, path: '/', sameSite: 'lax', secure: process.env.NODE_ENV === 'production', maxAge: accessTokenMaxAgeSeconds })
+  res.cookies.set('auth_token', authTokenForCookie, { httpOnly: true, path: '/', sameSite: 'lax', secure: process.env.NODE_ENV === 'production' && process.env.ALLOW_INSECURE_HTTP_COOKIES !== 'true', maxAge: accessTokenMaxAgeSeconds })
   if (remember && refreshTokenForCookie) {
     const expiresAt = new Date(Date.now() + rememberMeDays * 24 * 60 * 60 * 1000)
-    res.cookies.set('session_token', refreshTokenForCookie, { httpOnly: true, path: '/', sameSite: 'lax', secure: process.env.NODE_ENV === 'production', expires: expiresAt })
+    res.cookies.set('session_token', refreshTokenForCookie, { httpOnly: true, path: '/', sameSite: 'lax', secure: process.env.NODE_ENV === 'production' && process.env.ALLOW_INSECURE_HTTP_COOKIES !== 'true', expires: expiresAt })
   } else if (!remember && authTokenForCookie === token) {
-    res.cookies.set('session_token', sessionRefreshToken, { httpOnly: true, path: '/', sameSite: 'lax', secure: process.env.NODE_ENV === 'production', maxAge: accessTokenMaxAgeSeconds })
+    res.cookies.set('session_token', sessionRefreshToken, { httpOnly: true, path: '/', sameSite: 'lax', secure: process.env.NODE_ENV === 'production' && process.env.ALLOW_INSECURE_HTTP_COOKIES !== 'true', maxAge: accessTokenMaxAgeSeconds })
   }
   return res
 }
