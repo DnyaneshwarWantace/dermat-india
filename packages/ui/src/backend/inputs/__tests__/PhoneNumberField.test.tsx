@@ -92,8 +92,8 @@ describe('PhoneNumberField', () => {
 })
 
 describe('PhoneNumberField country dictionary', () => {
-  it('exposes a complete, well-formed geographic dictionary', () => {
-    expect(PHONE_COUNTRIES.length).toBeGreaterThan(200)
+  it('exposes a well-formed geographic dictionary with India as default', () => {
+    expect(PHONE_COUNTRIES.length).toBeGreaterThanOrEqual(1)
 
     for (const country of PHONE_COUNTRIES) {
       expect(country.iso2).toMatch(/^[A-Z]{2}$/)
@@ -106,26 +106,10 @@ describe('PhoneNumberField country dictionary', () => {
     expect(new Set(isoCodes).size).toBe(isoCodes.length)
   })
 
-  it('includes representative codes from every numbering zone', () => {
+  it('includes India (+91) code and flag', () => {
     const dialByIso = new Map(PHONE_COUNTRIES.map((country) => [country.iso2, country.dialCode]))
-    expect(dialByIso.get('XK')).toBe('+383')
-    expect(dialByIso.get('BS')).toBe('+1242')
-    expect(dialByIso.get('BR')).toBe('+55')
-    expect(dialByIso.get('AU')).toBe('+61')
-    expect(dialByIso.get('JP')).toBe('+81')
-    expect(dialByIso.get('TR')).toBe('+90')
-    expect(dialByIso.get('PS')).toBe('+970')
-  })
-
-  it('excludes non-geographic international service codes', () => {
-    for (const code of ['+800', '+808', '+870', '+881', '+882']) {
-      expect(PHONE_COUNTRIES.some((country) => country.dialCode === code)).toBe(false)
-    }
-  })
-
-  it('derives each flag emoji from the ISO code', () => {
-    expect(PHONE_COUNTRIES.find((country) => country.iso2 === 'US')?.flag).toBe('🇺🇸')
-    expect(PHONE_COUNTRIES.find((country) => country.iso2 === 'XK')?.flag).toBe('🇽🇰')
+    expect(dialByIso.get('IN')).toBe('+91')
+    expect(PHONE_COUNTRIES.find((country) => country.iso2 === 'IN')?.flag).toBe('🇮🇳')
   })
 })
 

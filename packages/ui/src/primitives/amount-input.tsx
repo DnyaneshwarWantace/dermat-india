@@ -30,11 +30,7 @@ export type AmountCurrency = {
  * unrecognised.
  */
 export const AMOUNT_CURRENCIES: AmountCurrency[] = [
-  { code: 'INR', symbol: '₹', label: 'Indian Rupee', flag: '🇮🇳' },
-  { code: 'USD', symbol: '$', label: 'US Dollar', flag: '🇺🇸' },
-  { code: 'EUR', symbol: '€', label: 'Euro', flag: '🇪🇺' },
-  { code: 'GBP', symbol: '£', label: 'Pound Sterling', flag: '🇬🇧' },
-  { code: 'AED', symbol: 'AED', label: 'UAE Dirham', flag: '🇦🇪' },
+  { code: 'INR', symbol: '₹', label: 'Indian Rupee (₹)', flag: '🇮🇳' },
 ]
 
 const DEFAULT_CURRENCY = AMOUNT_CURRENCIES[0]
