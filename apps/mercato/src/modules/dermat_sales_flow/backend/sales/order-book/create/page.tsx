@@ -20,13 +20,6 @@ import {
   SelectValue,
 } from '@open-mercato/ui/primitives/select'
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from '@open-mercato/ui/primitives/dialog'
-import {
   Trash2,
   Plus,
   Building2,
@@ -234,13 +227,15 @@ export default function CreateOrderPage() {
   const [catalogProducts, setCatalogProducts] = React.useState<CatalogProductItem[]>([])
   const [loadingCatalog, setLoadingCatalog] = React.useState(false)
 
-  // Inline Product / Formulation Dialog state
-  const [newProductDialogOpen, setNewProductDialogOpen] = React.useState(false)
+  // Inline Product / Variation panel state — a line's panel is expanded directly
+  // below its row when targetLineKey matches that line's key (no modal).
   const [targetLineKey, setTargetLineKey] = React.useState<string | null>(null)
   const [prodModalMode, setProdModalMode] = React.useState<'existing' | 'new'>('existing')
   const [selectedExistingProdId, setSelectedExistingProdId] = React.useState<string>('')
   const [variantMode, setVariantMode] = React.useState<'existing' | 'new_variant'>('existing')
-  const [selectedExistingVariantId, setSelectedExistingVariantId] = React.useState<string>('Standard')
+  // Multi-select: lets the user attach several variations (e.g. 30ml + 50ml) of the
+  // same product to the order in one go, one order line per selected variation.
+  const [selectedVariantIds, setSelectedVariantIds] = React.useState<string[]>([])
   const [existingVariants, setExistingVariants] = React.useState<
     Array<{ id: string; name: string; sku?: string | null; packSize?: string; uom?: string; mrp?: string; rate?: string | null; gstPercent?: string; gstTaxCategory?: string; shelfLife?: string; isDefault?: boolean }>
   >([])
@@ -498,7 +493,7 @@ export default function CreateOrderPage() {
         }))
         setExistingVariants(mapped)
         if (mapped[0]) {
-          setSelectedExistingVariantId(mapped[0].id)
+          setSelectedVariantIds([mapped[0].id])
           setNewProdVariantName(mapped[0].name)
           setNewProdPackSize(mapped[0].packSize || '50')
           setNewProdUom(mapped[0].uom || 'ml')
@@ -506,25 +501,35 @@ export default function CreateOrderPage() {
           if (mapped[0].rate) setNewProdRate(mapped[0].rate)
           if (mapped[0].gstPercent) setNewProdGstPercent(mapped[0].gstPercent)
           if (mapped[0].shelfLife) setNewProdShelfLife(mapped[0].shelfLife)
+        } else {
+          setSelectedVariantIds([])
         }
       } else {
         setExistingVariants([{ id: 'Standard', name: 'Standard (50ml)', packSize: '50', uom: 'ml', mrp: '599', gstPercent: '18', shelfLife: '24 Months' }])
-        setSelectedExistingVariantId('Standard')
+        setSelectedVariantIds(['Standard'])
       }
     } catch {
       setExistingVariants([{ id: 'Standard', name: 'Standard (50ml)', packSize: '50', uom: 'ml', mrp: '599', gstPercent: '18', shelfLife: '24 Months' }])
-      setSelectedExistingVariantId('Standard')
+      setSelectedVariantIds(['Standard'])
     } finally {
       setLoadingVariants(false)
     }
   }, [])
 
-  // Open inline formulation dialog (supports both existing catalog formulation and new recipe modes)
-  const openNewProductDialog = React.useCallback(
+  // Expand the inline Product & Variation panel directly under a line's row
+  // (supports both existing-catalog and brand-new-product modes). Clicking the
+  // same trigger again while that line's panel is already open in the same mode
+  // collapses it, so the row link doubles as an open/close toggle.
+  const openLineProductPanel = React.useCallback(
     (lineKey: string, mode: 'existing' | 'new' = 'existing', preselectedProdId?: string) => {
+      if (targetLineKey === lineKey && prodModalMode === mode) {
+        setTargetLineKey(null)
+        return
+      }
       setTargetLineKey(lineKey)
       const currentLine = lines.find((l) => l.key === lineKey)
       setProdModalMode(mode)
+      setSelectedVariantIds([])
 
       const effectiveProdId =
         preselectedProdId ||
@@ -568,8 +573,6 @@ export default function CreateOrderPage() {
       setNewProdQuantity(currentLine?.quantity || '500')
       setNewProdRate(currentLine?.rate || '180')
       setNewProdGstPercent(currentLine?.gstPercent || '18')
-
-      setNewProductDialogOpen(true)
     },
     [lines, selectedCustomer, catalogProducts, loadVariantsForProduct]
   )
@@ -588,10 +591,19 @@ export default function CreateOrderPage() {
       let productCode = newProdCode.trim()
       let productCategory = newProdCategory.trim()
       let baseUom = newProdBaseUom.trim()
-      let variantName = newProdVariantName.trim() || 'Standard'
-      let packSize = newProdPackSize.trim()
-      let packUom = newProdUom.trim()
-      let mrp = newProdMrp.trim()
+
+      // One entry per order line this save should produce — normally 1, but
+      // multiple when the user multi-selects several existing variations
+      // (e.g. 30ml + 50ml "both") to attach at once.
+      type AttachEntry = { variantName: string; packSize: string; packUom: string; mrp: string; rate: string; gstPercent: string }
+      let attachEntries: AttachEntry[] = [{
+        variantName: newProdVariantName.trim() || 'Standard',
+        packSize: newProdPackSize.trim(),
+        packUom: newProdUom.trim(),
+        mrp: newProdMrp.trim(),
+        rate: newProdRate.trim(),
+        gstPercent: newProdGstPercent.trim() || '18',
+      }]
 
       if (prodModalMode === 'new') {
         if (!newProdTitle.trim()) {
@@ -704,47 +716,80 @@ export default function CreateOrderPage() {
         }
         await createCrud('catalog/variants', variantPayload)
       } else if (prodModalMode === 'existing' && variantMode === 'existing') {
-        const matchedVar = existingVariants.find((v) => v.id === selectedExistingVariantId)
-        if (matchedVar) {
-          variantName = matchedVar.name
-          packSize = matchedVar.packSize || packSize
-          packUom = matchedVar.uom || packUom
-          mrp = matchedVar.mrp || mrp
+        const chosen = existingVariants.filter((v) => selectedVariantIds.includes(v.id))
+        if (!chosen.length) {
+          flash('Select at least one variation (or add a new one)', 'error')
+          setCreatingProduct(false)
+          return
         }
+        attachEntries = chosen.map((v) => ({
+          variantName: v.name,
+          packSize: v.packSize || newProdPackSize.trim(),
+          packUom: v.uom || newProdUom.trim(),
+          mrp: v.mrp || newProdMrp.trim(),
+          rate: v.rate || newProdRate.trim(),
+          gstPercent: v.gstPercent || newProdGstPercent.trim() || '18',
+        }))
       }
 
-      // Attach to active target line
+      // Attach to the active target line — the first entry mutates that line in
+      // place, any further entries (multi-selected variations) append new lines.
       if (targetLineKey) {
-        setLines((prev) =>
-          prev.map((l) =>
-            l.key === targetLineKey
-              ? {
-                  ...l,
-                  productId,
-                  productLabel: productTitle,
-                  productCode,
-                  category: productCategory || 'Serum',
-                  variantSku: variantName || 'Standard',
-                  brandName: clientBrand,
-                  packSize: packSize || l.packSize || '50',
-                  uom: packUom || l.uom || 'ml',
-                  quantity: newProdQuantity.trim() || l.quantity || '500',
-                  rate: newProdRate.trim() || l.rate || '180',
-                  gstPercent: newProdGstPercent.trim() || l.gstPercent || '18',
-                  mrp: mrp || l.mrp || '599',
-                }
-              : l
+        const [first, ...rest] = attachEntries
+        if (first) {
+          setLines((prev) =>
+            prev.map((l) =>
+              l.key === targetLineKey
+                ? {
+                    ...l,
+                    productId,
+                    productLabel: productTitle,
+                    productCode,
+                    category: productCategory || 'Serum',
+                    variantSku: first.variantName || 'Standard',
+                    brandName: clientBrand,
+                    packSize: first.packSize || l.packSize || '50',
+                    uom: first.packUom || l.uom || 'ml',
+                    quantity: newProdQuantity.trim() || l.quantity || '500',
+                    rate: first.rate || l.rate || '180',
+                    gstPercent: first.gstPercent || l.gstPercent || '18',
+                    mrp: first.mrp || l.mrp || '599',
+                  }
+                : l
+            )
           )
-        )
+        }
+        if (rest.length) {
+          setLines((prev) => [
+            ...prev,
+            ...rest.map((entry) => ({
+              ...makeEmptyLine(),
+              productId,
+              productLabel: productTitle,
+              productCode,
+              category: productCategory || 'Serum',
+              variantSku: entry.variantName || 'Standard',
+              brandName: clientBrand,
+              packSize: entry.packSize || '50',
+              uom: entry.packUom || 'ml',
+              quantity: newProdQuantity.trim() || '500',
+              rate: entry.rate || '180',
+              gstPercent: entry.gstPercent || '18',
+              mrp: entry.mrp || '599',
+            })),
+          ])
+        }
       }
 
       flash(
         prodModalMode === 'new'
           ? `New product "${productTitle}" created & attached to order!`
-          : `Product "${productTitle}" attached to order!`,
+          : attachEntries.length > 1
+            ? `${attachEntries.length} variations of "${productTitle}" attached to order!`
+            : `Product "${productTitle}" attached to order!`,
         'success'
       )
-      setNewProductDialogOpen(false)
+      setTargetLineKey(null)
     } catch (err) {
       flash(err instanceof Error ? err.message : 'Failed to save product', 'error')
     } finally {
@@ -754,7 +799,7 @@ export default function CreateOrderPage() {
     prodModalMode,
     selectedExistingProdId,
     variantMode,
-    selectedExistingVariantId,
+    selectedVariantIds,
     existingVariants,
     newProdTitle,
     newProdCode,
@@ -965,6 +1010,762 @@ export default function CreateOrderPage() {
     tenantId,
     router,
   ])
+
+  // Rendered inline under whichever order line has its Product & Variation
+  // panel expanded (targetLineKey) — same JSX element reused wherever it matches,
+  // so no separate modal/dialog is involved.
+  const productPanelContent = (
+      <div className="rounded-lg border-2 border-primary/25 bg-background shadow-sm">
+        <div className="p-4 space-y-4">
+            <div className="flex items-start justify-between gap-2 border-b pb-3">
+              <div>
+                <div className="flex items-center gap-2 text-sm font-semibold">
+                  {prodModalMode === 'existing' ? (
+                    <>
+                      <PackageCheck className="h-4 w-4 text-primary" />
+                      Select Product & Variation
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="h-4 w-4 text-amber-500" />
+                      Create New Product
+                    </>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {prodModalMode === 'existing'
+                    ? 'Choose an available product from the catalog, pick an existing variation or add a new variation, and attach it to your order.'
+                    : 'Register a brand-new product in the master catalog and attach it to your active order line.'}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setTargetLineKey(null)}
+                className="text-muted-foreground hover:text-foreground text-sm shrink-0"
+                title="Close"
+              >
+                {'✕'}
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              {/* TOP MODE TOGGLE: SELECT EXISTING PRODUCT VS CREATE NEW PRODUCT */}
+              <SegmentedControl
+                value={prodModalMode}
+                onValueChange={(val: any) => {
+                  setProdModalMode(val)
+                  if (val === 'existing') {
+                    const effId = selectedExistingProdId || catalogProducts[0]?.id || ''
+                    setSelectedExistingProdId(effId)
+                    if (effId) {
+                      const m = catalogProducts.find((p) => p.id === effId)
+                      setNewProdTitle(m?.title || '')
+                      setNewProdCode(m?.sku || '')
+                      setNewProdCategory(m?.category || 'Serum')
+                      setNewProdBaseUom(m?.baseUom || 'ml')
+                      loadVariantsForProduct(effId)
+                    }
+                  } else {
+                    setNewProdTitle('')
+                    setNewProdCode('')
+                    setNewProdDescription('')
+                  }
+                }}
+                className="w-full grid grid-cols-2"
+              >
+                <SegmentedControlItem value="existing" className="flex items-center justify-center gap-2 py-2">
+                  <PackageCheck className="h-4 w-4 text-primary" />
+                  <span className="font-medium text-xs">Select Existing Product</span>
+                </SegmentedControlItem>
+                <SegmentedControlItem value="new" className="flex items-center justify-center gap-2 py-2">
+                  <Sparkles className="h-4 w-4 text-amber-500" />
+                  <span className="font-medium text-xs">Create New Product</span>
+                </SegmentedControlItem>
+              </SegmentedControl>
+
+              {/* CLIENT & PRIVATE LABEL BRAND ASSIGNMENT */}
+              <div className="rounded-lg border border-primary/30 bg-primary/5 p-3.5 space-y-3">
+                <div className="flex items-center justify-between border-b border-primary/20 pb-2">
+                  <div className="flex items-center gap-2">
+                    <Building2 className="h-4 w-4 text-primary" />
+                    <h3 className="font-semibold text-xs text-primary uppercase tracking-wider">
+                      Client & Private Label Brand Assignment
+                    </h3>
+                  </div>
+                  {selectedCustomer ? (
+                    <span className="text-[11px] text-muted-foreground">
+                      Active: <strong className="text-foreground">{selectedCustomer.displayName}</strong>
+                    </span>
+                  ) : null}
+                </div>
+
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <div className="space-y-1">
+                    <Label className="text-xs font-medium">Customer / Client Company *</Label>
+                    <Select
+                      value={newProdCustomerId || selectedCustomer?.id || ''}
+                      onValueChange={(val) => {
+                        setNewProdCustomerId(val)
+                        const c = customerRows.find((item) => item.id === val)
+                        if (c) {
+                          setNewProdCustomerName(c.displayName)
+                          if (!newProdBrandName) setNewProdBrandName(c.displayName)
+                        }
+                      }}
+                    >
+                      <SelectTrigger className="text-xs h-9 bg-background">
+                        <SelectValue placeholder="Select Customer..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {customerRows.map((c) => (
+                          <SelectItem key={c.id} value={c.id} className="text-xs">
+                            {c.displayName} {c.gstin ? `(GST: ${c.gstin})` : ''}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-1">
+                    <Label className="text-xs font-medium">Private Label Brand Name *</Label>
+                    <Input
+                      value={newProdBrandName}
+                      onChange={(e) => setNewProdBrandName(e.target.value)}
+                      placeholder={selectedCustomer?.displayName || 'e.g. SkinGlo, DermaCare'}
+                      className="text-xs h-9 bg-background"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* ======================================================== */}
+              {/* MODE 1: SELECT EXISTING PRODUCT */}
+              {/* ======================================================== */}
+              {prodModalMode === 'existing' ? (
+                <div className="space-y-4">
+                  {/* SELECT PRODUCT FROM CATALOG */}
+                  <div className="rounded-lg border bg-muted/20 p-4 space-y-3">
+                    <div className="flex items-center justify-between border-b pb-2">
+                      <div className="flex items-center gap-2">
+                        <Package className="h-4 w-4 text-primary" />
+                        <h3 className="font-semibold text-xs uppercase tracking-wider text-muted-foreground">
+                          1. Select Product
+                        </h3>
+                      </div>
+                      <span className="text-[11px] text-muted-foreground font-mono">
+                        {customerMatchingProducts.length > 0
+                          ? `${customerMatchingProducts.length} linked to ${selectedCustomer?.displayName || 'Customer'} (${catalogProducts.length} total)`
+                          : `${catalogProducts.length} Available in Catalog`}
+                      </span>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label className="text-xs font-medium">Choose Product *</Label>
+                      <Select
+                        value={selectedExistingProdId}
+                        onValueChange={(val) => {
+                          setSelectedExistingProdId(val)
+                          const matched = catalogProducts.find((p) => p.id === val)
+                          if (matched) {
+                            setNewProdTitle(matched.title)
+                            setNewProdCode(matched.sku || '')
+                            setNewProdCategory(matched.category || 'Serum')
+                            setNewProdBaseUom(matched.baseUom || 'ml')
+                            if (matched.clientBrand && !newProdBrandName) {
+                              setNewProdBrandName(matched.clientBrand)
+                            }
+                          }
+                          loadVariantsForProduct(val)
+                        }}
+                      >
+                        <SelectTrigger className="text-xs h-10 bg-background">
+                          <SelectValue placeholder="Select an available product..." />
+                        </SelectTrigger>
+                        <SelectContent className="max-h-72">
+                          {customerMatchingProducts.length > 0 ? (
+                            <div className="px-2 py-1 text-[11px] font-bold text-primary uppercase tracking-wider bg-primary/10 rounded-sm mb-1">
+                              ✨ {selectedCustomer?.displayName || 'Customer'} Products ({customerMatchingProducts.length})
+                            </div>
+                          ) : null}
+                          {customerMatchingProducts.map((p) => (
+                            <SelectItem key={p.id} value={p.id} className="text-xs py-2 bg-primary/5 hover:bg-primary/10 mb-0.5">
+                              <div className="flex flex-col">
+                                <span className="font-semibold text-primary">{p.title}</span>
+                                <span className="text-[11px] text-muted-foreground flex items-center gap-2 mt-0.5">
+                                  {p.sku ? <span className="font-mono bg-muted px-1.5 py-0.5 rounded text-[10px]">SKU: {p.sku}</span> : null}
+                                  {p.category ? <span>• {p.category}</span> : null}
+                                  {p.clientBrand ? <span>• Brand: {p.clientBrand}</span> : null}
+                                </span>
+                              </div>
+                            </SelectItem>
+                          ))}
+                          {otherCatalogProducts.length > 0 ? (
+                            <>
+                              <div className="px-2 py-1 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider bg-muted/40 rounded-sm my-1 border-t">
+                                Other Catalog Products ({otherCatalogProducts.length})
+                              </div>
+                              {otherCatalogProducts.map((p) => (
+                                <SelectItem key={p.id} value={p.id} className="text-xs py-2">
+                                  <div className="flex flex-col">
+                                    <span className="font-medium text-foreground">{p.title}</span>
+                                    <span className="text-[11px] text-muted-foreground flex items-center gap-2 mt-0.5">
+                                      {p.sku ? <span className="font-mono bg-muted px-1.5 py-0.5 rounded text-[10px]">SKU: {p.sku}</span> : null}
+                                      {p.category ? <span>• {p.category}</span> : null}
+                                      {p.clientBrand ? <span>• Brand: {p.clientBrand}</span> : null}
+                                    </span>
+                                  </div>
+                                </SelectItem>
+                              ))}
+                            </>
+                          ) : null}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {/* Selected Product Summary Box */}
+                    {selectedExistingProdId ? (
+                      <div className="rounded-md border bg-background/80 p-3 text-xs grid grid-cols-2 sm:grid-cols-4 gap-2">
+                        <div>
+                          <span className="text-muted-foreground text-[10px] uppercase font-semibold">SKU Code</span>
+                          <div className="font-mono font-bold text-foreground">{newProdCode || 'DER-FORM-01'}</div>
+                        </div>
+                        <div>
+                          <span className="text-muted-foreground text-[10px] uppercase font-semibold">Category</span>
+                          <div className="font-medium text-foreground">{newProdCategory || 'Serum'}</div>
+                        </div>
+                        <div>
+                          <span className="text-muted-foreground text-[10px] uppercase font-semibold">Base UOM</span>
+                          <div className="font-medium text-foreground">{newProdBaseUom || 'ml'}</div>
+                        </div>
+                        <div>
+                          <span className="text-muted-foreground text-[10px] uppercase font-semibold">Status</span>
+                          <div className="font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                            <CheckCircle2 className="h-3 w-3" /> Ready in Catalog
+                          </div>
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+
+                  {/* VARIANT CONFIGURATION (EXISTING VS NEW VARIANT) */}
+                  <div className="rounded-lg border bg-muted/20 p-4 space-y-3">
+                    <div className="flex items-center justify-between border-b pb-2">
+                      <div className="flex items-center gap-2">
+                        <Boxes className="h-4 w-4 text-primary" />
+                        <h3 className="font-semibold text-xs uppercase tracking-wider text-muted-foreground">
+                          2. Pack Size & Variation Choice
+                        </h3>
+                      </div>
+
+                      {/* Variant Sub-mode toggle */}
+                      <SegmentedControl
+                        value={variantMode}
+                        onValueChange={(val: any) => setVariantMode(val)}
+                        className="text-xs"
+                      >
+                        <SegmentedControlItem value="existing" className="text-[11px] px-3 py-1">
+                          Use Existing Variation
+                        </SegmentedControlItem>
+                        <SegmentedControlItem value="new_variant" className="text-[11px] px-3 py-1">
+                          + Add New Variation
+                        </SegmentedControlItem>
+                      </SegmentedControl>
+                    </div>
+
+                    {variantMode === 'existing' ? (
+                      <div className="space-y-3">
+                        <div className="space-y-1.5">
+                          <div className="flex items-center justify-between">
+                            <Label className="text-xs font-medium">Select Variation(s) — pick more than one to add "both" to the order</Label>
+                            <span className="text-[11px] text-muted-foreground">{existingVariants.length} variation(s) available</span>
+                          </div>
+
+                          {loadingVariants ? (
+                            <div className="text-xs text-muted-foreground py-3 font-mono text-center bg-background rounded border">
+                              Loading product variations...
+                            </div>
+                          ) : (
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-48 overflow-y-auto p-1">
+                              {existingVariants.map((v) => {
+                                const isSelected = selectedVariantIds.includes(v.id)
+                                return (
+                                  <button
+                                    key={v.id}
+                                    type="button"
+                                    onClick={() => {
+                                      setSelectedVariantIds((prev) =>
+                                        prev.includes(v.id) ? prev.filter((id) => id !== v.id) : [...prev, v.id]
+                                      )
+                                      setNewProdVariantName(v.name)
+                                      setNewProdPackSize(v.packSize || '50')
+                                      setNewProdUom(v.uom || 'ml')
+                                      setNewProdMrp(v.mrp || '599')
+                                      if (v.rate) setNewProdRate(v.rate)
+                                      if (v.gstPercent) setNewProdGstPercent(v.gstPercent)
+                                      if (v.shelfLife) setNewProdShelfLife(v.shelfLife)
+                                    }}
+                                    className={`text-left p-2.5 rounded-lg border transition-all flex flex-col gap-1 cursor-pointer ${
+                                      isSelected
+                                        ? 'border-primary bg-primary/10 ring-1 ring-primary shadow-xs'
+                                        : 'border-border bg-background hover:bg-muted/40'
+                                    }`}
+                                  >
+                                    <div className="flex items-center justify-between">
+                                      <span className="font-semibold text-xs text-foreground flex items-center gap-1.5">
+                                        <span className={`flex h-3.5 w-3.5 items-center justify-center rounded-sm border text-[9px] ${isSelected ? 'border-primary bg-primary text-primary-foreground' : 'border-muted-foreground/40'}`}>
+                                          {isSelected ? '✓' : ''}
+                                        </span>
+                                        {v.name}
+                                      </span>
+                                      {v.isDefault ? (
+                                        <span className="text-[10px] font-semibold bg-emerald-100 text-emerald-800 px-1.5 py-0.2 rounded border border-emerald-200">
+                                          Default
+                                        </span>
+                                      ) : null}
+                                    </div>
+                                    <div className="flex items-center justify-between text-xs text-muted-foreground mt-0.5">
+                                      <span className="font-semibold bg-muted px-1.5 py-0.5 rounded text-foreground font-mono text-[11px]">
+                                        {v.packSize} {v.uom}
+                                      </span>
+                                      <span className="font-bold text-emerald-600 dark:text-emerald-400">
+                                        MRP: ₹{v.mrp || '—'}
+                                      </span>
+                                    </div>
+                                    <div className="flex items-center justify-between text-[10px] text-muted-foreground mt-0.5">
+                                      {v.rate ? (
+                                        <span>Rate: <strong className="text-foreground">₹{v.rate}</strong></span>
+                                      ) : <span />}
+                                      <span className="font-mono bg-blue-50 text-blue-700 dark:bg-blue-950 dark:text-blue-300 px-1.5 py-0.2 rounded font-medium">
+                                        GST: {v.gstPercent || '18'}%
+                                      </span>
+                                    </div>
+                                  </button>
+                                )
+                              })}
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="text-xs bg-background p-2.5 rounded border">
+                          {selectedVariantIds.length === 0 ? (
+                            <span className="text-muted-foreground">No variation selected yet — tap one or more above.</span>
+                          ) : (
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="text-muted-foreground text-[10px]">
+                                {selectedVariantIds.length} selected:
+                              </span>
+                              {existingVariants
+                                .filter((v) => selectedVariantIds.includes(v.id))
+                                .map((v) => (
+                                  <span key={v.id} className="rounded bg-primary/10 border border-primary/30 px-2 py-0.5 font-medium text-foreground">
+                                    {v.name} ({v.packSize} {v.uom})
+                                  </span>
+                                ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ) : (
+                      /* Add New Variant Fields */
+                      <div className="space-y-3">
+                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                          <div className="space-y-1">
+                            <Label className="text-xs">New Variant Name</Label>
+                            <Select value={newProdVariantName} onValueChange={setNewProdVariantName}>
+                              <SelectTrigger className="text-xs bg-background">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {VARIANT_NAME_OPTIONS.map((opt) => (
+                                  <SelectItem key={opt.value} value={opt.value} className="text-xs">
+                                    {opt.label}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+
+                          <div className="space-y-1">
+                            <Label className="text-xs">Pack Size *</Label>
+                            <Input
+                              value={newProdPackSize}
+                              onChange={(e) => setNewProdPackSize(e.target.value)}
+                              placeholder="50"
+                              className="text-xs text-center font-mono bg-background"
+                            />
+                          </div>
+
+                          <div className="space-y-1">
+                            <Label className="text-xs">Pack UOM</Label>
+                            <Select value={newProdUom} onValueChange={setNewProdUom}>
+                              <SelectTrigger className="text-xs bg-background">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {UOM_OPTIONS.map((opt) => (
+                                  <SelectItem key={opt.value} value={opt.value} className="text-xs">
+                                    {opt.label}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+
+                          <div className="space-y-1">
+                            <Label className="text-xs">Declared MRP (₹)</Label>
+                            <Input
+                              type="number"
+                              min={0}
+                              value={newProdMrp}
+                              onChange={(e) => setNewProdMrp(e.target.value)}
+                              placeholder="599"
+                              className="text-xs font-mono bg-background"
+                            />
+                          </div>
+
+                          <div className="space-y-1">
+                            <Label className="text-xs">Wholesale Rate (₹)</Label>
+                            <Input
+                              type="number"
+                              min={0}
+                              value={newProdRate}
+                              onChange={(e) => setNewProdRate(e.target.value)}
+                              placeholder="180"
+                              className="text-xs font-mono bg-background"
+                            />
+                          </div>
+
+                          <div className="space-y-1">
+                            <Label className="text-xs">GST Rate (%)</Label>
+                            <Select value={newProdGstPercent} onValueChange={setNewProdGstPercent}>
+                              <SelectTrigger className="text-xs bg-background">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {GST_RATES.map((opt) => (
+                                  <SelectItem key={opt.value} value={opt.value} className="text-xs">
+                                    {opt.label}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+
+                          <div className="space-y-1 sm:col-span-3">
+                            <Label className="text-xs">Shelf Life</Label>
+                            <Input
+                              value={newProdShelfLife}
+                              onChange={(e) => setNewProdShelfLife(e.target.value)}
+                              placeholder="24 Months"
+                              className="text-xs bg-background"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                /* ======================================================== */
+                /* MODE 2: CREATE BRAND NEW PRODUCT */
+                /* ======================================================== */
+                <div className="space-y-4">
+                  {/* PRODUCT & CATALOG DETAILS */}
+                  <div className="rounded-lg border bg-muted/20 p-4 space-y-3">
+                    <div className="flex items-center gap-2 border-b pb-2">
+                      <Package className="h-4 w-4 text-primary" />
+                      <h3 className="font-semibold text-xs uppercase tracking-wider text-muted-foreground">
+                        1. Product Details
+                      </h3>
+                    </div>
+
+                    <div className="space-y-1">
+                      <Label className="text-xs">Product Name *</Label>
+                      <Input
+                        value={newProdTitle}
+                        onChange={(e) => setNewProdTitle(e.target.value)}
+                        placeholder="e.g. 10% Niacinamide Face Serum with Zinc PCA"
+                        className="text-xs bg-background"
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                      <div className="space-y-1">
+                        <Label className="text-xs">Product Code / SKU</Label>
+                        <Input
+                          value={newProdCode}
+                          onChange={(e) => setNewProdCode(e.target.value)}
+                          placeholder="e.g. DER-FORM-NIA-01"
+                          className="text-xs font-mono bg-background"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs">Category</Label>
+                        <Select value={newProdCategory} onValueChange={setNewProdCategory}>
+                          <SelectTrigger className="text-xs bg-background">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {CATEGORY_OPTIONS.map((opt) => (
+                              <SelectItem key={opt.value} value={opt.value} className="text-xs">
+                                {opt.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs">Minimum Batch MOQ (Units)</Label>
+                        <Input
+                          type="number"
+                          min={0}
+                          value={newProdMinFloorQty}
+                          onChange={(e) => setNewProdMinFloorQty(e.target.value)}
+                          placeholder="500"
+                          className="text-xs font-mono bg-background"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs">Base UOM</Label>
+                        <Select value={newProdBaseUom} onValueChange={setNewProdBaseUom}>
+                          <SelectTrigger className="text-xs bg-background">
+                            <SelectValue placeholder="Select unit..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {UOM_OPTIONS.map((opt) => (
+                              <SelectItem key={opt.value} value={opt.value} className="text-xs">
+                                {opt.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+
+                    <div className="space-y-1">
+                      <Label className="text-xs">Description & Specifications</Label>
+                      <Textarea
+                        value={newProdDescription}
+                        onChange={(e) => setNewProdDescription(e.target.value)}
+                        rows={2}
+                        placeholder="Active ingredients (e.g. 10% Niacinamide, 1% Zinc PCA), target texture, packaging details..."
+                        className="text-xs bg-background"
+                      />
+                    </div>
+                  </div>
+
+                  {/* VARIANT & PACKAGING DETAILS */}
+                  <div className="rounded-lg border bg-muted/20 p-4 space-y-3">
+                    <div className="flex items-center gap-2 border-b pb-2">
+                      <Boxes className="h-4 w-4 text-primary" />
+                      <h3 className="font-semibold text-xs uppercase tracking-wider text-muted-foreground">
+                        2. Pack Size & Variation Configuration
+                      </h3>
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                      <div className="space-y-1">
+                        <Label className="text-xs">Variant Name</Label>
+                        <Select value={newProdVariantName} onValueChange={setNewProdVariantName}>
+                          <SelectTrigger className="text-xs bg-background">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {VARIANT_NAME_OPTIONS.map((opt) => (
+                              <SelectItem key={opt.value} value={opt.value} className="text-xs">
+                                {opt.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <div className="space-y-1">
+                        <Label className="text-xs">Pack Size</Label>
+                        <Input
+                          value={newProdPackSize}
+                          onChange={(e) => setNewProdPackSize(e.target.value)}
+                          placeholder="50"
+                          className="text-xs text-center font-mono bg-background"
+                        />
+                      </div>
+
+                      <div className="space-y-1">
+                        <Label className="text-xs">Pack UOM</Label>
+                        <Select value={newProdUom} onValueChange={setNewProdUom}>
+                          <SelectTrigger className="text-xs bg-background">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {UOM_OPTIONS.map((opt) => (
+                              <SelectItem key={opt.value} value={opt.value} className="text-xs">
+                                {opt.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <div className="space-y-1">
+                        <Label className="text-xs">Declared MRP (₹)</Label>
+                        <Input
+                          type="number"
+                          min={0}
+                          value={newProdMrp}
+                          onChange={(e) => setNewProdMrp(e.target.value)}
+                          placeholder="599"
+                          className="text-xs font-mono bg-background"
+                        />
+                      </div>
+
+                      <div className="space-y-1">
+                        <Label className="text-xs">Wholesale Rate (₹)</Label>
+                        <Input
+                          type="number"
+                          min={0}
+                          value={newProdRate}
+                          onChange={(e) => setNewProdRate(e.target.value)}
+                          placeholder="180"
+                          className="text-xs font-mono bg-background"
+                        />
+                      </div>
+
+                      <div className="space-y-1">
+                        <Label className="text-xs">GST Rate (%)</Label>
+                        <Select value={newProdGstPercent} onValueChange={setNewProdGstPercent}>
+                          <SelectTrigger className="text-xs bg-background">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {GST_RATES.map((opt) => (
+                              <SelectItem key={opt.value} value={opt.value} className="text-xs">
+                                {opt.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <div className="space-y-1 sm:col-span-3">
+                        <Label className="text-xs">Shelf Life</Label>
+                        <Input
+                          value={newProdShelfLife}
+                          onChange={(e) => setNewProdShelfLife(e.target.value)}
+                          placeholder="24 Months"
+                          className="text-xs bg-background"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* SECTION 3: COMMERCIAL ORDER TERMS */}
+              <div className="rounded-lg border bg-emerald-500/5 border-emerald-500/20 p-4 space-y-3">
+                <div className="flex items-center gap-2 border-b border-emerald-500/20 pb-2">
+                  <ShoppingBag className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                  <h3 className="font-semibold text-xs uppercase tracking-wider text-emerald-700 dark:text-emerald-300">
+                    3. Commercial Order Terms for this Line
+                  </h3>
+                </div>
+
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                  <div className="space-y-1">
+                    <Label className="text-xs font-semibold">Batch Order Qty (Units) *</Label>
+                    <Input
+                      type="number"
+                      min={1}
+                      value={newProdQuantity}
+                      onChange={(e) => setNewProdQuantity(e.target.value)}
+                      placeholder="500"
+                      className="text-xs font-mono font-bold bg-background"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <Label className="text-xs font-semibold">Contract Billing Rate (₹) *</Label>
+                    <Input
+                      type="number"
+                      min={0}
+                      value={newProdRate}
+                      onChange={(e) => setNewProdRate(e.target.value)}
+                      placeholder="180"
+                      className="text-xs font-mono font-bold bg-background"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <Label className="text-xs">GST Tax Rate</Label>
+                    <Select value={newProdGstPercent} onValueChange={setNewProdGstPercent}>
+                      <SelectTrigger className="text-xs bg-background">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {GST_RATES.map((opt) => (
+                          <SelectItem key={opt.value} value={opt.value} className="text-xs">
+                            {opt.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                {/* Calculation Preview */}
+                <div className="rounded border bg-background p-3 flex items-center justify-between text-xs">
+                  <div>
+                    <span className="text-muted-foreground">Line Subtotal: </span>
+                    <strong className="font-mono">{formatINR((Number(newProdQuantity) || 0) * (Number(newProdRate) || 0))}</strong>
+                    <span className="text-muted-foreground ml-3">GST ({newProdGstPercent}%): </span>
+                    <strong className="font-mono">
+                      {formatINR(
+                        (((Number(newProdQuantity) || 0) * (Number(newProdRate) || 0)) * (Number(newProdGstPercent) || 0)) / 100
+                      )}
+                    </strong>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-muted-foreground">Line Total: </span>
+                    <span className="font-bold text-sm text-emerald-600 dark:text-emerald-400 font-mono">
+                      {formatINR(
+                        ((Number(newProdQuantity) || 0) * (Number(newProdRate) || 0)) *
+                          (1 + (Number(newProdGstPercent) || 0) / 100)
+                      )}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 border-t pt-3">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setTargetLineKey(null)}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                className="bg-primary font-semibold"
+                onClick={handleCreateProduct}
+                disabled={
+                  creatingProduct ||
+                  (prodModalMode === 'new' && !newProdTitle.trim()) ||
+                  (prodModalMode === 'existing' && !selectedExistingProdId)
+                }
+              >
+                {creatingProduct
+                  ? 'Saving Product...'
+                  : prodModalMode === 'new'
+                    ? 'Create Product & Add to Order'
+                    : variantMode === 'new_variant'
+                      ? 'Add Variant & Apply to Order'
+                      : 'Add Selected Variation(s) to Order'}
+              </Button>
+            </div>
+          </div>
+        </div>
+  )
 
   return (
     <Page>
@@ -1282,7 +2083,7 @@ export default function CreateOrderPage() {
                       type="button"
                       variant="outline"
                       size="sm"
-                      onClick={() => openNewProductDialog(lines[0]?.key || '', 'existing')}
+                      onClick={() => openLineProductPanel(lines[0]?.key || '', 'existing')}
                       className="text-xs"
                     >
                       <PackageCheck className="mr-1.5 h-3.5 w-3.5 text-primary" />
@@ -1292,7 +2093,7 @@ export default function CreateOrderPage() {
                       type="button"
                       variant="outline"
                       size="sm"
-                      onClick={() => openNewProductDialog(lines[0]?.key || '', 'new')}
+                      onClick={() => openLineProductPanel(lines[0]?.key || '', 'new')}
                       className="text-xs border-dashed text-amber-600 dark:text-amber-400 hover:text-amber-700"
                     >
                       <Sparkles className="mr-1.5 h-3.5 w-3.5 text-amber-500" />
@@ -1363,7 +2164,8 @@ export default function CreateOrderPage() {
                       </thead>
                       <tbody className="divide-y divide-border/60">
                         {lines.map((line, idx) => (
-                          <tr key={line.key} className="hover:bg-muted/20 transition-colors">
+                          <React.Fragment key={line.key}>
+                          <tr className="hover:bg-muted/20 transition-colors">
                             {/* Column 1: Index */}
                             <td className="py-3 px-3 text-center align-middle font-mono font-bold text-muted-foreground text-xs">
                               {idx + 1}
@@ -1427,27 +2229,41 @@ export default function CreateOrderPage() {
                                 </Select>
 
                                 <div className="flex items-center justify-between text-[11px] gap-2">
-                                  {line.productCode ? (
-                                    <span className="font-mono text-muted-foreground text-[10px] truncate max-w-[120px]">
-                                      Code: {line.productCode}
-                                    </span>
+                                  {line.productId ? (
+                                    <div className="flex flex-wrap items-center gap-1.5">
+                                      {line.variantSku ? (
+                                        <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-foreground">
+                                          {line.variantSku}
+                                        </span>
+                                      ) : null}
+                                      {line.packSize ? (
+                                        <span className="text-[10px] text-muted-foreground">{line.packSize} {line.uom}</span>
+                                      ) : null}
+                                      {line.productCode ? (
+                                        <span className="font-mono text-muted-foreground text-[10px] truncate max-w-[100px]">
+                                          Code: {line.productCode}
+                                        </span>
+                                      ) : null}
+                                    </div>
                                   ) : (
-                                    <span className="text-muted-foreground text-[10px]">Custom Item</span>
+                                    <span className="text-muted-foreground text-[10px]">No variation chosen yet</span>
                                   )}
-                                  <div className="flex items-center gap-2">
-                                    {line.productId ? (
-                                      <button
-                                        type="button"
-                                        onClick={() => openNewProductDialog(line.key, 'existing', line.productId)}
-                                        className="text-primary hover:underline text-[10px] font-medium inline-flex items-center gap-1"
-                                      >
-                                        <Boxes className="h-2.5 w-2.5 text-primary" />
-                                        Select / Add Variant
-                                      </button>
-                                    ) : null}
+                                  <div className="flex items-center gap-2 shrink-0">
                                     <button
                                       type="button"
-                                      onClick={() => openNewProductDialog(line.key, 'new')}
+                                      onClick={() => openLineProductPanel(line.key, 'existing', line.productId)}
+                                      className="text-primary hover:underline text-[10px] font-medium inline-flex items-center gap-1"
+                                    >
+                                      <Boxes className="h-2.5 w-2.5 text-primary" />
+                                      {targetLineKey === line.key && prodModalMode === 'existing'
+                                        ? 'Close'
+                                        : line.productId
+                                          ? 'Change Variation'
+                                          : 'Choose Variation'}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => openLineProductPanel(line.key, 'new')}
                                       className="text-amber-600 dark:text-amber-400 hover:underline text-[10px] font-medium inline-flex items-center gap-1"
                                     >
                                       <Sparkles className="h-2.5 w-2.5" />
@@ -1458,60 +2274,21 @@ export default function CreateOrderPage() {
                               </div>
                             </td>
 
-                            {/* Column 3: Client Brand */}
-                            <td className="py-3 px-3 align-middle">
-                              <Input
-                                value={line.brandName}
-                                onChange={(e) => updateLine(line.key, { brandName: e.target.value })}
-                                placeholder={selectedCustomer?.displayName || 'Brand Name'}
-                                className="text-xs h-8"
-                              />
+                            {/* Column 3: Client Brand (auto-filled, read-only) */}
+                            <td className="py-3 px-3 align-middle text-xs text-foreground">
+                              {line.brandName || selectedCustomer?.displayName || <span className="text-muted-foreground">—</span>}
                             </td>
 
-                            {/* Column 4: Category */}
+                            {/* Column 4: Category (auto-filled, read-only) */}
                             <td className="py-3 px-3 align-middle">
-                              <Select
-                                value={line.category}
-                                onValueChange={(val) => updateLine(line.key, { category: val })}
-                              >
-                                <SelectTrigger className="text-xs h-8">
-                                  <SelectValue placeholder="Category" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {CATEGORY_OPTIONS.map((opt) => (
-                                    <SelectItem key={opt.value} value={opt.value} className="text-xs">
-                                      {opt.label}
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
+                              <span className="inline-block rounded bg-muted px-2 py-1 text-[11px] font-medium text-foreground">
+                                {line.category || '—'}
+                              </span>
                             </td>
 
-                            {/* Column 5: Pack Size & UOM */}
-                            <td className="py-3 px-3 align-middle">
-                              <div className="flex items-center gap-1">
-                                <Input
-                                  value={line.packSize}
-                                  onChange={(e) => updateLine(line.key, { packSize: e.target.value })}
-                                  placeholder="50"
-                                  className="text-xs h-8 w-16 text-center"
-                                />
-                                <Select
-                                  value={line.uom}
-                                  onValueChange={(val) => updateLine(line.key, { uom: val })}
-                                >
-                                  <SelectTrigger className="text-xs h-8 w-20">
-                                    <SelectValue />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    {UOM_OPTIONS.map((opt) => (
-                                      <SelectItem key={opt.value} value={opt.value} className="text-xs">
-                                        {opt.value}
-                                      </SelectItem>
-                                    ))}
-                                  </SelectContent>
-                                </Select>
-                              </div>
+                            {/* Column 5: Pack Size & UOM (auto-filled, read-only) */}
+                            <td className="py-3 px-3 align-middle font-mono text-xs text-foreground">
+                              {line.packSize ? `${line.packSize} ${line.uom}` : '—'}
                             </td>
 
                             {/* Column 6: Order Qty (Units) */}
@@ -1594,6 +2371,14 @@ export default function CreateOrderPage() {
                               </div>
                             </td>
                           </tr>
+                          {targetLineKey === line.key ? (
+                            <tr>
+                              <td colSpan={11} className="bg-muted/10 border-b p-3">
+                                {productPanelContent}
+                              </td>
+                            </tr>
+                          ) : null}
+                          </React.Fragment>
                         ))}
                       </tbody>
                     </table>
@@ -2038,751 +2823,6 @@ export default function CreateOrderPage() {
             </div>
           ) : null}
         </div>
-
-        {/* ======================================================== */}
-        {/* INLINE CREATE PRODUCT FORMULATION DIALOG */}
-        {/* ======================================================== */}
-        {/* ======================================================== */}
-        {/* INLINE PRODUCT & VARIATION SELECTION / CREATION DIALOG */}
-        {/* ======================================================== */}
-        <Dialog open={newProductDialogOpen} onOpenChange={setNewProductDialogOpen}>
-          <DialogContent className="sm:max-w-3xl max-h-[92vh] overflow-y-auto">
-            <DialogHeader>
-              <div className="flex items-center justify-between gap-2">
-                <DialogTitle className="flex items-center gap-2 text-lg">
-                  {prodModalMode === 'existing' ? (
-                    <>
-                      <PackageCheck className="h-5 w-5 text-primary" />
-                      Select Product & Variation
-                    </>
-                  ) : (
-                    <>
-                      <Sparkles className="h-5 w-5 text-amber-500" />
-                      Create New Product
-                    </>
-                  )}
-                </DialogTitle>
-              </div>
-              <p className="text-xs text-muted-foreground">
-                {prodModalMode === 'existing'
-                  ? 'Choose an available product from the catalog, pick an existing variation or add a new variation, and attach it to your order.'
-                  : 'Register a brand-new product in the master catalog and attach it to your active order line.'}
-              </p>
-            </DialogHeader>
-
-            <div className="space-y-4 py-2">
-              {/* TOP MODE TOGGLE: SELECT EXISTING PRODUCT VS CREATE NEW PRODUCT */}
-              <SegmentedControl
-                value={prodModalMode}
-                onValueChange={(val: any) => {
-                  setProdModalMode(val)
-                  if (val === 'existing') {
-                    const effId = selectedExistingProdId || catalogProducts[0]?.id || ''
-                    setSelectedExistingProdId(effId)
-                    if (effId) {
-                      const m = catalogProducts.find((p) => p.id === effId)
-                      setNewProdTitle(m?.title || '')
-                      setNewProdCode(m?.sku || '')
-                      setNewProdCategory(m?.category || 'Serum')
-                      setNewProdBaseUom(m?.baseUom || 'ml')
-                      loadVariantsForProduct(effId)
-                    }
-                  } else {
-                    setNewProdTitle('')
-                    setNewProdCode('')
-                    setNewProdDescription('')
-                  }
-                }}
-                className="w-full grid grid-cols-2"
-              >
-                <SegmentedControlItem value="existing" className="flex items-center justify-center gap-2 py-2">
-                  <PackageCheck className="h-4 w-4 text-primary" />
-                  <span className="font-medium text-xs">Select Existing Product</span>
-                </SegmentedControlItem>
-                <SegmentedControlItem value="new" className="flex items-center justify-center gap-2 py-2">
-                  <Sparkles className="h-4 w-4 text-amber-500" />
-                  <span className="font-medium text-xs">Create New Product</span>
-                </SegmentedControlItem>
-              </SegmentedControl>
-
-              {/* CLIENT & PRIVATE LABEL BRAND ASSIGNMENT */}
-              <div className="rounded-lg border border-primary/30 bg-primary/5 p-3.5 space-y-3">
-                <div className="flex items-center justify-between border-b border-primary/20 pb-2">
-                  <div className="flex items-center gap-2">
-                    <Building2 className="h-4 w-4 text-primary" />
-                    <h3 className="font-semibold text-xs text-primary uppercase tracking-wider">
-                      Client & Private Label Brand Assignment
-                    </h3>
-                  </div>
-                  {selectedCustomer ? (
-                    <span className="text-[11px] text-muted-foreground">
-                      Active: <strong className="text-foreground">{selectedCustomer.displayName}</strong>
-                    </span>
-                  ) : null}
-                </div>
-
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <div className="space-y-1">
-                    <Label className="text-xs font-medium">Customer / Client Company *</Label>
-                    <Select
-                      value={newProdCustomerId || selectedCustomer?.id || ''}
-                      onValueChange={(val) => {
-                        setNewProdCustomerId(val)
-                        const c = customerRows.find((item) => item.id === val)
-                        if (c) {
-                          setNewProdCustomerName(c.displayName)
-                          if (!newProdBrandName) setNewProdBrandName(c.displayName)
-                        }
-                      }}
-                    >
-                      <SelectTrigger className="text-xs h-9 bg-background">
-                        <SelectValue placeholder="Select Customer..." />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {customerRows.map((c) => (
-                          <SelectItem key={c.id} value={c.id} className="text-xs">
-                            {c.displayName} {c.gstin ? `(GST: ${c.gstin})` : ''}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="space-y-1">
-                    <Label className="text-xs font-medium">Private Label Brand Name *</Label>
-                    <Input
-                      value={newProdBrandName}
-                      onChange={(e) => setNewProdBrandName(e.target.value)}
-                      placeholder={selectedCustomer?.displayName || 'e.g. SkinGlo, DermaCare'}
-                      className="text-xs h-9 bg-background"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* ======================================================== */}
-              {/* MODE 1: SELECT EXISTING PRODUCT */}
-              {/* ======================================================== */}
-              {prodModalMode === 'existing' ? (
-                <div className="space-y-4">
-                  {/* SELECT PRODUCT FROM CATALOG */}
-                  <div className="rounded-lg border bg-muted/20 p-4 space-y-3">
-                    <div className="flex items-center justify-between border-b pb-2">
-                      <div className="flex items-center gap-2">
-                        <Package className="h-4 w-4 text-primary" />
-                        <h3 className="font-semibold text-xs uppercase tracking-wider text-muted-foreground">
-                          1. Select Product
-                        </h3>
-                      </div>
-                      <span className="text-[11px] text-muted-foreground font-mono">
-                        {customerMatchingProducts.length > 0
-                          ? `${customerMatchingProducts.length} linked to ${selectedCustomer?.displayName || 'Customer'} (${catalogProducts.length} total)`
-                          : `${catalogProducts.length} Available in Catalog`}
-                      </span>
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label className="text-xs font-medium">Choose Product *</Label>
-                      <Select
-                        value={selectedExistingProdId}
-                        onValueChange={(val) => {
-                          setSelectedExistingProdId(val)
-                          const matched = catalogProducts.find((p) => p.id === val)
-                          if (matched) {
-                            setNewProdTitle(matched.title)
-                            setNewProdCode(matched.sku || '')
-                            setNewProdCategory(matched.category || 'Serum')
-                            setNewProdBaseUom(matched.baseUom || 'ml')
-                            if (matched.clientBrand && !newProdBrandName) {
-                              setNewProdBrandName(matched.clientBrand)
-                            }
-                          }
-                          loadVariantsForProduct(val)
-                        }}
-                      >
-                        <SelectTrigger className="text-xs h-10 bg-background">
-                          <SelectValue placeholder="Select an available product..." />
-                        </SelectTrigger>
-                        <SelectContent className="max-h-72">
-                          {customerMatchingProducts.length > 0 ? (
-                            <div className="px-2 py-1 text-[11px] font-bold text-primary uppercase tracking-wider bg-primary/10 rounded-sm mb-1">
-                              ✨ {selectedCustomer?.displayName || 'Customer'} Products ({customerMatchingProducts.length})
-                            </div>
-                          ) : null}
-                          {customerMatchingProducts.map((p) => (
-                            <SelectItem key={p.id} value={p.id} className="text-xs py-2 bg-primary/5 hover:bg-primary/10 mb-0.5">
-                              <div className="flex flex-col">
-                                <span className="font-semibold text-primary">{p.title}</span>
-                                <span className="text-[11px] text-muted-foreground flex items-center gap-2 mt-0.5">
-                                  {p.sku ? <span className="font-mono bg-muted px-1.5 py-0.5 rounded text-[10px]">SKU: {p.sku}</span> : null}
-                                  {p.category ? <span>• {p.category}</span> : null}
-                                  {p.clientBrand ? <span>• Brand: {p.clientBrand}</span> : null}
-                                </span>
-                              </div>
-                            </SelectItem>
-                          ))}
-                          {otherCatalogProducts.length > 0 ? (
-                            <>
-                              <div className="px-2 py-1 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider bg-muted/40 rounded-sm my-1 border-t">
-                                Other Catalog Products ({otherCatalogProducts.length})
-                              </div>
-                              {otherCatalogProducts.map((p) => (
-                                <SelectItem key={p.id} value={p.id} className="text-xs py-2">
-                                  <div className="flex flex-col">
-                                    <span className="font-medium text-foreground">{p.title}</span>
-                                    <span className="text-[11px] text-muted-foreground flex items-center gap-2 mt-0.5">
-                                      {p.sku ? <span className="font-mono bg-muted px-1.5 py-0.5 rounded text-[10px]">SKU: {p.sku}</span> : null}
-                                      {p.category ? <span>• {p.category}</span> : null}
-                                      {p.clientBrand ? <span>• Brand: {p.clientBrand}</span> : null}
-                                    </span>
-                                  </div>
-                                </SelectItem>
-                              ))}
-                            </>
-                          ) : null}
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    {/* Selected Product Summary Box */}
-                    {selectedExistingProdId ? (
-                      <div className="rounded-md border bg-background/80 p-3 text-xs grid grid-cols-2 sm:grid-cols-4 gap-2">
-                        <div>
-                          <span className="text-muted-foreground text-[10px] uppercase font-semibold">SKU Code</span>
-                          <div className="font-mono font-bold text-foreground">{newProdCode || 'DER-FORM-01'}</div>
-                        </div>
-                        <div>
-                          <span className="text-muted-foreground text-[10px] uppercase font-semibold">Category</span>
-                          <div className="font-medium text-foreground">{newProdCategory || 'Serum'}</div>
-                        </div>
-                        <div>
-                          <span className="text-muted-foreground text-[10px] uppercase font-semibold">Base UOM</span>
-                          <div className="font-medium text-foreground">{newProdBaseUom || 'ml'}</div>
-                        </div>
-                        <div>
-                          <span className="text-muted-foreground text-[10px] uppercase font-semibold">Status</span>
-                          <div className="font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
-                            <CheckCircle2 className="h-3 w-3" /> Ready in Catalog
-                          </div>
-                        </div>
-                      </div>
-                    ) : null}
-                  </div>
-
-                  {/* VARIANT CONFIGURATION (EXISTING VS NEW VARIANT) */}
-                  <div className="rounded-lg border bg-muted/20 p-4 space-y-3">
-                    <div className="flex items-center justify-between border-b pb-2">
-                      <div className="flex items-center gap-2">
-                        <Boxes className="h-4 w-4 text-primary" />
-                        <h3 className="font-semibold text-xs uppercase tracking-wider text-muted-foreground">
-                          2. Pack Size & Variation Choice
-                        </h3>
-                      </div>
-
-                      {/* Variant Sub-mode toggle */}
-                      <SegmentedControl
-                        value={variantMode}
-                        onValueChange={(val: any) => setVariantMode(val)}
-                        className="text-xs"
-                      >
-                        <SegmentedControlItem value="existing" className="text-[11px] px-3 py-1">
-                          Use Existing Variation
-                        </SegmentedControlItem>
-                        <SegmentedControlItem value="new_variant" className="text-[11px] px-3 py-1">
-                          + Add New Variation
-                        </SegmentedControlItem>
-                      </SegmentedControl>
-                    </div>
-
-                    {variantMode === 'existing' ? (
-                      <div className="space-y-3">
-                        <div className="space-y-1.5">
-                          <div className="flex items-center justify-between">
-                            <Label className="text-xs font-medium">Select Variation</Label>
-                            <span className="text-[11px] text-muted-foreground">{existingVariants.length} variation(s) available</span>
-                          </div>
-
-                          {loadingVariants ? (
-                            <div className="text-xs text-muted-foreground py-3 font-mono text-center bg-background rounded border">
-                              Loading product variations...
-                            </div>
-                          ) : (
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-48 overflow-y-auto p-1">
-                              {existingVariants.map((v) => {
-                                const isSelected = selectedExistingVariantId === v.id
-                                return (
-                                  <button
-                                    key={v.id}
-                                    type="button"
-                                    onClick={() => {
-                                      setSelectedExistingVariantId(v.id)
-                                      setNewProdVariantName(v.name)
-                                      setNewProdPackSize(v.packSize || '50')
-                                      setNewProdUom(v.uom || 'ml')
-                                      setNewProdMrp(v.mrp || '599')
-                                      if (v.rate) setNewProdRate(v.rate)
-                                      if (v.gstPercent) setNewProdGstPercent(v.gstPercent)
-                                      if (v.shelfLife) setNewProdShelfLife(v.shelfLife)
-                                    }}
-                                    className={`text-left p-2.5 rounded-lg border transition-all flex flex-col gap-1 cursor-pointer ${
-                                      isSelected
-                                        ? 'border-primary bg-primary/10 ring-1 ring-primary shadow-xs'
-                                        : 'border-border bg-background hover:bg-muted/40'
-                                    }`}
-                                  >
-                                    <div className="flex items-center justify-between">
-                                      <span className="font-semibold text-xs text-foreground flex items-center gap-1.5">
-                                        <Boxes className="h-3.5 w-3.5 text-primary" />
-                                        {v.name}
-                                      </span>
-                                      {v.isDefault ? (
-                                        <span className="text-[10px] font-semibold bg-emerald-100 text-emerald-800 px-1.5 py-0.2 rounded border border-emerald-200">
-                                          Default
-                                        </span>
-                                      ) : null}
-                                    </div>
-                                    <div className="flex items-center justify-between text-xs text-muted-foreground mt-0.5">
-                                      <span className="font-semibold bg-muted px-1.5 py-0.5 rounded text-foreground font-mono text-[11px]">
-                                        {v.packSize} {v.uom}
-                                      </span>
-                                      <span className="font-bold text-emerald-600 dark:text-emerald-400">
-                                        MRP: ₹{v.mrp || '—'}
-                                      </span>
-                                    </div>
-                                    <div className="flex items-center justify-between text-[10px] text-muted-foreground mt-0.5">
-                                      {v.rate ? (
-                                        <span>Rate: <strong className="text-foreground">₹{v.rate}</strong></span>
-                                      ) : <span />}
-                                      <span className="font-mono bg-blue-50 text-blue-700 dark:bg-blue-950 dark:text-blue-300 px-1.5 py-0.2 rounded font-medium">
-                                        GST: {v.gstPercent || '18'}%
-                                      </span>
-                                    </div>
-                                  </button>
-                                )
-                              })}
-                            </div>
-                          )}
-                        </div>
-
-                        <div className="grid grid-cols-4 gap-2 text-xs bg-background p-2.5 rounded border">
-                          <div>
-                            <span className="text-muted-foreground text-[10px]">Selected Pack:</span>{' '}
-                            <strong>{newProdPackSize} {newProdUom}</strong>
-                          </div>
-                          <div>
-                            <span className="text-muted-foreground text-[10px]">MRP:</span>{' '}
-                            <strong className="font-mono text-emerald-600 dark:text-emerald-400">₹{newProdMrp || '599'}</strong>
-                          </div>
-                          <div>
-                            <span className="text-muted-foreground text-[10px]">GST Rate:</span>{' '}
-                            <strong className="font-mono text-blue-600 dark:text-blue-400">{newProdGstPercent || '18'}%</strong>
-                          </div>
-                          <div>
-                            <span className="text-muted-foreground text-[10px]">Variant:</span>{' '}
-                            <strong>{newProdVariantName || 'Standard'}</strong>
-                          </div>
-                        </div>
-                      </div>
-                    ) : (
-                      /* Add New Variant Fields */
-                      <div className="space-y-3">
-                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                          <div className="space-y-1">
-                            <Label className="text-xs">New Variant Name</Label>
-                            <Select value={newProdVariantName} onValueChange={setNewProdVariantName}>
-                              <SelectTrigger className="text-xs bg-background">
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {VARIANT_NAME_OPTIONS.map((opt) => (
-                                  <SelectItem key={opt.value} value={opt.value} className="text-xs">
-                                    {opt.label}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          </div>
-
-                          <div className="space-y-1">
-                            <Label className="text-xs">Pack Size *</Label>
-                            <Input
-                              value={newProdPackSize}
-                              onChange={(e) => setNewProdPackSize(e.target.value)}
-                              placeholder="50"
-                              className="text-xs text-center font-mono bg-background"
-                            />
-                          </div>
-
-                          <div className="space-y-1">
-                            <Label className="text-xs">Pack UOM</Label>
-                            <Select value={newProdUom} onValueChange={setNewProdUom}>
-                              <SelectTrigger className="text-xs bg-background">
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {UOM_OPTIONS.map((opt) => (
-                                  <SelectItem key={opt.value} value={opt.value} className="text-xs">
-                                    {opt.label}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          </div>
-
-                          <div className="space-y-1">
-                            <Label className="text-xs">Declared MRP (₹)</Label>
-                            <Input
-                              type="number"
-                              min={0}
-                              value={newProdMrp}
-                              onChange={(e) => setNewProdMrp(e.target.value)}
-                              placeholder="599"
-                              className="text-xs font-mono bg-background"
-                            />
-                          </div>
-
-                          <div className="space-y-1">
-                            <Label className="text-xs">Wholesale Rate (₹)</Label>
-                            <Input
-                              type="number"
-                              min={0}
-                              value={newProdRate}
-                              onChange={(e) => setNewProdRate(e.target.value)}
-                              placeholder="180"
-                              className="text-xs font-mono bg-background"
-                            />
-                          </div>
-
-                          <div className="space-y-1">
-                            <Label className="text-xs">GST Rate (%)</Label>
-                            <Select value={newProdGstPercent} onValueChange={setNewProdGstPercent}>
-                              <SelectTrigger className="text-xs bg-background">
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {GST_RATES.map((opt) => (
-                                  <SelectItem key={opt.value} value={opt.value} className="text-xs">
-                                    {opt.label}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          </div>
-
-                          <div className="space-y-1 sm:col-span-3">
-                            <Label className="text-xs">Shelf Life</Label>
-                            <Input
-                              value={newProdShelfLife}
-                              onChange={(e) => setNewProdShelfLife(e.target.value)}
-                              placeholder="24 Months"
-                              className="text-xs bg-background"
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ) : (
-                /* ======================================================== */
-                /* MODE 2: CREATE BRAND NEW PRODUCT */
-                /* ======================================================== */
-                <div className="space-y-4">
-                  {/* PRODUCT & CATALOG DETAILS */}
-                  <div className="rounded-lg border bg-muted/20 p-4 space-y-3">
-                    <div className="flex items-center gap-2 border-b pb-2">
-                      <Package className="h-4 w-4 text-primary" />
-                      <h3 className="font-semibold text-xs uppercase tracking-wider text-muted-foreground">
-                        1. Product Details
-                      </h3>
-                    </div>
-
-                    <div className="space-y-1">
-                      <Label className="text-xs">Product Name *</Label>
-                      <Input
-                        value={newProdTitle}
-                        onChange={(e) => setNewProdTitle(e.target.value)}
-                        placeholder="e.g. 10% Niacinamide Face Serum with Zinc PCA"
-                        className="text-xs bg-background"
-                      />
-                    </div>
-
-                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                      <div className="space-y-1">
-                        <Label className="text-xs">Product Code / SKU</Label>
-                        <Input
-                          value={newProdCode}
-                          onChange={(e) => setNewProdCode(e.target.value)}
-                          placeholder="e.g. DER-FORM-NIA-01"
-                          className="text-xs font-mono bg-background"
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <Label className="text-xs">Category</Label>
-                        <Select value={newProdCategory} onValueChange={setNewProdCategory}>
-                          <SelectTrigger className="text-xs bg-background">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {CATEGORY_OPTIONS.map((opt) => (
-                              <SelectItem key={opt.value} value={opt.value} className="text-xs">
-                                {opt.label}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="space-y-1">
-                        <Label className="text-xs">Minimum Batch MOQ (Units)</Label>
-                        <Input
-                          type="number"
-                          min={0}
-                          value={newProdMinFloorQty}
-                          onChange={(e) => setNewProdMinFloorQty(e.target.value)}
-                          placeholder="500"
-                          className="text-xs font-mono bg-background"
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <Label className="text-xs">Base UOM</Label>
-                        <Select value={newProdBaseUom} onValueChange={setNewProdBaseUom}>
-                          <SelectTrigger className="text-xs bg-background">
-                            <SelectValue placeholder="Select unit..." />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {UOM_OPTIONS.map((opt) => (
-                              <SelectItem key={opt.value} value={opt.value} className="text-xs">
-                                {opt.label}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    </div>
-
-                    <div className="space-y-1">
-                      <Label className="text-xs">Description & Specifications</Label>
-                      <Textarea
-                        value={newProdDescription}
-                        onChange={(e) => setNewProdDescription(e.target.value)}
-                        rows={2}
-                        placeholder="Active ingredients (e.g. 10% Niacinamide, 1% Zinc PCA), target texture, packaging details..."
-                        className="text-xs bg-background"
-                      />
-                    </div>
-                  </div>
-
-                  {/* VARIANT & PACKAGING DETAILS */}
-                  <div className="rounded-lg border bg-muted/20 p-4 space-y-3">
-                    <div className="flex items-center gap-2 border-b pb-2">
-                      <Boxes className="h-4 w-4 text-primary" />
-                      <h3 className="font-semibold text-xs uppercase tracking-wider text-muted-foreground">
-                        2. Pack Size & Variation Configuration
-                      </h3>
-                    </div>
-
-                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                      <div className="space-y-1">
-                        <Label className="text-xs">Variant Name</Label>
-                        <Select value={newProdVariantName} onValueChange={setNewProdVariantName}>
-                          <SelectTrigger className="text-xs bg-background">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {VARIANT_NAME_OPTIONS.map((opt) => (
-                              <SelectItem key={opt.value} value={opt.value} className="text-xs">
-                                {opt.label}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-
-                      <div className="space-y-1">
-                        <Label className="text-xs">Pack Size</Label>
-                        <Input
-                          value={newProdPackSize}
-                          onChange={(e) => setNewProdPackSize(e.target.value)}
-                          placeholder="50"
-                          className="text-xs text-center font-mono bg-background"
-                        />
-                      </div>
-
-                      <div className="space-y-1">
-                        <Label className="text-xs">Pack UOM</Label>
-                        <Select value={newProdUom} onValueChange={setNewProdUom}>
-                          <SelectTrigger className="text-xs bg-background">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {UOM_OPTIONS.map((opt) => (
-                              <SelectItem key={opt.value} value={opt.value} className="text-xs">
-                                {opt.label}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-
-                      <div className="space-y-1">
-                        <Label className="text-xs">Declared MRP (₹)</Label>
-                        <Input
-                          type="number"
-                          min={0}
-                          value={newProdMrp}
-                          onChange={(e) => setNewProdMrp(e.target.value)}
-                          placeholder="599"
-                          className="text-xs font-mono bg-background"
-                        />
-                      </div>
-
-                      <div className="space-y-1">
-                        <Label className="text-xs">Wholesale Rate (₹)</Label>
-                        <Input
-                          type="number"
-                          min={0}
-                          value={newProdRate}
-                          onChange={(e) => setNewProdRate(e.target.value)}
-                          placeholder="180"
-                          className="text-xs font-mono bg-background"
-                        />
-                      </div>
-
-                      <div className="space-y-1">
-                        <Label className="text-xs">GST Rate (%)</Label>
-                        <Select value={newProdGstPercent} onValueChange={setNewProdGstPercent}>
-                          <SelectTrigger className="text-xs bg-background">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {GST_RATES.map((opt) => (
-                              <SelectItem key={opt.value} value={opt.value} className="text-xs">
-                                {opt.label}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-
-                      <div className="space-y-1 sm:col-span-3">
-                        <Label className="text-xs">Shelf Life</Label>
-                        <Input
-                          value={newProdShelfLife}
-                          onChange={(e) => setNewProdShelfLife(e.target.value)}
-                          placeholder="24 Months"
-                          className="text-xs bg-background"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* SECTION 3: COMMERCIAL ORDER TERMS */}
-              <div className="rounded-lg border bg-emerald-500/5 border-emerald-500/20 p-4 space-y-3">
-                <div className="flex items-center gap-2 border-b border-emerald-500/20 pb-2">
-                  <ShoppingBag className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
-                  <h3 className="font-semibold text-xs uppercase tracking-wider text-emerald-700 dark:text-emerald-300">
-                    3. Commercial Order Terms for this Line
-                  </h3>
-                </div>
-
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                  <div className="space-y-1">
-                    <Label className="text-xs font-semibold">Batch Order Qty (Units) *</Label>
-                    <Input
-                      type="number"
-                      min={1}
-                      value={newProdQuantity}
-                      onChange={(e) => setNewProdQuantity(e.target.value)}
-                      placeholder="500"
-                      className="text-xs font-mono font-bold bg-background"
-                    />
-                  </div>
-
-                  <div className="space-y-1">
-                    <Label className="text-xs font-semibold">Contract Billing Rate (₹) *</Label>
-                    <Input
-                      type="number"
-                      min={0}
-                      value={newProdRate}
-                      onChange={(e) => setNewProdRate(e.target.value)}
-                      placeholder="180"
-                      className="text-xs font-mono font-bold bg-background"
-                    />
-                  </div>
-
-                  <div className="space-y-1">
-                    <Label className="text-xs">GST Tax Rate</Label>
-                    <Select value={newProdGstPercent} onValueChange={setNewProdGstPercent}>
-                      <SelectTrigger className="text-xs bg-background">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {GST_RATES.map((opt) => (
-                          <SelectItem key={opt.value} value={opt.value} className="text-xs">
-                            {opt.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-
-                {/* Calculation Preview */}
-                <div className="rounded border bg-background p-3 flex items-center justify-between text-xs">
-                  <div>
-                    <span className="text-muted-foreground">Line Subtotal: </span>
-                    <strong className="font-mono">{formatINR((Number(newProdQuantity) || 0) * (Number(newProdRate) || 0))}</strong>
-                    <span className="text-muted-foreground ml-3">GST ({newProdGstPercent}%): </span>
-                    <strong className="font-mono">
-                      {formatINR(
-                        (((Number(newProdQuantity) || 0) * (Number(newProdRate) || 0)) * (Number(newProdGstPercent) || 0)) / 100
-                      )}
-                    </strong>
-                  </div>
-                  <div className="text-right">
-                    <span className="text-muted-foreground">Line Total: </span>
-                    <span className="font-bold text-sm text-emerald-600 dark:text-emerald-400 font-mono">
-                      {formatINR(
-                        ((Number(newProdQuantity) || 0) * (Number(newProdRate) || 0)) *
-                          (1 + (Number(newProdGstPercent) || 0) / 100)
-                      )}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <DialogFooter className="gap-2 sm:gap-0 pt-2">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setNewProductDialogOpen(false)}
-              >
-                Cancel
-              </Button>
-              <Button
-                type="button"
-                className="bg-primary font-semibold"
-                onClick={handleCreateProduct}
-                disabled={
-                  creatingProduct ||
-                  (prodModalMode === 'new' && !newProdTitle.trim()) ||
-                  (prodModalMode === 'existing' && !selectedExistingProdId)
-                }
-              >
-                {creatingProduct
-                  ? 'Saving Product...'
-                  : prodModalMode === 'new'
-                    ? 'Create Product & Add to Order'
-                    : variantMode === 'new_variant'
-                      ? 'Add Variant & Apply to Order'
-                      : 'Apply Product to Order'}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
       </PageBody>
     </Page>
   )
