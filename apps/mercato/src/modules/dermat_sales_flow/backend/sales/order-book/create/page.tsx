@@ -67,15 +67,6 @@ const CATEGORY_OPTIONS = [
   { value: 'Oil', label: 'Face / Hair Oil' },
 ] as const
 
-const VARIANT_NAME_OPTIONS = [
-  { value: 'Standard', label: 'Standard' },
-  { value: 'Small', label: 'Small / Travel (15-30ml)' },
-  { value: 'Medium', label: 'Medium (50ml)' },
-  { value: 'Large', label: 'Large (100ml+)' },
-  { value: 'Mini', label: 'Mini' },
-  { value: 'Sample', label: 'Lab Sample (5-10ml)' },
-] as const
-
 const GST_RATES = [
   { value: '0', label: '0% (Exempt)' },
   { value: '5', label: '5% GST' },
@@ -232,10 +223,12 @@ export default function CreateOrderPage() {
   const [targetLineKey, setTargetLineKey] = React.useState<string | null>(null)
   const [prodModalMode, setProdModalMode] = React.useState<'existing' | 'new'>('existing')
   const [selectedExistingProdId, setSelectedExistingProdId] = React.useState<string>('')
-  const [variantMode, setVariantMode] = React.useState<'existing' | 'new_variant'>('existing')
   // Multi-select: lets the user attach several variations (e.g. 30ml + 50ml) of the
   // same product to the order in one go, one order line per selected variation.
   const [selectedVariantIds, setSelectedVariantIds] = React.useState<string[]>([])
+  // True while the inline "add a new variation" table row is open for editing.
+  const [addingNewVariantRow, setAddingNewVariantRow] = React.useState(false)
+  const [savingNewVariantRow, setSavingNewVariantRow] = React.useState(false)
   const [existingVariants, setExistingVariants] = React.useState<
     Array<{ id: string; name: string; sku?: string | null; packSize?: string; uom?: string; mrp?: string; rate?: string | null; gstPercent?: string; gstTaxCategory?: string; shelfLife?: string; isDefault?: boolean }>
   >([])
@@ -530,6 +523,7 @@ export default function CreateOrderPage() {
       const currentLine = lines.find((l) => l.key === lineKey)
       setProdModalMode(mode)
       setSelectedVariantIds([])
+      setAddingNewVariantRow(false)
 
       const effectiveProdId =
         preselectedProdId ||
@@ -538,7 +532,6 @@ export default function CreateOrderPage() {
         catalogProducts[0]?.id ||
         ''
       setSelectedExistingProdId(effectiveProdId)
-      setVariantMode('existing')
 
       // Customer assignment
       setNewProdCustomerId(selectedCustomer?.id || '')
@@ -576,6 +569,99 @@ export default function CreateOrderPage() {
     },
     [lines, selectedCustomer, catalogProducts, loadVariantsForProduct]
   )
+
+  // Open the inline "add a new variation" table row, starting from blank fields
+  // (not a pre-filled clone of whichever variant was last clicked).
+  const startAddingNewVariantRow = React.useCallback(() => {
+    setNewProdVariantName('')
+    setNewProdPackSize('')
+    setNewProdUom('ml')
+    setNewProdMrp('')
+    setNewProdRate('')
+    setNewProdGstPercent('18')
+    setNewProdShelfLife('')
+    setAddingNewVariantRow(true)
+  }, [])
+
+  // Save the inline "add a new variation" row immediately: creates the variant via
+  // the API right away, adds it to the variation table pre-selected, and closes the
+  // row — no separate outer "confirm" step needed for this part.
+  const handleSaveNewVariantRow = React.useCallback(async () => {
+    if (!selectedExistingProdId) {
+      flash('Select a product first', 'error')
+      return
+    }
+    if (!newProdPackSize.trim()) {
+      flash('Pack Size is required', 'error')
+      return
+    }
+    setSavingNewVariantRow(true)
+    try {
+      const mrpNum = Number(newProdMrp)
+      const packNum = Number(newProdPackSize)
+      const rateNum = Number(newProdRate)
+      const variantPayload = {
+        organizationId,
+        tenantId,
+        productId: selectedExistingProdId,
+        name: newProdVariantName.trim() || `${newProdPackSize}${newProdUom}`,
+        isActive: true,
+        weightValue: !Number.isNaN(packNum) ? packNum : undefined,
+        weightUnit: newProdUom || undefined,
+        metadata: {
+          pack_size: newProdPackSize.trim(),
+          uom: newProdUom.trim(),
+          mrp: newProdMrp.trim(),
+          rate: newProdRate.trim(),
+          gst_percent: newProdGstPercent.trim() || '18',
+          gst_tax_category: newProdGstTaxCategory.trim() || '18% GST Cosmetics',
+          shelf_life: newProdShelfLife.trim() || '24 Months',
+        },
+        customFields: {
+          pack_size: newProdPackSize.trim() || undefined,
+          uom: newProdUom.trim() || undefined,
+          shelf_life: newProdShelfLife.trim() || undefined,
+          mrp: !Number.isNaN(mrpNum) ? mrpNum : undefined,
+          rate: !Number.isNaN(rateNum) ? rateNum : undefined,
+          gst_percent: newProdGstPercent.trim() || '18',
+          gst_tax_category: newProdGstTaxCategory.trim() || '18% GST Cosmetics',
+        },
+      }
+      const res = await createCrud<{ id: string }>('catalog/variants', variantPayload)
+      const newId = res.result?.id || `local-${Date.now()}`
+      const newVariant = {
+        id: newId,
+        name: newProdVariantName.trim() || `${newProdPackSize}${newProdUom}`,
+        packSize: newProdPackSize.trim(),
+        uom: newProdUom.trim(),
+        mrp: newProdMrp.trim(),
+        rate: newProdRate.trim() || null,
+        gstPercent: newProdGstPercent.trim() || '18',
+        shelfLife: newProdShelfLife.trim() || '24 Months',
+        isDefault: false,
+      }
+      setExistingVariants((prev) => [...prev, newVariant])
+      setSelectedVariantIds((prev) => [...prev, newId])
+      setAddingNewVariantRow(false)
+      flash(`Variation "${newVariant.name}" saved`, 'success')
+    } catch (err) {
+      flash(err instanceof Error ? err.message : 'Failed to save variation', 'error')
+    } finally {
+      setSavingNewVariantRow(false)
+    }
+  }, [
+    selectedExistingProdId,
+    newProdVariantName,
+    newProdPackSize,
+    newProdUom,
+    newProdMrp,
+    newProdRate,
+    newProdGstPercent,
+    newProdGstTaxCategory,
+    newProdShelfLife,
+    organizationId,
+    tenantId,
+  ])
 
   // Save product & variant (handles creating brand new product OR configuring existing product / new variant)
   const handleCreateProduct = React.useCallback(async () => {
@@ -682,8 +768,9 @@ export default function CreateOrderPage() {
         }
       }
 
-      // Create variant if new variant mode or if creating brand new product
-      if (prodModalMode === 'new' || variantMode === 'new_variant') {
+      // A brand-new product always needs its first variant created too (existing
+      // products already get their variants via the inline "add variation" row).
+      if (prodModalMode === 'new') {
         const mrpNum = Number(newProdMrp)
         const packNum = Number(newProdPackSize)
         const rateNum = Number(newProdRate)
@@ -715,7 +802,7 @@ export default function CreateOrderPage() {
           },
         }
         await createCrud('catalog/variants', variantPayload)
-      } else if (prodModalMode === 'existing' && variantMode === 'existing') {
+      } else if (prodModalMode === 'existing') {
         const chosen = existingVariants.filter((v) => selectedVariantIds.includes(v.id))
         if (!chosen.length) {
           flash('Select at least one variation (or add a new one)', 'error')
@@ -798,7 +885,6 @@ export default function CreateOrderPage() {
   }, [
     prodModalMode,
     selectedExistingProdId,
-    variantMode,
     selectedVariantIds,
     existingVariants,
     newProdTitle,
@@ -1247,221 +1333,169 @@ export default function CreateOrderPage() {
                     ) : null}
                   </div>
 
-                  {/* VARIANT CONFIGURATION (EXISTING VS NEW VARIANT) */}
-                  <div className="rounded-lg border bg-muted/20 p-4 space-y-3">
-                    <div className="flex items-center justify-between border-b pb-2">
+                  {/* VARIATION TABLE — pick one or more existing rows, or add a new one inline */}
+                  <div className="rounded-lg border bg-muted/20 p-4 space-y-2">
+                    <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         <Boxes className="h-4 w-4 text-primary" />
                         <h3 className="font-semibold text-xs uppercase tracking-wider text-muted-foreground">
-                          2. Pack Size & Variation Choice
+                          2. Variations — select one or more, or add a new one
                         </h3>
                       </div>
-
-                      {/* Variant Sub-mode toggle */}
-                      <SegmentedControl
-                        value={variantMode}
-                        onValueChange={(val: any) => setVariantMode(val)}
-                        className="text-xs"
-                      >
-                        <SegmentedControlItem value="existing" className="text-[11px] px-3 py-1">
-                          Use Existing Variation
-                        </SegmentedControlItem>
-                        <SegmentedControlItem value="new_variant" className="text-[11px] px-3 py-1">
-                          + Add New Variation
-                        </SegmentedControlItem>
-                      </SegmentedControl>
+                      <span className="text-[11px] text-muted-foreground">{existingVariants.length} available</span>
                     </div>
 
-                    {variantMode === 'existing' ? (
-                      <div className="space-y-3">
-                        <div className="space-y-1.5">
-                          <div className="flex items-center justify-between">
-                            <Label className="text-xs font-medium">Select Variation(s) — pick more than one to add "both" to the order</Label>
-                            <span className="text-[11px] text-muted-foreground">{existingVariants.length} variation(s) available</span>
-                          </div>
-
+                    <div className="overflow-x-auto rounded border bg-background">
+                      <table className="w-full text-xs">
+                        <thead className="bg-muted/40 text-[10px] uppercase tracking-wider text-muted-foreground">
+                          <tr>
+                            <th className="py-2 px-2 w-8"></th>
+                            <th className="py-2 px-2 text-left">Variation</th>
+                            <th className="py-2 px-2 text-left">Pack</th>
+                            <th className="py-2 px-2 text-right">MRP (₹)</th>
+                            <th className="py-2 px-2 text-right">Rate (₹)</th>
+                            <th className="py-2 px-2 text-right">GST</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y">
                           {loadingVariants ? (
-                            <div className="text-xs text-muted-foreground py-3 font-mono text-center bg-background rounded border">
-                              Loading product variations...
-                            </div>
+                            <tr>
+                              <td colSpan={6} className="py-3 text-center text-muted-foreground font-mono">
+                                Loading product variations...
+                              </td>
+                            </tr>
                           ) : (
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-48 overflow-y-auto p-1">
-                              {existingVariants.map((v) => {
-                                const isSelected = selectedVariantIds.includes(v.id)
-                                return (
-                                  <button
-                                    key={v.id}
-                                    type="button"
-                                    onClick={() => {
-                                      setSelectedVariantIds((prev) =>
-                                        prev.includes(v.id) ? prev.filter((id) => id !== v.id) : [...prev, v.id]
-                                      )
-                                      setNewProdVariantName(v.name)
-                                      setNewProdPackSize(v.packSize || '50')
-                                      setNewProdUom(v.uom || 'ml')
-                                      setNewProdMrp(v.mrp || '599')
-                                      if (v.rate) setNewProdRate(v.rate)
-                                      if (v.gstPercent) setNewProdGstPercent(v.gstPercent)
-                                      if (v.shelfLife) setNewProdShelfLife(v.shelfLife)
-                                    }}
-                                    className={`text-left p-2.5 rounded-lg border transition-all flex flex-col gap-1 cursor-pointer ${
-                                      isSelected
-                                        ? 'border-primary bg-primary/10 ring-1 ring-primary shadow-xs'
-                                        : 'border-border bg-background hover:bg-muted/40'
-                                    }`}
-                                  >
-                                    <div className="flex items-center justify-between">
-                                      <span className="font-semibold text-xs text-foreground flex items-center gap-1.5">
-                                        <span className={`flex h-3.5 w-3.5 items-center justify-center rounded-sm border text-[9px] ${isSelected ? 'border-primary bg-primary text-primary-foreground' : 'border-muted-foreground/40'}`}>
-                                          {isSelected ? '✓' : ''}
-                                        </span>
-                                        {v.name}
-                                      </span>
-                                      {v.isDefault ? (
-                                        <span className="text-[10px] font-semibold bg-emerald-100 text-emerald-800 px-1.5 py-0.2 rounded border border-emerald-200">
-                                          Default
-                                        </span>
-                                      ) : null}
-                                    </div>
-                                    <div className="flex items-center justify-between text-xs text-muted-foreground mt-0.5">
-                                      <span className="font-semibold bg-muted px-1.5 py-0.5 rounded text-foreground font-mono text-[11px]">
-                                        {v.packSize} {v.uom}
-                                      </span>
-                                      <span className="font-bold text-emerald-600 dark:text-emerald-400">
-                                        MRP: ₹{v.mrp || '—'}
-                                      </span>
-                                    </div>
-                                    <div className="flex items-center justify-between text-[10px] text-muted-foreground mt-0.5">
-                                      {v.rate ? (
-                                        <span>Rate: <strong className="text-foreground">₹{v.rate}</strong></span>
-                                      ) : <span />}
-                                      <span className="font-mono bg-blue-50 text-blue-700 dark:bg-blue-950 dark:text-blue-300 px-1.5 py-0.2 rounded font-medium">
-                                        GST: {v.gstPercent || '18'}%
-                                      </span>
-                                    </div>
-                                  </button>
-                                )
-                              })}
-                            </div>
+                            existingVariants.map((v) => {
+                              const isSelected = selectedVariantIds.includes(v.id)
+                              return (
+                                <tr
+                                  key={v.id}
+                                  onClick={() =>
+                                    setSelectedVariantIds((prev) =>
+                                      prev.includes(v.id) ? prev.filter((id) => id !== v.id) : [...prev, v.id]
+                                    )
+                                  }
+                                  className={`cursor-pointer transition-colors ${isSelected ? 'bg-primary/10' : 'hover:bg-muted/40'}`}
+                                >
+                                  <td className="py-2 px-2 text-center">
+                                    <span className={`inline-flex h-3.5 w-3.5 items-center justify-center rounded-sm border text-[9px] ${isSelected ? 'border-primary bg-primary text-primary-foreground' : 'border-muted-foreground/40'}`}>
+                                      {isSelected ? '✓' : ''}
+                                    </span>
+                                  </td>
+                                  <td className="py-2 px-2 font-medium">
+                                    {v.name}
+                                    {v.isDefault ? <span className="ml-1.5 text-[9px] font-semibold text-emerald-600 dark:text-emerald-400">Default</span> : null}
+                                  </td>
+                                  <td className="py-2 px-2 font-mono">{v.packSize} {v.uom}</td>
+                                  <td className="py-2 px-2 text-right font-mono">{v.mrp || '—'}</td>
+                                  <td className="py-2 px-2 text-right font-mono">{v.rate || '—'}</td>
+                                  <td className="py-2 px-2 text-right font-mono">{v.gstPercent || '18'}%</td>
+                                </tr>
+                              )
+                            })
                           )}
-                        </div>
 
-                        <div className="text-xs bg-background p-2.5 rounded border">
-                          {selectedVariantIds.length === 0 ? (
-                            <span className="text-muted-foreground">No variation selected yet — tap one or more above.</span>
-                          ) : (
-                            <div className="flex flex-wrap items-center gap-2">
-                              <span className="text-muted-foreground text-[10px]">
-                                {selectedVariantIds.length} selected:
-                              </span>
-                              {existingVariants
-                                .filter((v) => selectedVariantIds.includes(v.id))
-                                .map((v) => (
-                                  <span key={v.id} className="rounded bg-primary/10 border border-primary/30 px-2 py-0.5 font-medium text-foreground">
-                                    {v.name} ({v.packSize} {v.uom})
-                                  </span>
-                                ))}
-                            </div>
-                          )}
-                        </div>
+                          {addingNewVariantRow ? (
+                            <tr className="bg-amber-500/5">
+                              <td className="py-1.5 px-2"></td>
+                              <td className="py-1.5 px-2">
+                                <Input
+                                  value={newProdVariantName}
+                                  onChange={(e) => setNewProdVariantName(e.target.value)}
+                                  placeholder="e.g. 30ml"
+                                  className="h-7 text-xs bg-background"
+                                />
+                              </td>
+                              <td className="py-1.5 px-2">
+                                <div className="flex items-center gap-1">
+                                  <Input
+                                    value={newProdPackSize}
+                                    onChange={(e) => setNewProdPackSize(e.target.value)}
+                                    placeholder="30"
+                                    className="h-7 w-14 text-xs text-center font-mono bg-background"
+                                  />
+                                  <Select value={newProdUom} onValueChange={setNewProdUom}>
+                                    <SelectTrigger className="h-7 w-16 text-xs bg-background">
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      {UOM_OPTIONS.map((opt) => (
+                                        <SelectItem key={opt.value} value={opt.value} className="text-xs">
+                                          {opt.value}
+                                        </SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+                              </td>
+                              <td className="py-1.5 px-2">
+                                <Input
+                                  type="number"
+                                  min={0}
+                                  value={newProdMrp}
+                                  onChange={(e) => setNewProdMrp(e.target.value)}
+                                  placeholder="599"
+                                  className="h-7 text-xs font-mono text-right bg-background"
+                                />
+                              </td>
+                              <td className="py-1.5 px-2">
+                                <Input
+                                  type="number"
+                                  min={0}
+                                  value={newProdRate}
+                                  onChange={(e) => setNewProdRate(e.target.value)}
+                                  placeholder="180"
+                                  className="h-7 text-xs font-mono text-right bg-background"
+                                />
+                              </td>
+                              <td className="py-1.5 px-2">
+                                <Select value={newProdGstPercent} onValueChange={setNewProdGstPercent}>
+                                  <SelectTrigger className="h-7 text-xs bg-background">
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {GST_RATES.map((opt) => (
+                                      <SelectItem key={opt.value} value={opt.value} className="text-xs">
+                                        {opt.value}%
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              </td>
+                            </tr>
+                          ) : null}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {addingNewVariantRow ? (
+                      <div className="flex items-center justify-end gap-2 pt-1">
+                        <button
+                          type="button"
+                          onClick={() => setAddingNewVariantRow(false)}
+                          className="text-muted-foreground hover:text-foreground text-[11px] font-medium"
+                        >
+                          Cancel
+                        </button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          className="h-7 text-xs"
+                          onClick={handleSaveNewVariantRow}
+                          disabled={savingNewVariantRow || !newProdPackSize.trim()}
+                        >
+                          {savingNewVariantRow ? 'Saving...' : 'Save Variation'}
+                        </Button>
                       </div>
                     ) : (
-                      /* Add New Variant Fields */
-                      <div className="space-y-3">
-                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                          <div className="space-y-1">
-                            <Label className="text-xs">New Variant Name</Label>
-                            <Select value={newProdVariantName} onValueChange={setNewProdVariantName}>
-                              <SelectTrigger className="text-xs bg-background">
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {VARIANT_NAME_OPTIONS.map((opt) => (
-                                  <SelectItem key={opt.value} value={opt.value} className="text-xs">
-                                    {opt.label}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          </div>
-
-                          <div className="space-y-1">
-                            <Label className="text-xs">Pack Size *</Label>
-                            <Input
-                              value={newProdPackSize}
-                              onChange={(e) => setNewProdPackSize(e.target.value)}
-                              placeholder="50"
-                              className="text-xs text-center font-mono bg-background"
-                            />
-                          </div>
-
-                          <div className="space-y-1">
-                            <Label className="text-xs">Pack UOM</Label>
-                            <Select value={newProdUom} onValueChange={setNewProdUom}>
-                              <SelectTrigger className="text-xs bg-background">
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {UOM_OPTIONS.map((opt) => (
-                                  <SelectItem key={opt.value} value={opt.value} className="text-xs">
-                                    {opt.label}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          </div>
-
-                          <div className="space-y-1">
-                            <Label className="text-xs">Declared MRP (₹)</Label>
-                            <Input
-                              type="number"
-                              min={0}
-                              value={newProdMrp}
-                              onChange={(e) => setNewProdMrp(e.target.value)}
-                              placeholder="599"
-                              className="text-xs font-mono bg-background"
-                            />
-                          </div>
-
-                          <div className="space-y-1">
-                            <Label className="text-xs">Wholesale Rate (₹)</Label>
-                            <Input
-                              type="number"
-                              min={0}
-                              value={newProdRate}
-                              onChange={(e) => setNewProdRate(e.target.value)}
-                              placeholder="180"
-                              className="text-xs font-mono bg-background"
-                            />
-                          </div>
-
-                          <div className="space-y-1">
-                            <Label className="text-xs">GST Rate (%)</Label>
-                            <Select value={newProdGstPercent} onValueChange={setNewProdGstPercent}>
-                              <SelectTrigger className="text-xs bg-background">
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {GST_RATES.map((opt) => (
-                                  <SelectItem key={opt.value} value={opt.value} className="text-xs">
-                                    {opt.label}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          </div>
-
-                          <div className="space-y-1 sm:col-span-3">
-                            <Label className="text-xs">Shelf Life</Label>
-                            <Input
-                              value={newProdShelfLife}
-                              onChange={(e) => setNewProdShelfLife(e.target.value)}
-                              placeholder="24 Months"
-                              className="text-xs bg-background"
-                            />
-                          </div>
-                        </div>
-                      </div>
+                      <button
+                        type="button"
+                        onClick={startAddingNewVariantRow}
+                        className="text-primary hover:underline text-[11px] font-medium inline-flex items-center gap-1"
+                      >
+                        <Plus className="h-3 w-3" />
+                        Add a new variation (e.g. a size that isn't listed)
+                      </button>
                     )}
                   </div>
                 </div>
@@ -1469,192 +1503,128 @@ export default function CreateOrderPage() {
                 /* ======================================================== */
                 /* MODE 2: CREATE BRAND NEW PRODUCT */
                 /* ======================================================== */
-                <div className="space-y-4">
-                  {/* PRODUCT & CATALOG DETAILS */}
-                  <div className="rounded-lg border bg-muted/20 p-4 space-y-3">
-                    <div className="flex items-center gap-2 border-b pb-2">
+                <div className="space-y-3">
+                  <div className="rounded-lg border bg-muted/20 p-3">
+                    <div className="flex items-center gap-2 pb-2">
                       <Package className="h-4 w-4 text-primary" />
                       <h3 className="font-semibold text-xs uppercase tracking-wider text-muted-foreground">
-                        1. Product Details
+                        New Product & Variation — fill in what's needed, then save
                       </h3>
                     </div>
-
-                    <div className="space-y-1">
-                      <Label className="text-xs">Product Name *</Label>
-                      <Input
-                        value={newProdTitle}
-                        onChange={(e) => setNewProdTitle(e.target.value)}
-                        placeholder="e.g. 10% Niacinamide Face Serum with Zinc PCA"
-                        className="text-xs bg-background"
-                      />
+                    <div className="overflow-x-auto rounded border bg-background">
+                      <table className="w-full text-xs">
+                        <thead className="bg-muted/40 text-[10px] uppercase tracking-wider text-muted-foreground">
+                          <tr>
+                            <th className="py-2 px-2 text-left min-w-[160px]">Product Name *</th>
+                            <th className="py-2 px-2 text-left">Code</th>
+                            <th className="py-2 px-2 text-left">Category</th>
+                            <th className="py-2 px-2 text-left">Pack</th>
+                            <th className="py-2 px-2 text-right">MRP (₹)</th>
+                            <th className="py-2 px-2 text-right">Rate (₹)</th>
+                            <th className="py-2 px-2 text-right">GST</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <tr>
+                            <td className="py-1.5 px-2">
+                              <Input
+                                value={newProdTitle}
+                                onChange={(e) => setNewProdTitle(e.target.value)}
+                                placeholder="e.g. 10% Niacinamide Face Serum"
+                                className="h-7 text-xs bg-background"
+                              />
+                            </td>
+                            <td className="py-1.5 px-2">
+                              <Input
+                                value={newProdCode}
+                                onChange={(e) => setNewProdCode(e.target.value)}
+                                placeholder="DER-FORM-01"
+                                className="h-7 w-28 text-xs font-mono bg-background"
+                              />
+                            </td>
+                            <td className="py-1.5 px-2">
+                              <Select value={newProdCategory} onValueChange={setNewProdCategory}>
+                                <SelectTrigger className="h-7 w-32 text-xs bg-background">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {CATEGORY_OPTIONS.map((opt) => (
+                                    <SelectItem key={opt.value} value={opt.value} className="text-xs">
+                                      {opt.label}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </td>
+                            <td className="py-1.5 px-2">
+                              <div className="flex items-center gap-1">
+                                <Input
+                                  value={newProdPackSize}
+                                  onChange={(e) => setNewProdPackSize(e.target.value)}
+                                  placeholder="50"
+                                  className="h-7 w-14 text-xs text-center font-mono bg-background"
+                                />
+                                <Select value={newProdUom} onValueChange={(v) => { setNewProdUom(v); setNewProdBaseUom(v) }}>
+                                  <SelectTrigger className="h-7 w-16 text-xs bg-background">
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {UOM_OPTIONS.map((opt) => (
+                                      <SelectItem key={opt.value} value={opt.value} className="text-xs">
+                                        {opt.value}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                            </td>
+                            <td className="py-1.5 px-2">
+                              <Input
+                                type="number"
+                                min={0}
+                                value={newProdMrp}
+                                onChange={(e) => setNewProdMrp(e.target.value)}
+                                placeholder="599"
+                                className="h-7 w-16 text-xs font-mono text-right bg-background"
+                              />
+                            </td>
+                            <td className="py-1.5 px-2">
+                              <Input
+                                type="number"
+                                min={0}
+                                value={newProdRate}
+                                onChange={(e) => setNewProdRate(e.target.value)}
+                                placeholder="180"
+                                className="h-7 w-16 text-xs font-mono text-right bg-background"
+                              />
+                            </td>
+                            <td className="py-1.5 px-2">
+                              <Select value={newProdGstPercent} onValueChange={setNewProdGstPercent}>
+                                <SelectTrigger className="h-7 w-16 text-xs bg-background">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {GST_RATES.map((opt) => (
+                                    <SelectItem key={opt.value} value={opt.value} className="text-xs">
+                                      {opt.value}%
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </td>
+                          </tr>
+                        </tbody>
+                      </table>
                     </div>
-
-                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                      <div className="space-y-1">
-                        <Label className="text-xs">Product Code / SKU</Label>
-                        <Input
-                          value={newProdCode}
-                          onChange={(e) => setNewProdCode(e.target.value)}
-                          placeholder="e.g. DER-FORM-NIA-01"
-                          className="text-xs font-mono bg-background"
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <Label className="text-xs">Category</Label>
-                        <Select value={newProdCategory} onValueChange={setNewProdCategory}>
-                          <SelectTrigger className="text-xs bg-background">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {CATEGORY_OPTIONS.map((opt) => (
-                              <SelectItem key={opt.value} value={opt.value} className="text-xs">
-                                {opt.label}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="space-y-1">
-                        <Label className="text-xs">Minimum Batch MOQ (Units)</Label>
-                        <Input
-                          type="number"
-                          min={0}
-                          value={newProdMinFloorQty}
-                          onChange={(e) => setNewProdMinFloorQty(e.target.value)}
-                          placeholder="500"
-                          className="text-xs font-mono bg-background"
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <Label className="text-xs">Base UOM</Label>
-                        <Select value={newProdBaseUom} onValueChange={setNewProdBaseUom}>
-                          <SelectTrigger className="text-xs bg-background">
-                            <SelectValue placeholder="Select unit..." />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {UOM_OPTIONS.map((opt) => (
-                              <SelectItem key={opt.value} value={opt.value} className="text-xs">
-                                {opt.label}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    </div>
-
-                    <div className="space-y-1">
-                      <Label className="text-xs">Description & Specifications</Label>
+                    <div className="mt-2 space-y-1">
+                      <Label className="text-xs text-muted-foreground">Description & Specifications (optional)</Label>
                       <Textarea
                         value={newProdDescription}
                         onChange={(e) => setNewProdDescription(e.target.value)}
                         rows={2}
-                        placeholder="Active ingredients (e.g. 10% Niacinamide, 1% Zinc PCA), target texture, packaging details..."
+                        placeholder="Active ingredients, target texture, packaging details..."
                         className="text-xs bg-background"
                       />
-                    </div>
-                  </div>
-
-                  {/* VARIANT & PACKAGING DETAILS */}
-                  <div className="rounded-lg border bg-muted/20 p-4 space-y-3">
-                    <div className="flex items-center gap-2 border-b pb-2">
-                      <Boxes className="h-4 w-4 text-primary" />
-                      <h3 className="font-semibold text-xs uppercase tracking-wider text-muted-foreground">
-                        2. Pack Size & Variation Configuration
-                      </h3>
-                    </div>
-
-                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                      <div className="space-y-1">
-                        <Label className="text-xs">Variant Name</Label>
-                        <Select value={newProdVariantName} onValueChange={setNewProdVariantName}>
-                          <SelectTrigger className="text-xs bg-background">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {VARIANT_NAME_OPTIONS.map((opt) => (
-                              <SelectItem key={opt.value} value={opt.value} className="text-xs">
-                                {opt.label}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-
-                      <div className="space-y-1">
-                        <Label className="text-xs">Pack Size</Label>
-                        <Input
-                          value={newProdPackSize}
-                          onChange={(e) => setNewProdPackSize(e.target.value)}
-                          placeholder="50"
-                          className="text-xs text-center font-mono bg-background"
-                        />
-                      </div>
-
-                      <div className="space-y-1">
-                        <Label className="text-xs">Pack UOM</Label>
-                        <Select value={newProdUom} onValueChange={setNewProdUom}>
-                          <SelectTrigger className="text-xs bg-background">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {UOM_OPTIONS.map((opt) => (
-                              <SelectItem key={opt.value} value={opt.value} className="text-xs">
-                                {opt.label}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-
-                      <div className="space-y-1">
-                        <Label className="text-xs">Declared MRP (₹)</Label>
-                        <Input
-                          type="number"
-                          min={0}
-                          value={newProdMrp}
-                          onChange={(e) => setNewProdMrp(e.target.value)}
-                          placeholder="599"
-                          className="text-xs font-mono bg-background"
-                        />
-                      </div>
-
-                      <div className="space-y-1">
-                        <Label className="text-xs">Wholesale Rate (₹)</Label>
-                        <Input
-                          type="number"
-                          min={0}
-                          value={newProdRate}
-                          onChange={(e) => setNewProdRate(e.target.value)}
-                          placeholder="180"
-                          className="text-xs font-mono bg-background"
-                        />
-                      </div>
-
-                      <div className="space-y-1">
-                        <Label className="text-xs">GST Rate (%)</Label>
-                        <Select value={newProdGstPercent} onValueChange={setNewProdGstPercent}>
-                          <SelectTrigger className="text-xs bg-background">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {GST_RATES.map((opt) => (
-                              <SelectItem key={opt.value} value={opt.value} className="text-xs">
-                                {opt.label}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-
-                      <div className="space-y-1 sm:col-span-3">
-                        <Label className="text-xs">Shelf Life</Label>
-                        <Input
-                          value={newProdShelfLife}
-                          onChange={(e) => setNewProdShelfLife(e.target.value)}
-                          placeholder="24 Months"
-                          className="text-xs bg-background"
-                        />
-                      </div>
                     </div>
                   </div>
                 </div>
@@ -1758,9 +1728,7 @@ export default function CreateOrderPage() {
                   ? 'Saving Product...'
                   : prodModalMode === 'new'
                     ? 'Create Product & Add to Order'
-                    : variantMode === 'new_variant'
-                      ? 'Add Variant & Apply to Order'
-                      : 'Add Selected Variation(s) to Order'}
+                    : 'Add Selected Variation(s) to Order'}
               </Button>
             </div>
           </div>
@@ -2177,22 +2145,25 @@ export default function CreateOrderPage() {
                                 <Select
                                   value={line.productId}
                                   onValueChange={(val) => {
-                                    const matched = catalogProducts.find((p) => p.id === val)
-                                    updateLine(line.key, {
-                                      productId: val,
-                                      productLabel: matched?.title ?? '',
-                                      productCode: matched?.sku || '',
-                                      category: matched?.category || line.category || 'Serum',
-                                      uom: matched?.baseUom || line.uom || 'ml',
-                                      brandName: matched?.clientBrand || line.brandName || selectedCustomer?.displayName || '',
-                                      variantSku: 'Standard',
-                                    })
+                                    // Selecting a product here only opens the variation panel
+                                    // below with that product's real variations loaded — the
+                                    // line itself is only updated once a variation is actually
+                                    // confirmed there, so we never write a fake "Standard"
+                                    // variant with no real pack size onto the line.
+                                    if (val === '__new_product__') {
+                                      openLineProductPanel(line.key, 'new')
+                                      return
+                                    }
+                                    openLineProductPanel(line.key, 'existing', val)
                                   }}
                                 >
                                   <SelectTrigger className="text-xs h-8">
                                     <SelectValue placeholder="Select product from Catalog…" />
                                   </SelectTrigger>
                                   <SelectContent className="max-h-72">
+                                    <SelectItem value="__new_product__" className="text-xs font-medium text-amber-600 dark:text-amber-400">
+                                      + Create New Product
+                                    </SelectItem>
                                     {customerMatchingProducts.length > 0 ? (
                                       <div className="px-2 py-1 text-[11px] font-bold text-primary uppercase tracking-wider bg-primary/10 rounded-sm mb-1">
                                         ✨ {selectedCustomer?.displayName || 'Customer'} Products ({customerMatchingProducts.length})
@@ -2228,7 +2199,11 @@ export default function CreateOrderPage() {
                                   </SelectContent>
                                 </Select>
 
-                                <div className="flex items-center justify-between text-[11px] gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => openLineProductPanel(line.key, 'existing', line.productId)}
+                                  className="w-full text-left text-[11px]"
+                                >
                                   {line.productId ? (
                                     <div className="flex flex-wrap items-center gap-1.5">
                                       {line.variantSku ? (
@@ -2248,29 +2223,7 @@ export default function CreateOrderPage() {
                                   ) : (
                                     <span className="text-muted-foreground text-[10px]">No variation chosen yet</span>
                                   )}
-                                  <div className="flex items-center gap-2 shrink-0">
-                                    <button
-                                      type="button"
-                                      onClick={() => openLineProductPanel(line.key, 'existing', line.productId)}
-                                      className="text-primary hover:underline text-[10px] font-medium inline-flex items-center gap-1"
-                                    >
-                                      <Boxes className="h-2.5 w-2.5 text-primary" />
-                                      {targetLineKey === line.key && prodModalMode === 'existing'
-                                        ? 'Close'
-                                        : line.productId
-                                          ? 'Change Variation'
-                                          : 'Choose Variation'}
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => openLineProductPanel(line.key, 'new')}
-                                      className="text-amber-600 dark:text-amber-400 hover:underline text-[10px] font-medium inline-flex items-center gap-1"
-                                    >
-                                      <Sparkles className="h-2.5 w-2.5" />
-                                      + New Product
-                                    </button>
-                                  </div>
-                                </div>
+                                </button>
                               </div>
                             </td>
 
