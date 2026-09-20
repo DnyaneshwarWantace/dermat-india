@@ -309,7 +309,11 @@ const RAW_PHONE_COUNTRIES: Array<Omit<PhoneCountry, 'flag'>> = [
 
 export const PHONE_COUNTRIES: PhoneCountry[] = RAW_PHONE_COUNTRIES
   .map((country) => ({ ...country, flag: iso2ToFlagEmoji(country.iso2) }))
-  .sort((a, b) => a.label.localeCompare(b.label, 'en', { sensitivity: 'base' }))
+  .sort((a, b) => {
+    if (a.iso2 === 'IN') return -1
+    if (b.iso2 === 'IN') return 1
+    return a.label.localeCompare(b.label, 'en', { sensitivity: 'base' })
+  })
 
 /**
  * Sovereign/primary country that wins auto-detection for a calling code shared
@@ -322,6 +326,7 @@ const PRIMARY_DIAL_OWNERS: Record<string, string> = {
   '+44': 'GB',
   '+47': 'NO',
   '+61': 'AU',
+  '+91': 'IN',
   '+212': 'MA',
   '+262': 'RE',
   '+358': 'FI',
@@ -330,7 +335,7 @@ const PRIMARY_DIAL_OWNERS: Record<string, string> = {
 }
 
 const DEFAULT_COUNTRY =
-  PHONE_COUNTRIES.find((country) => country.iso2 === 'US') ?? PHONE_COUNTRIES[0]
+  PHONE_COUNTRIES.find((country) => country.iso2 === 'IN') ?? PHONE_COUNTRIES[0]
 
 // Match longer prefixes first (e.g. `+1242` before `+1`); for equal-length codes
 // shared by several territories, prefer the sovereign in `PRIMARY_DIAL_OWNERS`.

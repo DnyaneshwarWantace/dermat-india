@@ -14,15 +14,15 @@ export function formatCurrency(
   if (!Number.isFinite(numeric)) {
     return typeof value === 'string' ? value : null
   }
-  const code = currency && currency.length === 3 ? currency.toUpperCase() : undefined
+  const code = currency && currency.length === 3 ? currency.toUpperCase() : 'INR'
   try {
     if (code) {
-      return new Intl.NumberFormat(undefined, { style: 'currency', currency: code }).format(numeric)
+      return new Intl.NumberFormat('en-IN', { style: 'currency', currency: code }).format(numeric)
     }
   } catch {
     // fall through to plain number formatting
   }
-  const formatted = new Intl.NumberFormat().format(numeric)
+  const formatted = new Intl.NumberFormat('en-IN').format(numeric)
   return code ? `${formatted} ${code}` : formatted
 }
 
