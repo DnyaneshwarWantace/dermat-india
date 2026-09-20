@@ -4,6 +4,6 @@ export const metadata = {
   pageTitle: 'Create raw material',
   pageTitleKey: 'dermat_rm_master.create.title',
   pageGroup: 'Raw Materials',
-  pageGroupKey: 'dermat-1-rm-pm.nav.group',
+  pageGroupKey: 'dermat_rm_master.nav.group',
   icon: 'flask-conical',
 }
