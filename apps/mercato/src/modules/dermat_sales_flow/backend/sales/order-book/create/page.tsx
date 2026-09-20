@@ -117,9 +117,11 @@ type CatalogProductItem = {
   sku?: string | null
   category?: string | null
   baseUom?: string | null
+  customerId?: string | null
   customerName?: string | null
   clientBrand?: string | null
   minFloorQty?: number | null
+  itemType?: string | null
 }
 
 type WizardStepId = 'customer' | 'lines' | 'details' | 'review'
@@ -351,9 +353,11 @@ export default function CreateOrderPage() {
                 sku: p.sku || cf.product_code || meta.product_code || null,
                 category: cf.category || meta.category || 'Serum',
                 baseUom: cf.base_uom || meta.base_uom || p.default_unit || 'ml',
-                customerName: cf.customer_name || meta.customer_name || null,
-                clientBrand: cf.client_brand || meta.client_brand || null,
+                customerId: cf.customer || cf.customer_id || cf.company || meta.customer_id || null,
+                customerName: cf.customer_name || meta.customer_name || meta.customer || null,
+                clientBrand: cf.client_brand || meta.client_brand || meta.customer || meta.brand_name || null,
                 minFloorQty: cf.min_floor_qty || meta.min_floor_qty || null,
+                itemType: meta.item_type || cf.item_type || null,
               }
             })
           )
@@ -366,6 +370,58 @@ export default function CreateOrderPage() {
     }
     loadCatalog()
   }, [])
+
+  // Customer Product Filtering & Matching
+  const isProductForCustomer = React.useCallback(
+    (p: CatalogProductItem, cust: CustomerRow | null) => {
+      if (!cust) return true
+      if (p.customerId && p.customerId === cust.id) return true
+      const normCust = cust.displayName.trim().toLowerCase()
+      if (p.customerName && (p.customerName.toLowerCase().includes(normCust) || normCust.includes(p.customerName.toLowerCase()))) return true
+      if (p.clientBrand && (p.clientBrand.toLowerCase().includes(normCust) || normCust.includes(p.clientBrand.toLowerCase()))) return true
+      if (p.title && p.title.toLowerCase().includes(normCust)) return true
+      return false
+    },
+    []
+  )
+
+  const customerMatchingProducts = React.useMemo(() => {
+    if (!selectedCustomer) return catalogProducts
+    return catalogProducts.filter((p) => isProductForCustomer(p, selectedCustomer))
+  }, [catalogProducts, selectedCustomer, isProductForCustomer])
+
+  const otherCatalogProducts = React.useMemo(() => {
+    if (!selectedCustomer) return []
+    return catalogProducts.filter((p) => !isProductForCustomer(p, selectedCustomer))
+  }, [catalogProducts, selectedCustomer, isProductForCustomer])
+
+  // Automatically keep brand name synced and auto-select product for new empty order line when customer is selected
+  React.useEffect(() => {
+    if (!selectedCustomer) return
+    setLines((prev) => {
+      const match = catalogProducts.filter((p) => isProductForCustomer(p, selectedCustomer))
+      return prev.map((l, idx) => {
+        const brand = selectedCustomer.displayName
+        if (idx === 0 && !l.productId && match.length > 0) {
+          const p = match[0]
+          return {
+            ...l,
+            productId: p.id,
+            productLabel: p.title,
+            productCode: p.sku || '',
+            category: p.category || 'Serum',
+            uom: p.baseUom || 'ml',
+            brandName: p.clientBrand || brand,
+            variantSku: 'Standard',
+          }
+        }
+        return {
+          ...l,
+          brandName: l.brandName || brand,
+        }
+      })
+    })
+  }, [selectedCustomer, catalogProducts, isProductForCustomer])
 
   // Create Inline Customer
   const handleCreateCustomer = React.useCallback(async () => {
@@ -470,7 +526,12 @@ export default function CreateOrderPage() {
       const currentLine = lines.find((l) => l.key === lineKey)
       setProdModalMode(mode)
 
-      const effectiveProdId = preselectedProdId || currentLine?.productId || catalogProducts[0]?.id || ''
+      const effectiveProdId =
+        preselectedProdId ||
+        currentLine?.productId ||
+        customerMatchingProducts[0]?.id ||
+        catalogProducts[0]?.id ||
+        ''
       setSelectedExistingProdId(effectiveProdId)
       setVariantMode('existing')
 
@@ -1244,6 +1305,45 @@ export default function CreateOrderPage() {
                   </div>
                 </CardHeader>
                 <CardContent className="p-0">
+                  {selectedCustomer ? (
+                    <div className="bg-primary/5 border-b border-primary/15 px-4 py-2.5 flex flex-wrap items-center justify-between gap-2 text-xs">
+                      <div className="flex items-center gap-2">
+                        <Sparkles className="h-4 w-4 text-primary" />
+                        <span>
+                          Customer / Brand: <strong className="text-foreground">{selectedCustomer.displayName}</strong>
+                          {customerMatchingProducts.length > 0 ? (
+                            <span className="ml-1 font-medium text-primary">
+                              ({customerMatchingProducts.length} linked product{customerMatchingProducts.length > 1 ? 's' : ''} available)
+                            </span>
+                          ) : (
+                            <span className="ml-1 text-muted-foreground">(No existing products linked to this customer)</span>
+                          )}
+                        </span>
+                      </div>
+                      {customerMatchingProducts.length > 0 && !lines[0]?.productId ? (
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          className="h-7 text-xs font-medium"
+                          onClick={() => {
+                            const p = customerMatchingProducts[0]
+                            updateLine(lines[0].key, {
+                              productId: p.id,
+                              productLabel: p.title,
+                              productCode: p.sku || '',
+                              category: p.category || 'Serum',
+                              uom: p.baseUom || 'ml',
+                              brandName: p.clientBrand || selectedCustomer.displayName,
+                              variantSku: 'Standard',
+                            })
+                          }}
+                        >
+                          Quick-Select: {customerMatchingProducts[0].title}
+                        </Button>
+                      ) : null}
+                    </div>
+                  ) : null}
                   <div className="overflow-x-auto">
                     <table className="w-full text-xs text-left">
                       <thead className="bg-muted/40 border-b text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
@@ -1290,17 +1390,39 @@ export default function CreateOrderPage() {
                                   <SelectTrigger className="text-xs h-8">
                                     <SelectValue placeholder="Select product from Catalog…" />
                                   </SelectTrigger>
-                                  <SelectContent className="max-h-64">
-                                    {catalogProducts.map((p) => (
-                                      <SelectItem key={p.id} value={p.id} className="text-xs">
+                                  <SelectContent className="max-h-72">
+                                    {customerMatchingProducts.length > 0 ? (
+                                      <div className="px-2 py-1 text-[11px] font-bold text-primary uppercase tracking-wider bg-primary/10 rounded-sm mb-1">
+                                        ✨ {selectedCustomer?.displayName || 'Customer'} Products ({customerMatchingProducts.length})
+                                      </div>
+                                    ) : null}
+                                    {customerMatchingProducts.map((p) => (
+                                      <SelectItem key={p.id} value={p.id} className="text-xs font-medium bg-primary/5 hover:bg-primary/10 mb-0.5">
                                         <div className="flex flex-col">
-                                          <span className="font-medium">{p.title}</span>
+                                          <span className="font-semibold text-primary">{p.title}</span>
                                           <span className="text-[10px] text-muted-foreground">
                                             {p.sku ? `SKU: ${p.sku}` : ''} {p.category ? `• ${p.category}` : ''} {p.clientBrand ? `• Brand: ${p.clientBrand}` : ''}
                                           </span>
                                         </div>
                                       </SelectItem>
                                     ))}
+                                    {otherCatalogProducts.length > 0 ? (
+                                      <>
+                                        <div className="px-2 py-1 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider bg-muted/40 rounded-sm my-1 border-t">
+                                          Other Catalog Products ({otherCatalogProducts.length})
+                                        </div>
+                                        {otherCatalogProducts.map((p) => (
+                                          <SelectItem key={p.id} value={p.id} className="text-xs">
+                                            <div className="flex flex-col">
+                                              <span className="font-medium">{p.title}</span>
+                                              <span className="text-[10px] text-muted-foreground">
+                                                {p.sku ? `SKU: ${p.sku}` : ''} {p.category ? `• ${p.category}` : ''} {p.clientBrand ? `• Brand: ${p.clientBrand}` : ''}
+                                              </span>
+                                            </div>
+                                          </SelectItem>
+                                        ))}
+                                      </>
+                                    ) : null}
                                   </SelectContent>
                                 </Select>
 
@@ -2053,7 +2175,9 @@ export default function CreateOrderPage() {
                         </h3>
                       </div>
                       <span className="text-[11px] text-muted-foreground font-mono">
-                        {catalogProducts.length} Available in Catalog
+                        {customerMatchingProducts.length > 0
+                          ? `${customerMatchingProducts.length} linked to ${selectedCustomer?.displayName || 'Customer'} (${catalogProducts.length} total)`
+                          : `${catalogProducts.length} Available in Catalog`}
                       </span>
                     </div>
 
@@ -2080,10 +2204,15 @@ export default function CreateOrderPage() {
                           <SelectValue placeholder="Select an available product..." />
                         </SelectTrigger>
                         <SelectContent className="max-h-72">
-                          {catalogProducts.map((p) => (
-                            <SelectItem key={p.id} value={p.id} className="text-xs py-2">
+                          {customerMatchingProducts.length > 0 ? (
+                            <div className="px-2 py-1 text-[11px] font-bold text-primary uppercase tracking-wider bg-primary/10 rounded-sm mb-1">
+                              ✨ {selectedCustomer?.displayName || 'Customer'} Products ({customerMatchingProducts.length})
+                            </div>
+                          ) : null}
+                          {customerMatchingProducts.map((p) => (
+                            <SelectItem key={p.id} value={p.id} className="text-xs py-2 bg-primary/5 hover:bg-primary/10 mb-0.5">
                               <div className="flex flex-col">
-                                <span className="font-semibold text-foreground">{p.title}</span>
+                                <span className="font-semibold text-primary">{p.title}</span>
                                 <span className="text-[11px] text-muted-foreground flex items-center gap-2 mt-0.5">
                                   {p.sku ? <span className="font-mono bg-muted px-1.5 py-0.5 rounded text-[10px]">SKU: {p.sku}</span> : null}
                                   {p.category ? <span>• {p.category}</span> : null}
@@ -2092,6 +2221,25 @@ export default function CreateOrderPage() {
                               </div>
                             </SelectItem>
                           ))}
+                          {otherCatalogProducts.length > 0 ? (
+                            <>
+                              <div className="px-2 py-1 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider bg-muted/40 rounded-sm my-1 border-t">
+                                Other Catalog Products ({otherCatalogProducts.length})
+                              </div>
+                              {otherCatalogProducts.map((p) => (
+                                <SelectItem key={p.id} value={p.id} className="text-xs py-2">
+                                  <div className="flex flex-col">
+                                    <span className="font-medium text-foreground">{p.title}</span>
+                                    <span className="text-[11px] text-muted-foreground flex items-center gap-2 mt-0.5">
+                                      {p.sku ? <span className="font-mono bg-muted px-1.5 py-0.5 rounded text-[10px]">SKU: {p.sku}</span> : null}
+                                      {p.category ? <span>• {p.category}</span> : null}
+                                      {p.clientBrand ? <span>• Brand: {p.clientBrand}</span> : null}
+                                    </span>
+                                  </div>
+                                </SelectItem>
+                              ))}
+                            </>
+                          ) : null}
                         </SelectContent>
                       </Select>
                     </div>
