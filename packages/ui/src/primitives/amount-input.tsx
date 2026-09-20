@@ -30,16 +30,7 @@ export type AmountCurrency = {
  * unrecognised.
  */
 export const AMOUNT_CURRENCIES: AmountCurrency[] = [
-  { code: 'EUR', symbol: '€', label: 'Euro', flag: '🇪🇺' },
-  { code: 'USD', symbol: '$', label: 'US Dollar', flag: '🇺🇸' },
-  { code: 'GBP', symbol: '£', label: 'Pound Sterling', flag: '🇬🇧' },
-  { code: 'PLN', symbol: 'zł', label: 'Polish Złoty', flag: '🇵🇱' },
-  { code: 'CHF', symbol: 'CHF', label: 'Swiss Franc', flag: '🇨🇭' },
-  { code: 'SEK', symbol: 'kr', label: 'Swedish Krona', flag: '🇸🇪' },
-  { code: 'CZK', symbol: 'Kč', label: 'Czech Koruna', flag: '🇨🇿' },
-  { code: 'JPY', symbol: '¥', label: 'Japanese Yen', flag: '🇯🇵' },
-  { code: 'AUD', symbol: 'A$', label: 'Australian Dollar', flag: '🇦🇺' },
-  { code: 'CAD', symbol: 'C$', label: 'Canadian Dollar', flag: '🇨🇦' },
+  { code: 'INR', symbol: '₹', label: 'Indian Rupee (₹)', flag: '🇮🇳' },
 ]
 
 const DEFAULT_CURRENCY = AMOUNT_CURRENCIES[0]

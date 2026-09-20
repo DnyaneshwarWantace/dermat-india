@@ -15,6 +15,7 @@ export const metadata = {
   pageGroup: 'Data Designer',
   pageGroupKey: 'settings.sections.dataDesigner',
   pageOrder: 2,
+  navHidden: true,
   icon: userIcon,
   pageContext: 'settings' as const,
 }

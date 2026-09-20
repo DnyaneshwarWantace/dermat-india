@@ -26,6 +26,7 @@ export const metadata = {
   pageGroup: 'System',
   pageGroupKey: 'settings.sections.system',
   pageOrder: 2,
+  navHidden: true,
   icon: moduleTelemetryIcon,
   pageContext: 'settings' as const,
   breadcrumb: [

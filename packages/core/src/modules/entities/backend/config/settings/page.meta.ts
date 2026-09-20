@@ -26,6 +26,7 @@ export const metadata = {
   pageGroup: 'Module Configs',
   pageGroupKey: 'settings.sections.moduleConfigs',
   pageOrder: 5,
+  navHidden: true,
   icon: settingsIcon,
   pageContext: 'settings' as const,
   breadcrumb: [

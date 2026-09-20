@@ -28,9 +28,6 @@ export function GlobalNoticeBars({ demoModeEnabled }: { demoModeEnabled: boolean
   const [showCookieNotice, setShowCookieNotice] = useState(false)
 
   useEffect(() => {
-    if (demoModeEnabled && !getCookie(DEMO_NOTICE_COOKIE)) {
-      setShowDemoNotice(true)
-    }
     if (!getCookie(COOKIE_NOTICE_COOKIE)) {
       setShowCookieNotice(true)
     }
