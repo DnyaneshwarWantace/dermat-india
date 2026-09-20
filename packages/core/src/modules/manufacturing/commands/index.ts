@@ -1,0 +1,8 @@
+import './work-centers'
+import './machines'
+import './bom'
+import './production-orders'
+import './production-stages'
+import './stage-templates'
+import './material-consumption'
+import './quality-inspections'
