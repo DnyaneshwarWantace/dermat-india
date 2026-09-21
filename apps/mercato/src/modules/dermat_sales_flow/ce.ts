@@ -64,6 +64,7 @@ const systemEntities: CustomEntitySpec[] = [
       // sales/orders PATCH, so the advance/verify/sample-sent gates cannot be bypassed.
       cf.select('order_stage', [
         'new',
+        'advance_payment',
         'verified',
         'rnd_sample',
         'artwork_packaging',
