@@ -333,12 +333,20 @@ function mergeSidebarGroupsWithInjected(
       : (first.groupLabel ?? groupId)
     const groupItems = mergeSidebarItemsWithInjected([], items, t)
     if (groupItems.length === 0) continue
-    nextGroups.push({
+    const newGroup = {
       id: groupId,
       name: label,
       defaultName: label,
       items: groupItems,
-    })
+    }
+    // A brand-new group (no existing group shares its id) has nowhere else to take
+    // placement from, so honor `position: 'first'` on its own item by pinning the
+    // whole group to the top of the sidebar instead of always appending at the end.
+    if (first.placement?.position === 'first') {
+      nextGroups.unshift(newGroup)
+    } else {
+      nextGroups.push(newGroup)
+    }
   }
 
   return nextGroups
