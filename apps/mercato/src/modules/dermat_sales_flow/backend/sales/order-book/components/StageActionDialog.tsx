@@ -90,7 +90,10 @@ export function StageActionDialog({
   }, [open, advanceAlreadyReceived, defaultAdvanceAmount, currentUser.email, mode])
 
   const canSubmit = React.useMemo(() => {
-    if (mode === 'advance') return advanceAlreadyReceived || advanceConfirmed
+    // Checking the box alone used to be enough to submit, even with the amount left blank —
+    // that saved no advance_received_amount, so the next stage's Verify dialog found nothing
+    // recorded and asked the exact same advance-payment question again. Require a real amount.
+    if (mode === 'advance') return advanceAlreadyReceived || (advanceConfirmed && Number(advanceAmount) > 0)
     if (mode === 'verify') {
       const actorOk = actorName.trim().length > 0
       const advanceOk = advanceAlreadyReceived || !advanceRequired || (advanceConfirmed && Number(advanceAmount) >= 0)

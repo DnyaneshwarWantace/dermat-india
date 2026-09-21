@@ -4,7 +4,13 @@ import type { InjectionMenuItemWidget } from '@open-mercato/shared/modules/widge
 /**
  * The Operations dashboard at /backend has no module page, so it never appears
  * in the auto-discovered sidebar nav — the only way in was clicking the brand
- * logo. This pins a "Dashboard" entry at the very top of the main sidebar.
+ * logo. This adds a "Dashboard" entry to the main sidebar.
+ *
+ * An injected item with no groupId merges into whichever built-in group happens
+ * to occupy index 0 (mergeSidebarGroupsWithInjected in AppShell.tsx) — that
+ * landed this under "Raw Material Master" here, which made no sense. Giving it
+ * its own groupId makes it its own standalone section instead of hijacking an
+ * unrelated module's group.
  */
 const widget: InjectionMenuItemWidget = {
   metadata: {
@@ -18,6 +24,9 @@ const widget: InjectionMenuItemWidget = {
       label: 'Dashboard',
       icon: 'LayoutDashboard',
       href: '/backend',
+      groupId: 'dermat-dashboard',
+      groupLabelKey: 'dashboard.nav.groupTitle',
+      groupLabel: 'Dashboard',
       placement: { position: InjectionPosition.First },
     },
   ],
