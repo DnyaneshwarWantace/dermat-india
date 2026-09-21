@@ -1584,18 +1584,31 @@ export default function OrderBookDetailPage({ params }: { params?: { id?: string
                 </div>
               </div>
 
-              {/* Line items */}
-              <table className="w-full text-[11px] text-left border-collapse border border-slate-300">
+              {/* Line items — table-fixed with explicit column widths so a long
+                  product name wraps instead of stretching the table past the
+                  dialog/print page width. */}
+              <div className="overflow-x-auto">
+              <table className="w-full table-fixed text-[11px] text-left border-collapse border border-slate-300">
+                <colgroup>
+                  <col className="w-8" />
+                  <col />
+                  <col className="w-[13%]" />
+                  <col className="w-[9%]" />
+                  <col className="w-[11%]" />
+                  <col className="w-[12%]" />
+                  <col className="w-[8%]" />
+                  <col className="w-[12%]" />
+                </colgroup>
                 <thead className="bg-primary text-primary-foreground font-bold">
                   <tr>
-                    <th className="p-2 border border-slate-300 w-8 text-center">#</th>
-                    <th className="p-2 border border-slate-300 min-w-[180px]">Product</th>
-                    <th className="p-2 border border-slate-300 text-center">Pack</th>
-                    <th className="p-2 border border-slate-300 text-right">Qty</th>
-                    <th className="p-2 border border-slate-300 text-right">Rate (₹)</th>
-                    <th className="p-2 border border-slate-300 text-right">Taxable (₹)</th>
-                    <th className="p-2 border border-slate-300 text-right">GST %</th>
-                    <th className="p-2 border border-slate-300 text-right">Total (₹)</th>
+                    <th className="p-1.5 border border-slate-300 text-center">#</th>
+                    <th className="p-1.5 border border-slate-300">Product</th>
+                    <th className="p-1.5 border border-slate-300 text-center">Pack</th>
+                    <th className="p-1.5 border border-slate-300 text-right">Qty</th>
+                    <th className="p-1.5 border border-slate-300 text-right">Rate (₹)</th>
+                    <th className="p-1.5 border border-slate-300 text-right">Taxable (₹)</th>
+                    <th className="p-1.5 border border-slate-300 text-right">GST %</th>
+                    <th className="p-1.5 border border-slate-300 text-right">Total (₹)</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200">
@@ -1612,25 +1625,26 @@ export default function OrderBookDetailPage({ params }: { params?: { id?: string
                       const total = taxable * (1 + taxRate / 100)
                       return (
                         <tr key={line.id}>
-                          <td className="p-2 border border-slate-200 text-center font-semibold">{idx + 1}</td>
-                          <td className="p-2 border border-slate-200">
+                          <td className="p-1.5 border border-slate-200 text-center font-semibold">{idx + 1}</td>
+                          <td className="p-1.5 border border-slate-200 break-words">
                             <div className="font-bold text-slate-900">{line.name || 'Item'}</div>
                             {line.cf_brand_name ? <div className="text-[10px] text-slate-600">{line.cf_brand_name}</div> : null}
                           </td>
-                          <td className="p-2 border border-slate-200 text-center">
+                          <td className="p-1.5 border border-slate-200 text-center break-words">
                             {line.cf_pack_size ? `${line.cf_pack_size} ${line.cf_uom || ''}`.trim() : '—'}
                           </td>
-                          <td className="p-2 border border-slate-200 text-right font-mono">{qty.toLocaleString('en-IN')}</td>
-                          <td className="p-2 border border-slate-200 text-right font-mono">{rate.toFixed(2)}</td>
-                          <td className="p-2 border border-slate-200 text-right font-mono">{taxable.toFixed(2)}</td>
-                          <td className="p-2 border border-slate-200 text-right font-mono">{taxRate}%</td>
-                          <td className="p-2 border border-slate-200 text-right font-mono font-bold">{total.toFixed(2)}</td>
+                          <td className="p-1.5 border border-slate-200 text-right font-mono">{qty.toLocaleString('en-IN')}</td>
+                          <td className="p-1.5 border border-slate-200 text-right font-mono">{rate.toFixed(2)}</td>
+                          <td className="p-1.5 border border-slate-200 text-right font-mono">{taxable.toFixed(2)}</td>
+                          <td className="p-1.5 border border-slate-200 text-right font-mono">{taxRate}%</td>
+                          <td className="p-1.5 border border-slate-200 text-right font-mono font-bold">{total.toFixed(2)}</td>
                         </tr>
                       )
                     })
                   )}
                 </tbody>
               </table>
+              </div>
 
               {/* Totals */}
               <div className="flex justify-end">
