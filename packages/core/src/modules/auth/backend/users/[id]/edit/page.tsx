@@ -12,6 +12,7 @@ import { AclEditor, type AclData } from '@open-mercato/core/modules/auth/compone
 import { OrganizationSelect } from '@open-mercato/core/modules/directory/components/OrganizationSelect'
 import { TenantSelect } from '@open-mercato/core/modules/directory/components/TenantSelect'
 import { fetchRoleOptions } from '@open-mercato/core/modules/auth/backend/users/roleOptions'
+import { fetchDepartmentOptions, fetchDepartmentBackedRoleIds } from '@open-mercato/core/modules/auth/backend/users/departmentOptions'
 import { WidgetVisibilityEditor, type WidgetVisibilityEditorHandle } from '@open-mercato/core/modules/dashboards/components/WidgetVisibilityEditor'
 import { Button } from '@open-mercato/ui/primitives/button'
 import { flash } from '@open-mercato/ui/backend/FlashMessages'
@@ -145,6 +146,7 @@ export default function EditUserPage({ params }: { params?: { id?: string } }) {
   const [actorIsSuperAdmin, setActorIsSuperAdmin] = React.useState(false)
   const [actorResolved, setActorResolved] = React.useState(false)
   const [initialRoleOptions, setInitialRoleOptions] = React.useState<CrudFieldOption[]>([])
+  const [departmentRoleIds, setDepartmentRoleIds] = React.useState<Set<string>>(new Set())
   const widgetEditorRef = React.useRef<WidgetVisibilityEditorHandle | null>(null)
   const [resendingInvite, setResendingInvite] = React.useState(false)
 
@@ -223,6 +225,16 @@ export default function EditUserPage({ params }: { params?: { id?: string } }) {
       cancelled = true
     }
   }, [initialUser])
+
+  React.useEffect(() => {
+    let cancelled = false
+    fetchDepartmentBackedRoleIds().then((ids) => {
+      if (!cancelled) setDepartmentRoleIds(ids)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   React.useEffect(() => {
     if (!id) {
@@ -329,6 +341,15 @@ export default function EditUserPage({ params }: { params?: { id?: string } }) {
     return fetchRoleOptions(query)
   }, [actorIsSuperAdmin, actorResolved, selectedTenantId])
 
+  const loadDepartmentOptions = React.useCallback(async (query?: string): Promise<CrudFieldOption[]> => {
+    if (!actorResolved) return []
+    if (actorIsSuperAdmin) {
+      if (!selectedTenantId) return []
+      return fetchDepartmentOptions(query, { tenantId: selectedTenantId })
+    }
+    return fetchDepartmentOptions(query)
+  }, [actorIsSuperAdmin, actorResolved, selectedTenantId])
+
   const userHasPassword = initialUser?.hasPassword !== false
   const fields: CrudField[] = React.useMemo(() => {
     const items: CrudField[] = [
@@ -403,6 +424,17 @@ export default function EditUserPage({ params }: { params?: { id?: string } }) {
       loadOptions: loadRoleOptions,
     })
     items.push({
+      id: 'department',
+      label: t('auth.users.form.field.department', 'Department'),
+      description: t(
+        'auth.users.form.field.departmentHint',
+        'Assigning a department grants this user everything that department can access.',
+      ),
+      type: 'tags',
+      options: initialRoleOptions.filter((opt) => departmentRoleIds.has(opt.value)),
+      loadOptions: loadDepartmentOptions,
+    })
+    items.push({
       id: 'isConfirmed',
       label: t('auth.users.form.field.active', 'Active'),
       type: 'checkbox',
@@ -412,10 +444,10 @@ export default function EditUserPage({ params }: { params?: { id?: string } }) {
       ),
     })
     return items
-  }, [actorIsSuperAdmin, initialRoleOptions, loadRoleOptions, passwordDescription, preloadedTenants, selectedOrgId, selectedTenantId, t, userHasPassword])
+  }, [actorIsSuperAdmin, departmentRoleIds, initialRoleOptions, loadDepartmentOptions, loadRoleOptions, passwordDescription, preloadedTenants, selectedOrgId, selectedTenantId, t, userHasPassword])
 
   const detailFieldIds = React.useMemo(() => {
-    const base: string[] = ['email', 'name', 'password', 'organizationId', 'roles', 'isConfirmed']
+    const base: string[] = ['email', 'name', 'password', 'organizationId', 'department', 'roles', 'isConfirmed']
     if (actorIsSuperAdmin) base.splice(2, 0, 'tenantId')
     return base
   }, [actorIsSuperAdmin])

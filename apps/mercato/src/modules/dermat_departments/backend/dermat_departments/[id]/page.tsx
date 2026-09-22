@@ -7,9 +7,11 @@ import { CrudForm, type CrudFormGroup } from '@open-mercato/ui/backend/CrudForm'
 import { updateCrud } from '@open-mercato/ui/backend/utils/crud'
 import { createCrudFormError } from '@open-mercato/ui/backend/utils/serverErrors'
 import { flash } from '@open-mercato/ui/backend/FlashMessages'
-import { apiCall } from '@open-mercato/ui/backend/utils/apiCall'
+import { apiCall, withScopedApiRequestHeaders } from '@open-mercato/ui/backend/utils/apiCall'
+import { buildOptimisticLockHeader } from '@open-mercato/ui/backend/utils/optimisticLock'
 import { useT } from '@open-mercato/shared/lib/i18n/context'
 import { RecordNotFoundState, ErrorMessage } from '@open-mercato/ui/backend/detail'
+import { AclEditor, type AclData } from '@open-mercato/core/modules/auth/components/AclEditor'
 import { DEPARTMENT_TYPES } from '../../../data/validators'
 
 type DepartmentData = {
@@ -18,10 +20,15 @@ type DepartmentData = {
   type: string
   contact_email: string | null
   contact_phone: string | null
+  role_id: string | null
   is_active: boolean
   organization_id: string
   tenant_id: string
   updated_at?: string | null
+}
+
+type RoleLookupResponse = {
+  isSuperAdmin?: boolean
 }
 
 export default function EditDepartmentPage({ params }: { params?: { id?: string } }) {
@@ -32,13 +39,25 @@ export default function EditDepartmentPage({ params }: { params?: { id?: string 
   const [loading, setLoading] = React.useState(true)
   const [error, setError] = React.useState<string | null>(null)
   const [isNotFound, setIsNotFound] = React.useState(false)
+  const [aclData, setAclData] = React.useState<AclData>({ isSuperAdmin: false, features: [], organizations: null })
+  const [aclUpdatedAt, setAclUpdatedAt] = React.useState<string | null>(null)
+  const [actorIsSuperAdmin, setActorIsSuperAdmin] = React.useState(false)
 
   React.useEffect(() => {
     async function loadDepartment() {
       try {
         const response = await apiCall<{ items: DepartmentData[] }>(`/api/dermat_departments/departments?id=${params?.id}`)
         if (response.ok && response.result && response.result.items.length > 0) {
-          setDepartment(response.result.items[0])
+          const found = response.result.items[0]
+          setDepartment(found)
+          if (found.role_id) {
+            const roleCheck = await apiCall<RoleLookupResponse>(
+              `/api/auth/roles?id=${encodeURIComponent(found.role_id)}`,
+              undefined,
+              { fallback: { isSuperAdmin: false } },
+            )
+            setActorIsSuperAdmin(Boolean(roleCheck.result?.isSuperAdmin))
+          }
         } else if (!response.ok) {
           setError(t('dermat_departments.form.errors.load', 'Failed to load department'))
         } else {
@@ -99,8 +118,35 @@ export default function EditDepartmentPage({ params }: { params?: { id?: string 
           },
         ],
       },
+      {
+        id: 'access',
+        column: 1,
+        title: t('dermat_departments.form.group.access', 'Access'),
+        component: () => {
+          if (!department?.role_id) {
+            return (
+              <div className="text-sm text-muted-foreground">
+                {t('dermat_departments.form.access.pending', 'Access controls are not available for this department yet.')}
+              </div>
+            )
+          }
+          return (
+            <AclEditor
+              kind="role"
+              targetId={department.role_id}
+              canEditOrganizations
+              value={aclData}
+              onChange={setAclData}
+              onVersionChange={setAclUpdatedAt}
+              currentUserIsSuperAdmin={actorIsSuperAdmin}
+              tenantId={department.tenant_id ?? null}
+              preserveOnTenantChange
+            />
+          )
+        },
+      },
     ],
-    [t]
+    [t, department, aclData, actorIsSuperAdmin]
   )
 
   if (loading) {
@@ -182,6 +228,18 @@ export default function EditDepartmentPage({ params }: { params?: { id?: string 
             }
 
             await updateCrud('dermat_departments/departments', payload)
+
+            if (department.role_id) {
+              const aclLockHeader = buildOptimisticLockHeader(aclUpdatedAt)
+              const saveRoleAcl = () => updateCrud('auth/roles/acl', { roleId: department.role_id, tenantId: department.tenant_id, ...aclData }, {
+                errorMessage: t('dermat_departments.form.errors.aclUpdate', 'Failed to update department access control'),
+              })
+              if (Object.keys(aclLockHeader).length > 0) {
+                await withScopedApiRequestHeaders(aclLockHeader, saveRoleAcl)
+              } else {
+                await saveRoleAcl()
+              }
+            }
 
             flash(t('dermat_departments.flash.updated', 'Department updated'), 'success')
             router.push('/backend/dermat_departments')

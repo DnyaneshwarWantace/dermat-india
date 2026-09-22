@@ -47,8 +47,20 @@ function parseRequiredRoles(rawValue: string): string[] {
 async function parseLoginForm(req: Request): Promise<ParsedLoginForm> {
   const rawContentType = req.headers.get('content-type') ?? ''
   const contentType = rawContentType.split(';')[0].trim().toLowerCase()
-
   try {
+    if (contentType === 'application/json') {
+      const json = await req.json()
+      const requireRoleRaw = String(json.requireRole ?? json.role ?? '').trim()
+      return {
+        email: String(json.email ?? '').trim(),
+        password: String(json.password ?? ''),
+        remember: json.remember === true || parseBooleanToken(String(json.remember ?? '')) === true,
+        tenantIdRaw: String(json.tenantId ?? json.tenant ?? '').trim(),
+        requiredRoles: requireRoleRaw ? parseRequiredRoles(requireRoleRaw) : [],
+        redirectTo: String(json.redirect ?? ''),
+      }
+    }
+
     if (contentType === 'application/x-www-form-urlencoded') {
       const body = await req.text()
       const params = new URLSearchParams(body)

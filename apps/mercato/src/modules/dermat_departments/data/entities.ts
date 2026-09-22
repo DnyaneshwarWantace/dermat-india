@@ -38,6 +38,14 @@ export class Department {
   @Property({ name: 'contact_phone', type: 'text', nullable: true })
   contactPhone?: string | null
 
+  // References `auth`'s Role by id only — never a MikroORM cross-module relation
+  // (see root AGENTS.md "no direct ORM relationships between modules"). Each
+  // department owns exactly one backing Role whose `role_acls.features_json`
+  // is the department's access set; assigning a user to the department assigns
+  // this role via `user_roles`.
+  @Property({ name: 'role_id', type: 'uuid', nullable: true })
+  roleId?: string | null
+
   @Property({ name: 'is_active', type: 'boolean', default: true })
   isActive: boolean = true
 
