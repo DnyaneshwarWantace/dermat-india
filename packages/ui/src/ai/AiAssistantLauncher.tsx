@@ -27,7 +27,6 @@ import {
   AlertTriangle,
   BadgeQuestionMark,
   Database,
-  ExternalLink,
   FileQuestion,
   Lightbulb,
   Loader2,
@@ -132,8 +131,6 @@ interface HealthResponse {
 
 const DEFAULT_AGENTS_ENDPOINT = '/api/ai_assistant/ai/agents'
 const DEFAULT_HEALTH_ENDPOINT = '/api/ai_assistant/health'
-const AI_ASSISTANT_DOCS_URL = 'https://docs.openmercato.com/framework/ai-assistant/overview'
-const AI_ASSISTANT_SETTINGS_DOCS_URL = 'https://docs.openmercato.com/framework/ai-assistant/settings'
 export const AI_ASSISTANT_LAUNCHER_OPEN_EVENT = 'om:open-ai-assistant-launcher'
 
 function isMutationCapable(policy: string | null | undefined): boolean {
@@ -867,20 +864,6 @@ function AiProviderSetupPanel({ t }: AiProviderSetupPanelProps) {
               <div className="mt-2 text-muted-foreground"># or</div>
               <div>OPENCODE_PROVIDER=google</div>
               <div>GOOGLE_GENERATIVE_AI_API_KEY=...</div>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <Button asChild size="sm" variant="outline">
-                <a href={AI_ASSISTANT_DOCS_URL} target="_blank" rel="noreferrer">
-                  {t('ai_assistant.launcher.setup.docs', 'AI assistant docs')}
-                  <ExternalLink className="ml-1 size-3" aria-hidden />
-                </a>
-              </Button>
-              <Button asChild size="sm" variant="ghost">
-                <a href={AI_ASSISTANT_SETTINGS_DOCS_URL} target="_blank" rel="noreferrer">
-                  {t('ai_assistant.launcher.setup.settingsDocs', 'Provider settings')}
-                  <ExternalLink className="ml-1 size-3" aria-hidden />
-                </a>
-              </Button>
             </div>
           </div>
         </div>

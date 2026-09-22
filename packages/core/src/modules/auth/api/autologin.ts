@@ -78,7 +78,7 @@ export async function GET(req: Request) {
     httpOnly: true,
     path: '/',
     sameSite: 'lax',
-    secure: process.env.NODE_ENV === 'production',
+    secure: process.env.NODE_ENV === 'production' && process.env.ALLOW_INSECURE_HTTP_COOKIES !== 'true',
     maxAge: accessTokenMaxAgeSeconds,
   })
   return res

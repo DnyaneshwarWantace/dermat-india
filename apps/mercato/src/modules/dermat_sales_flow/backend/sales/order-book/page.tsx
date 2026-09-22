@@ -12,6 +12,7 @@ import { StatusBadge } from '@open-mercato/ui/primitives/status-badge'
 import { SegmentedControl, SegmentedControlItem } from '@open-mercato/ui/primitives/segmented-control'
 import { Checkbox } from '@open-mercato/ui/primitives/checkbox'
 import { Textarea } from '@open-mercato/ui/primitives/textarea'
+import { Popover, PopoverContent, PopoverTrigger } from '@open-mercato/ui/primitives/popover'
 import {
   Select,
   SelectContent,
@@ -54,6 +55,7 @@ import {
   Save,
   X,
   Loader2,
+  Columns3,
 } from 'lucide-react'
 import { useT } from '@open-mercato/shared/lib/i18n/context'
 import { apiCall, withScopedApiRequestHeaders } from '@open-mercato/ui/backend/utils/apiCall'
@@ -279,6 +281,92 @@ export const PIPELINE_ORDER = [
   'dispatched_completed',
 ] as const
 
+// Master sheet table "Columns" toggle — Pack Code (sticky left, the row's link/identifier)
+// and Pipeline Stage & Actions (sticky right, the primary action column) are structural
+// and always shown; every other column can be hidden. Grouped to match the table's
+// existing section comments so the picker reads the same way the table is organized.
+export const TABLE_COLUMN_DEFS: { key: string; label: string; section: string }[] = [
+  { key: 'date', label: 'O.Date', section: 'Core Identifiers' },
+  { key: 'packaging', label: 'Packaging', section: 'Core Identifiers' },
+  { key: 'brand', label: 'Brand / Product Name', section: 'Core Identifiers' },
+  { key: 'packSize', label: 'Pack (gm/ml)', section: 'Core Identifiers' },
+  { key: 'qty', label: 'Order Qty', section: 'Core Identifiers' },
+  { key: 'batchNo', label: 'Batch No', section: 'Core Identifiers' },
+  { key: 'month', label: 'Month', section: 'Core Identifiers' },
+  { key: 'mrp', label: 'M.R.P. (₹)', section: 'Pricing & Customer' },
+  { key: 'mrpPerUnit', label: 'MRP/g or ml', section: 'Pricing & Customer' },
+  { key: 'expiry', label: 'Expiry', section: 'Pricing & Customer' },
+  { key: 'company', label: 'Customer / Company', section: 'Pricing & Customer' },
+  { key: 'verified', label: 'Verified', section: 'Pricing & Customer' },
+  { key: 'salesPoc', label: 'Sales POC', section: 'Pricing & Customer' },
+  { key: 'rdNo', label: 'R&D No.', section: 'R&D, QA & Artwork' },
+  { key: 'artwork', label: 'Artwork Finalized', section: 'R&D, QA & Artwork' },
+  { key: 'qa', label: 'QA Approval', section: 'R&D, QA & Artwork' },
+  { key: 'printing', label: 'Sent to Printing', section: 'R&D, QA & Artwork' },
+  { key: 'cartonStock', label: 'Carton Stock', section: 'Packaging & Material Stock' },
+  { key: 'printDetails', label: 'Printing Details', section: 'Packaging & Material Stock' },
+  { key: 'primaryPkg', label: 'Primary Packaging', section: 'Packaging & Material Stock' },
+  { key: 'tubeStock', label: 'Tube/Label Stock', section: 'Packaging & Material Stock' },
+  { key: 'actionStatus', label: 'Action Status', section: 'Commercials & Remarks' },
+  { key: 'billingRate', label: 'Billing Rate (₹)', section: 'Commercials & Remarks' },
+  { key: 'billingRemarks', label: 'Billing Remarks', section: 'Commercials & Remarks' },
+  { key: 'designerStatus', label: 'Designer Status', section: 'Commercials & Remarks' },
+]
+
+function ColumnVisibilityDropdown({
+  hidden,
+  onToggle,
+  onShowAll,
+}: {
+  hidden: Set<string>
+  onToggle: (key: string) => void
+  onShowAll: () => void
+}) {
+  const [open, setOpen] = React.useState(false)
+  const sections = React.useMemo(() => {
+    const map = new Map<string, typeof TABLE_COLUMN_DEFS>()
+    for (const col of TABLE_COLUMN_DEFS) {
+      const list = map.get(col.section) ?? []
+      list.push(col)
+      map.set(col.section, list)
+    }
+    return [...map.entries()]
+  }, [])
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button variant="outline">
+          <Columns3 className="mr-1.5 h-4 w-4" />
+          Columns
+          {hidden.size > 0 ? (
+            <span className="ml-1.5 rounded-full bg-primary/10 text-primary text-[10px] font-bold px-1.5 py-0.5">{hidden.size} hidden</span>
+          ) : null}
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-72 p-3 max-h-[70vh] overflow-y-auto space-y-3">
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-semibold text-foreground">Show / hide columns</span>
+          <button type="button" className="text-[11px] text-primary hover:underline" onClick={onShowAll}>
+            Show all
+          </button>
+        </div>
+        {sections.map(([section, cols]) => (
+          <div key={section} className="space-y-1.5">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{section}</p>
+            {cols.map((col) => (
+              <label key={col.key} className="flex items-center gap-2 py-0.5 text-xs cursor-pointer">
+                <Checkbox checked={!hidden.has(col.key)} onCheckedChange={() => onToggle(col.key)} />
+                <span className="text-foreground">{col.label}</span>
+              </label>
+            ))}
+          </div>
+        ))}
+      </PopoverContent>
+    </Popover>
+  )
+}
+
 // Helper to extract field safely from customFields, metadata, or direct properties
 function getField(order: OrderRow, key: string, fallback = '—'): string {
   const line = order.lines?.[0]
@@ -427,6 +515,11 @@ export default function OrderBookPage() {
   const scopeVersion = useOrganizationScopeVersion()
 
   const [viewMode, setViewMode] = React.useState<'table' | 'kanban'>('table')
+  // Table view "Columns" toggle — the master sheet table keeps its existing bulk-edit
+  // and cascading-cell logic untouched; hiding a column here just toggles CSS
+  // (`data-col` attribute + a scoped `display:none` rule) rather than restructuring
+  // the table into a data-driven column model, so nothing about how cells save changes.
+  const [hiddenColumns, setHiddenColumns] = React.useState<Set<string>>(new Set())
   const [orders, setOrders] = React.useState<OrderRow[]>([])
   const [statusOptions, setStatusOptions] = React.useState<StatusOption[]>([])
   const [loading, setLoading] = React.useState(true)
@@ -877,6 +970,19 @@ export default function OrderBookPage() {
                 )
               ) : null}
 
+              {viewMode === 'table' ? (
+                <ColumnVisibilityDropdown
+                  hidden={hiddenColumns}
+                  onToggle={(key) => setHiddenColumns((prev) => {
+                    const next = new Set(prev)
+                    if (next.has(key)) next.delete(key)
+                    else next.add(key)
+                    return next
+                  })}
+                  onShowAll={() => setHiddenColumns(new Set())}
+                />
+              ) : null}
+
               <Button asChild className="bg-primary text-primary-foreground font-semibold">
                 <Link href="/backend/sales/order-book/create">
                   <Plus className="mr-1.5 h-4 w-4" /> Book New Order
@@ -1008,6 +1114,9 @@ export default function OrderBookPage() {
           {/* ========================================================= */}
           {viewMode === 'table' ? (
             <Card className="shadow-sm">
+              {hiddenColumns.size > 0 ? (
+                <style>{[...hiddenColumns].map((key) => `[data-col="${key}"]{display:none}`).join('')}</style>
+              ) : null}
               <CardContent className="p-0">
                 <div className="overflow-x-auto max-h-[800px]">
                   <table className="w-full text-left text-xs whitespace-nowrap border-collapse">
@@ -1017,39 +1126,39 @@ export default function OrderBookPage() {
                         <th className="p-2.5 pl-3 sticky left-0 bg-muted/95 z-30 shadow-[1px_0_0_0_rgba(0,0,0,0.1)]">
                           Pack Code
                         </th>
-                        <th className="p-2.5">O.Date</th>
-                        <th className="p-2.5">Packaging</th>
-                        <th className="p-2.5 font-bold text-foreground min-w-[200px]">Brand / Product Name</th>
-                        <th className="p-2.5">Pack (gm/ml)</th>
-                        <th className="p-2.5">Order Qty</th>
-                        <th className="p-2.5">Batch No</th>
-                        <th className="p-2.5">Month</th>
+                        <th className="p-2.5" data-col="date">O.Date</th>
+                        <th className="p-2.5" data-col="packaging">Packaging</th>
+                        <th className="p-2.5 font-bold text-foreground min-w-[200px]" data-col="brand">Brand / Product Name</th>
+                        <th className="p-2.5" data-col="packSize">Pack (gm/ml)</th>
+                        <th className="p-2.5" data-col="qty">Order Qty</th>
+                        <th className="p-2.5" data-col="batchNo">Batch No</th>
+                        <th className="p-2.5" data-col="month">Month</th>
 
                         {/* Section 2: Pricing & Customer */}
-                        <th className="p-2.5">M.R.P. (₹)</th>
-                        <th className="p-2.5">MRP/g or ml</th>
-                        <th className="p-2.5">Expiry</th>
-                        <th className="p-2.5 font-bold text-foreground">Customer / Company</th>
-                        <th className="p-2.5 text-center">Verified</th>
-                        <th className="p-2.5">Sales POC</th>
+                        <th className="p-2.5" data-col="mrp">M.R.P. (₹)</th>
+                        <th className="p-2.5" data-col="mrpPerUnit">MRP/g or ml</th>
+                        <th className="p-2.5" data-col="expiry">Expiry</th>
+                        <th className="p-2.5 font-bold text-foreground" data-col="company">Customer / Company</th>
+                        <th className="p-2.5 text-center" data-col="verified">Verified</th>
+                        <th className="p-2.5" data-col="salesPoc">Sales POC</th>
 
                         {/* Section 3: R&D, QA & Artwork */}
-                        <th className="p-2.5">R&D No.</th>
-                        <th className="p-2.5">Artwork Finalized</th>
-                        <th className="p-2.5">QA Approval</th>
-                        <th className="p-2.5">Sent to Printing</th>
+                        <th className="p-2.5" data-col="rdNo">R&D No.</th>
+                        <th className="p-2.5" data-col="artwork">Artwork Finalized</th>
+                        <th className="p-2.5" data-col="qa">QA Approval</th>
+                        <th className="p-2.5" data-col="printing">Sent to Printing</th>
 
                         {/* Section 4: Packaging & Material Stock */}
-                        <th className="p-2.5">Carton Stock</th>
-                        <th className="p-2.5">Printing Details</th>
-                        <th className="p-2.5">Primary Packaging</th>
-                        <th className="p-2.5">Tube/Label Stock</th>
+                        <th className="p-2.5" data-col="cartonStock">Carton Stock</th>
+                        <th className="p-2.5" data-col="printDetails">Printing Details</th>
+                        <th className="p-2.5" data-col="primaryPkg">Primary Packaging</th>
+                        <th className="p-2.5" data-col="tubeStock">Tube/Label Stock</th>
 
                         {/* Section 5: Commercials & Remarks */}
-                        <th className="p-2.5">Action Status</th>
-                        <th className="p-2.5">Billing Rate (₹)</th>
-                        <th className="p-2.5">Billing Remarks</th>
-                        <th className="p-2.5">Designer Status</th>
+                        <th className="p-2.5" data-col="actionStatus">Action Status</th>
+                        <th className="p-2.5" data-col="billingRate">Billing Rate (₹)</th>
+                        <th className="p-2.5" data-col="billingRemarks">Billing Remarks</th>
+                        <th className="p-2.5" data-col="designerStatus">Designer Status</th>
                         <th className="p-2.5 pr-3 text-right sticky right-0 bg-background/95 backdrop-blur z-10 border-l shadow-[-2px_0_4px_rgba(0,0,0,0.06)] min-w-[240px]">
                           Pipeline Stage & Actions
                         </th>
@@ -1124,12 +1233,12 @@ export default function OrderBookPage() {
                               </td>
 
                               {/* 2. O.Date */}
-                              <td className="p-2.5 text-muted-foreground font-mono text-[11px]">
+                              <td className="p-2.5 text-muted-foreground font-mono text-[11px]" data-col="date">
                                 {formatDate(order.placedAt || order.createdAt)}
                               </td>
 
                               {/* 3. Packaging Status Tag */}
-                              <td className="p-2.5">
+                              <td className="p-2.5" data-col="packaging">
                                 {bulkEditMode ? (
                                   <BulkSelectCell
                                     value={getBulkValue('packaging_status_tag', packagingTag)}
@@ -1153,7 +1262,7 @@ export default function OrderBookPage() {
                                   catalog product's real title on save (client ask: same
                                   principle as UOM's cascade — the order-level field is a label,
                                   but if a real product is linked, rename it for real). */}
-                              <td className="p-2.5 font-semibold text-foreground max-w-[240px]">
+                              <td className="p-2.5 font-semibold text-foreground max-w-[240px]" data-col="brand">
                                 {bulkEditMode ? (
                                   <div className="flex flex-col gap-1 min-w-[160px]">
                                     <BulkTextCell
@@ -1178,7 +1287,7 @@ export default function OrderBookPage() {
 
                               {/* 5. Pack (gm/ml) — inline-editable unit (client ask: click cell, pick a
                                   different unit; cascades to the product's default unit) */}
-                              <td className="p-2.5 font-medium">
+                              <td className="p-2.5 font-medium" data-col="packSize">
                                 {line ? (
                                   <div className="flex items-center gap-1">
                                     <span>{packSize}</span>
@@ -1198,12 +1307,12 @@ export default function OrderBookPage() {
                               </td>
 
                               {/* 6. Order Quantity */}
-                              <td className="p-2.5 font-bold text-foreground">
+                              <td className="p-2.5 font-bold text-foreground" data-col="qty">
                                 {Number(orderQty).toLocaleString('en-IN')}
                               </td>
 
                               {/* 7. Batch No */}
-                              <td className="p-2.5 font-mono text-[11px] font-medium text-slate-700 dark:text-slate-300">
+                              <td className="p-2.5 font-mono text-[11px] font-medium text-slate-700 dark:text-slate-300" data-col="batchNo">
                                 {bulkEditMode ? (
                                   <BulkTextCell
                                     value={getBulkValue('batch_no', batchNo)}
@@ -1216,7 +1325,7 @@ export default function OrderBookPage() {
                               </td>
 
                               {/* 8. Month */}
-                              <td className="p-2.5 text-muted-foreground font-mono text-[11px]">
+                              <td className="p-2.5 text-muted-foreground font-mono text-[11px]" data-col="month">
                                 {bulkEditMode ? (
                                   <BulkTextCell
                                     value={getBulkValue('mfg_month', mfgMonth)}
@@ -1229,7 +1338,7 @@ export default function OrderBookPage() {
                               </td>
 
                               {/* 9. M.R.P. */}
-                              <td className="p-2.5 font-medium">
+                              <td className="p-2.5 font-medium" data-col="mrp">
                                 {bulkEditMode ? (
                                   <BulkTextCell
                                     value={getBulkValue('mrp', mrpVal > 0 ? String(mrpVal) : '')}
@@ -1242,7 +1351,7 @@ export default function OrderBookPage() {
                               </td>
 
                               {/* 10. MRP/g or ml */}
-                              <td className="p-2.5 text-muted-foreground text-[11px]">
+                              <td className="p-2.5 text-muted-foreground text-[11px]" data-col="mrpPerUnit">
                                 {bulkEditMode ? (
                                   <BulkTextCell
                                     value={getBulkValue('mrp_per_unit', mrpPerUnit !== '—' ? mrpPerUnit : '')}
@@ -1255,7 +1364,7 @@ export default function OrderBookPage() {
                               </td>
 
                               {/* 11. Expiry */}
-                              <td className="p-2.5 text-muted-foreground">
+                              <td className="p-2.5 text-muted-foreground" data-col="expiry">
                                 {bulkEditMode ? (
                                   <BulkTextCell
                                     value={getBulkValue('expiry', expiry)}
@@ -1269,7 +1378,7 @@ export default function OrderBookPage() {
 
                               {/* 12. Company — inline-editable (client ask: click cell, dropdown
                                   opens, pick a different customer, no navigation/retyping) */}
-                              <td className="p-2.5 font-semibold text-foreground max-w-[160px] truncate">
+                              <td className="p-2.5 font-semibold text-foreground max-w-[160px] truncate" data-col="company">
                                 <InlineCustomerCell
                                   orderId={order.id}
                                   updatedAt={order.updatedAt}
@@ -1284,19 +1393,19 @@ export default function OrderBookPage() {
                                   real pipeline stage. Change it via the stage selector in the
                                   Action column; this cell just reflects that, so the two never
                                   disagree. */}
-                              <td className="p-2.5 text-center">
+                              <td className="p-2.5 text-center" data-col="verified">
                                 <StatusBadge variant={isVerified ? 'success' : 'neutral'} dot>
                                   {isVerified ? 'Verified' : 'Pending'}
                                 </StatusBadge>
                               </td>
 
                               {/* 14. Sales POC */}
-                              <td className="p-2.5 text-muted-foreground">
+                              <td className="p-2.5 text-muted-foreground" data-col="salesPoc">
                                 {salesPoc || '—'}
                               </td>
 
                               {/* 15. R&D No. */}
-                              <td className="p-2.5 font-mono text-[11px] text-purple-600 dark:text-purple-400 font-medium">
+                              <td className="p-2.5 font-mono text-[11px] text-purple-600 dark:text-purple-400 font-medium" data-col="rdNo">
                                 {bulkEditMode ? (
                                   <BulkTextCell
                                     value={getBulkValue('rd_no', rdNo !== '—' ? rdNo : '')}
@@ -1309,7 +1418,7 @@ export default function OrderBookPage() {
                               </td>
 
                               {/* 16. Artwork Finalized */}
-                              <td className="p-2.5">
+                              <td className="p-2.5" data-col="artwork">
                                 {bulkEditMode ? (
                                   <BulkSelectCell
                                     value={getBulkValue('artwork_finalized', artworkFinal === 'Yes' || artworkFinal === 'Finalized' ? 'Yes' : 'No')}
@@ -1330,7 +1439,7 @@ export default function OrderBookPage() {
                               </td>
 
                               {/* 17. QA Approval */}
-                              <td className="p-2.5 text-muted-foreground text-[11px]">
+                              <td className="p-2.5 text-muted-foreground text-[11px]" data-col="qa">
                                 {bulkEditMode ? (
                                   <BulkTextCell
                                     value={getBulkValue('qa_approval_date', qaApproval !== '—' ? qaApproval : '')}
@@ -1343,7 +1452,7 @@ export default function OrderBookPage() {
                               </td>
 
                               {/* 18. Sent to Printing */}
-                              <td className="p-2.5">
+                              <td className="p-2.5" data-col="printing">
                                 {bulkEditMode ? (
                                   <BulkTextCell
                                     value={getBulkValue('sent_to_printing', sentToPrinting !== 'Pending' ? sentToPrinting : '')}
@@ -1363,7 +1472,7 @@ export default function OrderBookPage() {
                               </td>
 
                               {/* 19. Carton Stock */}
-                              <td className="p-2.5 text-muted-foreground">
+                              <td className="p-2.5 text-muted-foreground" data-col="cartonStock">
                                 {bulkEditMode ? (
                                   <BulkTextCell
                                     value={getBulkValue('carton_stock', cartonStock)}
@@ -1376,7 +1485,7 @@ export default function OrderBookPage() {
                               </td>
 
                               {/* 20. Printing Details */}
-                              <td className="p-2.5 text-muted-foreground max-w-[140px]">
+                              <td className="p-2.5 text-muted-foreground max-w-[140px]" data-col="printDetails">
                                 {bulkEditMode ? (
                                   <BulkTextCell
                                     value={getBulkValue('printing_details', printDetails !== '—' ? printDetails : '')}
@@ -1389,7 +1498,7 @@ export default function OrderBookPage() {
                               </td>
 
                               {/* 21. Primary Packaging */}
-                              <td className="p-2.5 text-foreground font-medium">
+                              <td className="p-2.5 text-foreground font-medium" data-col="primaryPkg">
                                 {bulkEditMode ? (
                                   <BulkSelectCell
                                     value={getBulkValue('primary_packaging', primaryPkg)}
@@ -1403,7 +1512,7 @@ export default function OrderBookPage() {
                               </td>
 
                               {/* 22. Tube/Label Stock */}
-                              <td className="p-2.5 text-muted-foreground">
+                              <td className="p-2.5 text-muted-foreground" data-col="tubeStock">
                                 {bulkEditMode ? (
                                   <BulkTextCell
                                     value={getBulkValue('tube_label_stock', tubeLabelStock)}
@@ -1416,7 +1525,7 @@ export default function OrderBookPage() {
                               </td>
 
                               {/* 23. Action Taken / Status */}
-                              <td className="p-2.5">
+                              <td className="p-2.5" data-col="actionStatus">
                                 {bulkEditMode ? (
                                   <BulkSelectCell
                                     value={getBulkValue('action_taken_status', actionStatus)}
@@ -1432,12 +1541,12 @@ export default function OrderBookPage() {
                               </td>
 
                               {/* 24. Billing Rate */}
-                              <td className="p-2.5 font-bold text-foreground">
+                              <td className="p-2.5 font-bold text-foreground" data-col="billingRate">
                                 {formatINR(billingRate)}
                               </td>
 
                               {/* 25. Billing Remarks */}
-                              <td className="p-2.5 text-muted-foreground max-w-[140px]">
+                              <td className="p-2.5 text-muted-foreground max-w-[140px]" data-col="billingRemarks">
                                 {bulkEditMode ? (
                                   <Textarea
                                     value={getBulkValue('billing_remarks', billingRemarks !== '—' ? billingRemarks : '')}
@@ -1455,7 +1564,7 @@ export default function OrderBookPage() {
                               </td>
 
                               {/* 26. Designer Status */}
-                              <td className="p-2.5">
+                              <td className="p-2.5" data-col="designerStatus">
                                 {bulkEditMode ? (
                                   <BulkSelectCell
                                     value={getBulkValue('designer_status', designerStatus)}

@@ -64,6 +64,7 @@ type BomRow = {
   tenant_id: string
   updated_at: string
   created_at?: string
+  metadata?: Record<string, unknown> | null
 }
 
 type ResponsePayload = {
@@ -261,9 +262,9 @@ export default function DermatBomListPage() {
   const filteredRows = React.useMemo(() => {
     return rows.filter((r) => {
       const prodName = (r.product_name || (r.catalog_product_id ? productLabels[r.catalog_product_id] : '') || r.bom_name).toLowerCase()
-      const bomNumber = (r.bom_no || `BOM-${r.id.slice(-3).toUpperCase()}`).toLowerCase()
-      const bType = r.bom_type || (r.bom_name.toLowerCase().includes('bulk') ? 'Bulk' : 'Finished Good')
-      const bStatus = r.status || (r.is_active ? 'Approved' : 'Draft')
+      const bomNumber = (r.bom_no || (r.metadata?.internal_code as string | undefined) || `BOM-${r.id.slice(-3).toUpperCase()}`).toLowerCase()
+      const bType = r.bom_type || (r.metadata?.bom_type as string | undefined) || (r.bom_name.toLowerCase().includes('bulk') ? 'Bulk' : 'Finished Good')
+      const bStatus = r.status || (r.metadata?.status as string | undefined) || (r.is_active ? 'Approved' : 'Draft')
 
       if (typeFilter !== 'all' && bType !== typeFilter) return false
       if (statusFilter !== 'all' && bStatus !== statusFilter) return false
@@ -280,9 +281,9 @@ export default function DermatBomListPage() {
 
   // KPIs
   const totalBoms = rows.length
-  const fgBoms = rows.filter((r) => (r.bom_type || (r.bom_name.toLowerCase().includes('bulk') ? 'Bulk' : 'Finished Good')) === 'Finished Good').length
-  const bulkBoms = rows.filter((r) => (r.bom_type || (r.bom_name.toLowerCase().includes('bulk') ? 'Bulk' : 'Finished Good')) === 'Bulk').length
-  const approvedBoms = rows.filter((r) => (r.status || (r.is_active ? 'Approved' : 'Draft')) === 'Approved').length
+  const fgBoms = rows.filter((r) => (r.bom_type || (r.metadata?.bom_type as string | undefined) || (r.bom_name.toLowerCase().includes('bulk') ? 'Bulk' : 'Finished Good')) === 'Finished Good').length
+  const bulkBoms = rows.filter((r) => (r.bom_type || (r.metadata?.bom_type as string | undefined) || (r.bom_name.toLowerCase().includes('bulk') ? 'Bulk' : 'Finished Good')) === 'Bulk').length
+  const approvedBoms = rows.filter((r) => (r.status || (r.metadata?.status as string | undefined) || (r.is_active ? 'Approved' : 'Draft')) === 'Approved').length
 
   const getStatusVariant = (status: string): 'success' | 'neutral' | 'warning' | 'error' => {
     switch (status.toLowerCase()) {
@@ -445,15 +446,15 @@ export default function DermatBomListPage() {
                     </tr>
                   ) : (
                     filteredRows.map((bom, idx) => {
-                      const bomNumber = bom.bom_no || `BOM-00${idx + 1}`
+                      const bomNumber = bom.bom_no || (bom.metadata?.internal_code as string | undefined) || `BOM-00${idx + 1}`
                       const prodLabel = bom.product_name || (bom.catalog_product_id ? productLabels[bom.catalog_product_id] : '') || bom.bom_name
-                      const bomType = bom.bom_type || (bom.bom_name.toLowerCase().includes('bulk') ? 'Bulk' : 'Finished Good')
+                      const bomType = bom.bom_type || (bom.metadata?.bom_type as string | undefined) || (bom.bom_name.toLowerCase().includes('bulk') ? 'Bulk' : 'Finished Good')
                       const versionStr = typeof bom.version === 'string' && bom.version.startsWith('V') ? bom.version : `V${bom.version || 1}`
                       const baseQty = bom.batch_quantity || 1
                       const uomStr = bom.uom || (bomType === 'Bulk' ? 'L' : 'unit')
-                      const statusStr = bom.status || (bom.is_active ? 'Approved' : 'Draft')
+                      const statusStr = bom.status || (bom.metadata?.status as string | undefined) || (bom.is_active ? 'Approved' : 'Draft')
                       const componentsCount = bom.components_count || (idx === 0 ? 7 : idx === 1 ? 5 : 8)
-                      const effectiveDate = bom.effective_date || (statusStr === 'Approved' ? '01/09/26' : '—')
+                      const effectiveDate = bom.effective_date || (bom.metadata?.effective_from as string | undefined) || (statusStr === 'Approved' ? '01/09/26' : '—')
 
                       return (
                         <tr key={bom.id} className="hover:bg-muted/20 transition-colors">
@@ -584,9 +585,9 @@ export default function DermatBomListPage() {
                         OFFICIAL BILL OF MATERIALS
                       </span>
                       <p className="text-[11px] font-mono font-bold text-slate-900 mt-1">
-                        {pdfBom.bom_no || `BOM-${pdfBom.id.slice(0, 6)}`} / {typeof pdfBom.version === 'string' && pdfBom.version.startsWith('V') ? pdfBom.version : `V${pdfBom.version || 1}`}
+                        {pdfBom.bom_no || (pdfBom.metadata?.internal_code as string | undefined) || `BOM-${pdfBom.id.slice(0, 6)}`} / {typeof pdfBom.version === 'string' && pdfBom.version.startsWith('V') ? pdfBom.version : `V${pdfBom.version || 1}`}
                       </p>
-                      <p className="text-[9px] text-slate-500">Effective: {pdfBom.effective_date || '01/09/2026'}</p>
+                      <p className="text-[9px] text-slate-500">Effective: {pdfBom.effective_date || (pdfBom.metadata?.effective_from as string | undefined) || '01/09/2026'}</p>
                     </div>
                   </div>
 
@@ -594,8 +595,8 @@ export default function DermatBomListPage() {
                   <div className="grid grid-cols-2 gap-4 bg-slate-50 p-3 rounded border border-slate-200 text-[11px]">
                     <div className="space-y-1">
                       <div><strong className="text-slate-700 w-32 inline-block">Product Name:</strong> <span className="font-bold text-slate-900">{pdfBom.product_name || pdfBom.bom_name}</span></div>
-                      <div><strong className="text-slate-700 w-32 inline-block">BOM Type:</strong> <span>{pdfBom.bom_type || 'Finished Good'}</span></div>
-                      <div><strong className="text-slate-700 w-32 inline-block">Status:</strong> <span className="font-semibold text-emerald-700">{pdfBom.status || 'Approved'}</span></div>
+                      <div><strong className="text-slate-700 w-32 inline-block">BOM Type:</strong> <span>{pdfBom.bom_type || (pdfBom.metadata?.bom_type as string | undefined) || 'Finished Good'}</span></div>
+                      <div><strong className="text-slate-700 w-32 inline-block">Status:</strong> <span className="font-semibold text-emerald-700">{pdfBom.status || (pdfBom.metadata?.status as string | undefined) || 'Approved'}</span></div>
                     </div>
                     <div className="space-y-1">
                       <div><strong className="text-slate-700 w-32 inline-block">Base Batch Size:</strong> <span className="font-bold text-slate-900">{pdfBom.batch_quantity || 100} {pdfBom.uom || 'KGS'}</span></div>

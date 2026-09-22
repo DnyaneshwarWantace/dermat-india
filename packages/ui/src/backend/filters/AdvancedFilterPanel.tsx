@@ -31,6 +31,7 @@ import { QuickFilters, type FilterPreset } from './QuickFilters'
 import { FilterFieldPicker } from './FilterFieldPicker'
 import { treeReducer } from './treeReducer'
 import { flash } from '../FlashMessages'
+import { randomUUID } from '@open-mercato/shared/lib/id/randomUUID'
 
 export type AdvancedFilterPanelProps = {
   fields: FilterFieldDef[]
@@ -344,7 +345,7 @@ export function AdvancedFilterPanel(props: AdvancedFilterPanelProps) {
     const normalizedName = name.trim()
     const existing = savedFilters.find((item) => item.name.trim().toLowerCase() === normalizedName.toLowerCase())
     const record: SavedAdvancedFilter = {
-      id: existing?.id ?? crypto.randomUUID(),
+      id: existing?.id ?? randomUUID(),
       name: normalizedName,
       tree: serializeTreeForPersist(props.value),
       createdAt: existing?.createdAt ?? now,

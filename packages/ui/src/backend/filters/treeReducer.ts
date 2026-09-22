@@ -7,6 +7,7 @@ import {
   TREE_LIMITS,
 } from '@open-mercato/shared/lib/query/advanced-filter-tree'
 import type { FilterOperator } from '@open-mercato/shared/lib/query/advanced-filter'
+import { randomUUID } from '@open-mercato/shared/lib/id/randomUUID'
 
 export type TreeAction =
   | { type: 'addRule'; groupId: string; defaultField?: string; defaultOperator?: FilterOperator }
@@ -30,7 +31,7 @@ function nextAddedAt(): number {
 
 function emptyRule(defaultField?: string, defaultOperator?: FilterOperator): FilterRule {
   return {
-    id: crypto.randomUUID(),
+    id: randomUUID(),
     type: 'rule',
     field: defaultField ?? '',
     operator: defaultOperator ?? 'contains',
@@ -41,7 +42,7 @@ function emptyRule(defaultField?: string, defaultOperator?: FilterOperator): Fil
 
 function emptyGroup(defaultField?: string, defaultOperator?: FilterOperator): FilterGroup {
   return {
-    id: crypto.randomUUID(),
+    id: randomUUID(),
     type: 'group',
     combinator: 'and',
     children: [emptyRule(defaultField, defaultOperator)],

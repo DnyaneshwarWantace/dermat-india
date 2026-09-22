@@ -95,8 +95,9 @@ const transitionOrderStageCommand: CommandHandler<TransitionOrderStageInput, Tra
       recordIds: [id],
       tenantFallbacks: [tenantId],
     })
-    const rawStage = typeof existing.order_stage === 'string' && existing.order_stage.length > 0
-      ? existing.order_stage
+    const existingCustomFields = customFieldValues[id] || {}
+    const rawStage = typeof existingCustomFields.order_stage === 'string' && existingCustomFields.order_stage.length > 0
+      ? existingCustomFields.order_stage
       : ((order.status as string) || 'new')
     const currentStageMatch = isKnownStage(rawStage)
       ? rawStage
@@ -144,15 +145,18 @@ const transitionOrderStageCommand: CommandHandler<TransitionOrderStageInput, Tra
 
     // R&D / Sample-sent gate: leaving 'rnd_sample' requires confirmation that a sample was
     // sent to the client (spec §6: sample loop must be tracked, not just entered as a result).
-    if (currentStage === 'rnd_sample' && targetStage !== 'rnd_sample' && targetStage !== 'new') {
+    // Only applies moving FORWARD out of the stage — a revert back to an earlier stage isn't
+    // "sending the sample," and reverts never carry a sampleSentNote, so this gate must not
+    // block them (it previously did, making every R&D/Sample revert fail with a 422).
+    if (isForward && currentStageMatch === 'rnd_sample' && targetStage !== 'rnd_sample' && targetStage !== 'new') {
       // Advance payment is re-checked HERE independently, not just relied on from the earlier
       // New -> Verified gate (client ask: "only give the sample when advance payment is done"
       // as a standing rule). The Verified gate alone isn't sufficient because advance_required
       // can be left unchecked at order creation, or an order can reach this stage via a revert
       // + re-forward path — the sample must never go out without advance confirmed, regardless
       // of how the order got here.
-      const advanceRequired = Boolean(existing.advance_required)
-      const advanceReceived = existing.advance_received_amount != null && Number(existing.advance_received_amount) > 0
+      const advanceRequired = Boolean(existingCustomFields.advance_required)
+      const advanceReceived = existingCustomFields.advance_received_amount != null && Number(existingCustomFields.advance_received_amount) > 0
       if (advanceRequired && !advanceReceived) {
         throw new CrudHttpError(422, {
           error: '[internal] Advance payment must be received before a sample can be sent to the client',
@@ -192,7 +196,7 @@ const transitionOrderStageCommand: CommandHandler<TransitionOrderStageInput, Tra
       organizationId,
       tenantId,
       stage: targetStage,
-      previousStage: currentStage,
+      previousStage: currentStageMatch,
       isRevert: isBackward,
       revertReason: isBackward ? rawInput.revertReason?.trim() ?? null : null,
       actorName: rawInput.actorName ?? null,
@@ -201,7 +205,7 @@ const transitionOrderStageCommand: CommandHandler<TransitionOrderStageInput, Tra
     // R&D auto-handoff (spec correction): verifying an order must create the R&D case
     // automatically, no manual re-entry by the R&D team. Fired once, on the transition into
     // 'verified' — subscribers (dermat_sampling) own actually creating the case record.
-    if (targetStage === 'verified' && currentStage !== 'verified') {
+    if (targetStage === 'verified' && currentStageMatch !== 'verified') {
       await emitDermatSalesFlowEvent('dermat_sales_flow.order.verified', {
         orderId: id,
         organizationId,

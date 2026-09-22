@@ -54,10 +54,6 @@ jest.mock('@open-mercato/ui/backend/injection/PageInjectionBoundary', () => ({
   PageInjectionBoundary: ({ children }: { children: React.ReactNode }) => React.createElement(React.Fragment, null, children),
 }))
 
-jest.mock('@/components/DemoFeedbackWidget', () => ({
-  DemoFeedbackWidget: () => null,
-}))
-
 jest.mock('@/components/OrganizationSwitcher', () => ({
   __esModule: true,
   default: () => null,

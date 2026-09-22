@@ -47,14 +47,14 @@ function clearStaffAuthCookies(response: NextResponse) {
     httpOnly: true,
     path: '/',
     sameSite: 'lax',
-    secure: process.env.NODE_ENV === 'production',
+    secure: process.env.NODE_ENV === 'production' && process.env.ALLOW_INSECURE_HTTP_COOKIES !== 'true',
     maxAge: 0,
   })
   response.cookies.set('session_token', '', {
     httpOnly: true,
     path: '/',
     sameSite: 'lax',
-    secure: process.env.NODE_ENV === 'production',
+    secure: process.env.NODE_ENV === 'production' && process.env.ALLOW_INSECURE_HTTP_COOKIES !== 'true',
     maxAge: 0,
   })
   return response
@@ -80,7 +80,7 @@ export async function GET(req: Request) {
   }
   const jwt = signJwt(buildStaffJwtClaims(ctx))
   const res = buildSafeRedirectResponse(req, redirectTo)
-  res.cookies.set('auth_token', jwt, { httpOnly: true, path: '/', sameSite: 'lax', secure: process.env.NODE_ENV === 'production', maxAge: 60 * 60 * 8 })
+  res.cookies.set('auth_token', jwt, { httpOnly: true, path: '/', sameSite: 'lax', secure: process.env.NODE_ENV === 'production' && process.env.ALLOW_INSECURE_HTTP_COOKIES !== 'true', maxAge: 60 * 60 * 8 })
   return res
 }
 
@@ -140,7 +140,7 @@ export async function POST(req: Request) {
     httpOnly: true,
     path: '/',
     sameSite: 'lax',
-    secure: process.env.NODE_ENV === 'production',
+    secure: process.env.NODE_ENV === 'production' && process.env.ALLOW_INSECURE_HTTP_COOKIES !== 'true',
     maxAge: 60 * 60 * 8,
   })
 

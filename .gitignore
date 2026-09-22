@@ -178,3 +178,6 @@ skills-lock.json
 .stryker-tmp/
 **/reports/mutation/
 .ai/local/
+
+# Local DB dump staging for server-side seeding — never commit real data.
+db-seed/

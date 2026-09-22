@@ -458,48 +458,6 @@ export default function LoginPage() {
                     : translate('auth.signIn', 'Sign in to Dermat India')}
               </Button>
 
-              {/* 1-Click Quick Demo Login Shortcuts */}
-              <div className="pt-3 border-t mt-2 space-y-2">
-                <p className="text-[11px] font-semibold text-muted-foreground text-center uppercase tracking-wider">
-                  Quick Access Demo Accounts
-                </p>
-                <div className="grid grid-cols-2 gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="text-xs font-semibold h-8"
-                    onClick={() => {
-                      const emailInput = document.getElementById('email') as HTMLInputElement
-                      const passInput = document.getElementById('password') as HTMLInputElement
-                      if (emailInput) {
-                        emailInput.value = 'admin@openmercato.com'
-                        setEmail('admin@openmercato.com')
-                      }
-                      if (passInput) passInput.value = 'secret'
-                    }}
-                  >
-                    👑 Admin
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="text-xs font-semibold h-8"
-                    onClick={() => {
-                      const emailInput = document.getElementById('email') as HTMLInputElement
-                      const passInput = document.getElementById('password') as HTMLInputElement
-                      if (emailInput) {
-                        emailInput.value = 'superadmin@openmercato.com'
-                        setEmail('superadmin@openmercato.com')
-                      }
-                      if (passInput) passInput.value = 'secret'
-                    }}
-                  >
-                    ⚡ Super Admin
-                  </Button>
-                </div>
-              </div>
             </form>
           </LoginFormSection>
         </CardContent>

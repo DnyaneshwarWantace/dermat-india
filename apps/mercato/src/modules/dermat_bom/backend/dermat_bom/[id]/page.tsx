@@ -142,11 +142,11 @@ export default function BomDetailPage({ params }: { params?: { id?: string } }) 
   const [inlineComponentType, setInlineComponentType] = React.useState<ComponentType>('RM')
   const [inlineMaterialId, setInlineMaterialId] = React.useState('')
   const [inlineLinkedBomId, setInlineLinkedBomId] = React.useState('')
-  const [inlineQtyPerUnit, setInlineQtyPerUnit] = React.useState('0.040')
-  const [inlineQty, setInlineQty] = React.useState('4.000')
+  const [inlineQtyPerUnit, setInlineQtyPerUnit] = React.useState('')
+  const [inlineQty, setInlineQty] = React.useState('')
   const [inlineWastagePercent, setInlineWastagePercent] = React.useState('0.000')
   const [inlineUom, setInlineUom] = React.useState('KGS')
-  const [inlineRmPercent, setInlineRmPercent] = React.useState('4.000')
+  const [inlineRmPercent, setInlineRmPercent] = React.useState('')
   const [addingLine, setAddingLine] = React.useState(false)
 
   // Order Demand Explosion Calculator state
@@ -181,7 +181,7 @@ export default function BomDetailPage({ params }: { params?: { id?: string } }) 
         }
 
         const linesCall = await apiCall<{ items: any[] }>(
-          `/api/dermat_bom/bom-lines?bomId=${id}&pageSize=200&sortField=sequenceNumber&sortDir=asc`
+          `/api/dermat_bom/bom-lines?bomId=${id}&pageSize=100&sortField=sequenceNumber&sortDir=asc`
         )
         const lineItems = linesCall.ok ? linesCall.result?.items ?? [] : []
 
@@ -203,10 +203,10 @@ export default function BomDetailPage({ params }: { params?: { id?: string } }) 
 
         // Fetch DB masters with fallback to default catalog to ensure dropdown is ALWAYS full
         const [rmCall, pmCall, catalogCall, allBomsCall] = await Promise.all([
-          apiCall<{ items: RawMaterialOption[] }>(`/api/dermat_rm_master/rm_master?pageSize=200`),
-          apiCall<{ items: PackagingMaterialOption[] }>(`/api/dermat_pm_master/pm_master?pageSize=200`),
+          apiCall<{ items: RawMaterialOption[] }>(`/api/dermat_rm_master/rm_master?pageSize=100`),
+          apiCall<{ items: PackagingMaterialOption[] }>(`/api/dermat_pm_master/pm_master?pageSize=100`),
           apiCall<{ items: Array<{ id: string; title: string; sku?: string | null }> }>(`/api/catalog/products?pageSize=100`),
-          apiCall<{ items: any[] }>(`/api/dermat_bom/boms?pageSize=200`),
+          apiCall<{ items: any[] }>(`/api/dermat_bom/boms?pageSize=100`),
         ])
 
         const rmMap: Record<string, RawMaterialOption> = {}
@@ -313,7 +313,7 @@ export default function BomDetailPage({ params }: { params?: { id?: string } }) 
             allBomsCall.ok && allBomsCall.result?.items
               ? allBomsCall.result.items.map((b, i) => ({
                   id: b.id,
-                  bom_no: b.bom_no || `BOM-00${i + 1}`,
+                  bom_no: b.bom_no || b.metadata?.internal_code || `BOM-00${i + 1}`,
                   bom_name: b.bom_name,
                 }))
               : []
@@ -349,9 +349,17 @@ export default function BomDetailPage({ params }: { params?: { id?: string } }) 
   }
 
   // When typing Qty/Unit (e.g. 0.040 for 4% in 100kg batch)
+  // RM only — "Qty/Unit" is a fraction of the batch weight, so it scales by
+  // baseBatchQty. PM has no such ratio (a shipper box isn't "4% of the
+  // batch") — it's a plain count, so Qty/Unit and RM Quantity are the same
+  // number for PM, entered directly with no batch-scaling math.
   const handleQtyPerUnitChange = (val: string) => {
     setInlineQtyPerUnit(val)
     const valNum = Number(val) || 0
+    if (inlineComponentType !== 'RM') {
+      setInlineQty(val)
+      return
+    }
     if (baseBatchQty > 0) {
       const targetBaseKg = valNum * baseBatchQty // e.g. 0.040 * 100 = 4.000 kg
       const u = inlineUom.toUpperCase()
@@ -364,17 +372,20 @@ export default function BomDetailPage({ params }: { params?: { id?: string } }) 
     }
   }
 
-  // When typing RM Quantity directly (e.g. 4.000 KGS)
+  // When typing RM Quantity directly (e.g. 4.000 KGS). Same RM-only scaling
+  // rule as handleQtyPerUnitChange above.
   const handleQtyInputChange = (val: string) => {
     setInlineQty(val)
+    if (inlineComponentType !== 'RM') {
+      setInlineQtyPerUnit(val)
+      return
+    }
     const num = Number(val) || 0
     const baseKg = toBaseKgOrLiter(num, inlineUom)
     if (baseBatchQty > 0) {
       const qPerUnit = baseKg / baseBatchQty // e.g. 4 / 100 = 0.040
       setInlineQtyPerUnit(qPerUnit.toFixed(4))
-      if (inlineComponentType === 'RM') {
-        setInlineRmPercent((qPerUnit * 100).toFixed(3)) // e.g. 4%
-      }
+      setInlineRmPercent((qPerUnit * 100).toFixed(3)) // e.g. 4%
     }
   }
 
@@ -416,21 +427,15 @@ export default function BomDetailPage({ params }: { params?: { id?: string } }) 
     setInlineComponentType(newType)
     setInlineMaterialId('')
     setInlineLinkedBomId('')
+    setInlineQtyPerUnit('')
+    setInlineQty('')
+    setInlineRmPercent('')
     if (newType === 'RM') {
       setInlineUom('KGS')
-      setInlineQtyPerUnit('0.010')
-      setInlineQty('1.000')
-      setInlineRmPercent('1.000')
     } else if (newType === 'PM') {
       setInlineUom('PCS')
-      setInlineQtyPerUnit('1.000')
-      setInlineQty('1.000')
-      setInlineRmPercent('')
     } else if (newType === 'SFG') {
       setInlineUom('L')
-      setInlineQtyPerUnit('0.010')
-      setInlineQty('1.000')
-      setInlineRmPercent('')
     }
   }
 
@@ -514,10 +519,10 @@ export default function BomDetailPage({ params }: { params?: { id?: string } }) 
 
       setInlineMaterialId('')
       setInlineLinkedBomId('')
-      setInlineQtyPerUnit('0.010')
-      setInlineQty('1.000')
+      setInlineQtyPerUnit('')
+      setInlineQty('')
       setInlineWastagePercent('0.000')
-      setInlineRmPercent('1.000')
+      setInlineRmPercent('')
     } catch (err: any) {
       const newRow: BomComponentRow = {
         id: `local_${Date.now()}`,
@@ -544,10 +549,10 @@ export default function BomDetailPage({ params }: { params?: { id?: string } }) 
       flash(`${compName} added to recipe`, 'success')
       setInlineMaterialId('')
       setInlineLinkedBomId('')
-      setInlineQtyPerUnit('0.010')
-      setInlineQty('1.000')
+      setInlineQtyPerUnit('')
+      setInlineQty('')
       setInlineWastagePercent('0.000')
-      setInlineRmPercent('1.000')
+      setInlineRmPercent('')
     } finally {
       setAddingLine(false)
     }
@@ -596,7 +601,7 @@ export default function BomDetailPage({ params }: { params?: { id?: string } }) 
   const bomType = bom.bom_type || bom.metadata?.bom_type || 'Finished Good'
   const version = bom.version ? (String(bom.version).startsWith('V') ? bom.version : `V${bom.version}`) : 'V1'
   const baseUom = (bom.base_uom || bom.metadata?.base_uom || (bomType === 'Bulk' ? 'KGS' : 'KGS')).toUpperCase()
-  const status = bom.status || (bom.is_active ? 'Approved' : 'Draft')
+  const status = bom.status || bom.metadata?.status || (bom.is_active ? 'Approved' : 'Draft')
   const effectiveFrom = bom.effective_from || bom.metadata?.effective_from || new Date().toISOString().slice(0, 10)
 
   // Groupings & Calculations
@@ -820,7 +825,7 @@ export default function BomDetailPage({ params }: { params?: { id?: string } }) 
                       <span>Formulation Recipe & Components ({components.length})</span>
                     </CardTitle>
                     <p className="text-[11px] text-muted-foreground">
-                      Enter <strong>Qty/Unit (e.g. 0.040)</strong> or <strong>RM % (e.g. 4%)</strong> — the <strong>RM Quantity</strong> ({baseBatchQty} {baseUom} batch) is auto-calculated instantly.
+                      For RM: enter <strong>Qty/Unit (e.g. 0.040)</strong> or <strong>RM % (e.g. 4%)</strong> — the <strong>Quantity</strong> ({baseBatchQty} {baseUom} batch) is auto-calculated instantly. For PM: enter the actual <strong>Quantity</strong> needed directly.
                     </p>
                   </div>
                 </CardHeader>
@@ -835,7 +840,7 @@ export default function BomDetailPage({ params }: { params?: { id?: string } }) 
                           <th className="w-20 p-3 text-center">Type</th>
                           <th className="w-24 p-3 text-right">Qty/Unit</th>
                           <th className="w-28 p-3 text-right font-extrabold text-foreground">
-                            RM Quantity ({baseBatchQty} {baseUom})
+                            Quantity ({baseBatchQty} {baseUom} batch)
                           </th>
                           <th className="w-20 p-3 text-center">UOM</th>
                           <th className="w-20 p-3 text-right">Wastage</th>
@@ -1062,7 +1067,12 @@ export default function BomDetailPage({ params }: { params?: { id?: string } }) 
                           components.map((c, index) => {
                             const isShortage = Number(c.on_hand) < Number(c.quantity)
                             const baseQty = toBaseKgOrLiter(Number(c.quantity), c.unit)
-                            const qtyPerUnit = (baseQty / baseBatchQty).toFixed(3)
+                            // Qty/Unit-as-fraction-of-batch only means something for RM (percent
+                            // of formula). PM/SFG have no such ratio, so Qty/Unit just mirrors
+                            // the plain quantity instead of a meaningless division.
+                            const qtyPerUnit = c.type === 'RM'
+                              ? (baseQty / baseBatchQty).toFixed(3)
+                              : Number(c.quantity).toFixed(3)
                             return (
                               <tr key={c.id} className="hover:bg-muted/20 transition-colors">
                                 {/* 1. Sequence */}

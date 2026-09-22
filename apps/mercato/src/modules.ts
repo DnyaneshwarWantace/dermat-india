@@ -98,7 +98,8 @@ export const enabledModules: ModuleEntry[] = [
   { id: 'catalog', from: '@open-mercato/core' },
   { id: 'sales', from: '@open-mercato/core' },
   { id: 'payment_gateways', from: '@open-mercato/core' },
-  { id: 'wms', from: '@open-mercato/core' },
+  // wms: disabled for now per request — re-add the entry above to bring
+  // Inventory/Warehouses/Zones/Locations/Lots/Movements/Reservations back.
   { id: 'api_keys', from: '@open-mercato/core' },
   { id: 'devices', from: '@open-mercato/core' },
   { id: 'dictionaries', from: '@open-mercato/core' },

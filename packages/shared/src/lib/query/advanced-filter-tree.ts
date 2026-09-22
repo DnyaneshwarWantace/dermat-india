@@ -2,6 +2,7 @@
 import type { FilterOperator } from './advanced-filter'
 import { isValuelessOperator } from './advanced-filter'
 import { buildIlikeTerm } from '../db/buildIlikeTerm'
+import { randomUUID } from '../id/randomUUID'
 
 export type FilterCombinator = 'and' | 'or'
 
@@ -39,7 +40,7 @@ export const TREE_LIMITS = {
 export function createEmptyTree(): AdvancedFilterTree {
   return {
     root: {
-      id: crypto.randomUUID(),
+      id: randomUUID(),
       type: 'group',
       combinator: 'and',
       children: [],
@@ -185,7 +186,7 @@ export { isValuelessOperator }
  */
 export function makeRuleTree(rule: { field: string; operator: FilterOperator; value: unknown }): AdvancedFilterTree {
   const ruleNode: FilterRule = {
-    id: crypto.randomUUID(),
+    id: randomUUID(),
     type: 'rule',
     field: rule.field,
     operator: rule.operator,
@@ -193,7 +194,7 @@ export function makeRuleTree(rule: { field: string; operator: FilterOperator; va
   }
   return {
     root: {
-      id: crypto.randomUUID(),
+      id: randomUUID(),
       type: 'group',
       combinator: 'and',
       children: [ruleNode],
@@ -310,12 +311,12 @@ export function makeMultiRuleTree(
 ): AdvancedFilterTree {
   return {
     root: {
-      id: crypto.randomUUID(),
+      id: randomUUID(),
       type: 'group',
       combinator,
       children: rules.map((rule) => {
         const node: FilterRule = {
-          id: crypto.randomUUID(),
+          id: randomUUID(),
           type: 'rule',
           field: rule.field,
           operator: rule.operator,

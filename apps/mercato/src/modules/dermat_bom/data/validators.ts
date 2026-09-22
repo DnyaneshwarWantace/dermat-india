@@ -24,6 +24,7 @@ export const bomCreateSchema = scopedSchema.extend({
   batchQuantity: z.coerce.number().positive().optional(),
   version: z.coerce.number().int().min(1).optional(),
   isActive: z.boolean().optional(),
+  metadata: z.record(z.string(), z.unknown()).nullable().optional(),
 })
 
 export const bomUpdateSchema = z

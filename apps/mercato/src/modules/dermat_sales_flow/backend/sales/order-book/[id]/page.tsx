@@ -41,6 +41,7 @@ import {
   Sparkles,
   ArrowLeft,
   Clock,
+  Printer,
 } from 'lucide-react'
 import { useT } from '@open-mercato/shared/lib/i18n/context'
 import { apiCall, withScopedApiRequestHeaders } from '@open-mercato/ui/backend/utils/apiCall'
@@ -277,6 +278,9 @@ export default function OrderBookDetailPage({ params }: { params?: { id?: string
   // Stock check dialog
   const [stockShortfalls, setStockShortfalls] = React.useState<StockShortfall[] | null>(null)
   const [pendingConfirmEntryId, setPendingConfirmEntryId] = React.useState<string | null>(null)
+
+  // Proforma invoice print preview
+  const [proformaOpen, setProformaOpen] = React.useState(false)
 
   // Add line dialog
   const [addLineOpen, setAddLineOpen] = React.useState(false)
@@ -706,6 +710,9 @@ export default function OrderBookDetailPage({ params }: { params?: { id?: string
             <div className="flex items-center gap-3">
               <Button asChild variant="outline" size="sm">
                 <Link href="/backend/sales/order-book">Back to Order Book</Link>
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => setProformaOpen(true)}>
+                <FileText className="mr-1.5 h-4 w-4" /> Proforma Invoice
               </Button>
               <Button asChild size="sm">
                 <Link href="/backend/sales/order-book/create">
@@ -1512,6 +1519,174 @@ export default function OrderBookDetailPage({ params }: { params?: { id?: string
                 }}
               >
                 Confirm Anyway
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* ========================================================= */}
+        {/* PROFORMA INVOICE PRINT PREVIEW — same window.print() pattern as */}
+        {/* the BOM module's PDF Sheet: no PDF library, browser print/save */}
+        {/* ========================================================= */}
+        <Dialog open={proformaOpen} onOpenChange={setProformaOpen}>
+          <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto print:p-0 print:max-w-full">
+            <DialogHeader className="print:hidden">
+              <DialogTitle className="flex items-center justify-between">
+                <span>Proforma Invoice Preview</span>
+                <Button size="sm" onClick={() => window.print()} className="gap-1.5 font-bold">
+                  <Printer className="h-3.5 w-3.5" />
+                  <span>Print / Save as PDF</span>
+                </Button>
+              </DialogTitle>
+            </DialogHeader>
+
+            <div className="bg-white text-slate-900 p-8 rounded-lg border shadow-xs space-y-6 font-sans text-xs print:border-none print:shadow-none">
+              {/* Letterhead */}
+              <div className="flex justify-between items-start border-b border-slate-300 pb-4">
+                <div className="space-y-0.5">
+                  <h2 className="text-lg font-extrabold text-slate-900 tracking-tight">DERMAT INDIA</h2>
+                  <p className="text-[11px] text-slate-700 leading-tight">Plot No. 696, Pace City-2, Sector 37, GRG KD</p>
+                  <p className="text-[11px] text-slate-700 leading-tight">Gurugram, Haryana 122004</p>
+                  <p className="text-[11px] text-slate-900 font-mono font-semibold pt-1">GSTIN: 06AAPFD7375J1ZV</p>
+                </div>
+                <div className="text-right space-y-1">
+                  <h3 className="text-base font-extrabold text-primary tracking-wide">PROFORMA INVOICE</h3>
+                  <div className="text-[11px] text-slate-700">
+                    <div><span className="font-semibold">Invoice #:</span> {proformaNumber || `PI-${order.orderNumber}`}</div>
+                    <div><span className="font-semibold">Order #:</span> {order.orderNumber}</div>
+                    <div><span className="font-semibold">Date:</span> {formatDate(order.placedAt || order.createdAt)}</div>
+                    {order.expectedDeliveryAt ? (
+                      <div><span className="font-semibold">Delivery by:</span> {formatDate(order.expectedDeliveryAt)}</div>
+                    ) : null}
+                    {customerPoRef ? <div><span className="font-semibold">Customer PO:</span> {customerPoRef}</div> : null}
+                  </div>
+                </div>
+              </div>
+
+              {/* Bill To */}
+              <div className="grid grid-cols-2 gap-6">
+                <div className="space-y-0.5">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Bill To</p>
+                  <p className="font-bold text-slate-900">{customer?.displayName || order.customerSnapshot?.customer?.displayName || 'Unnamed Customer'}</p>
+                  {customer?.address ? <p className="text-[11px] text-slate-700">{customer.address}</p> : null}
+                  {customer?.gstin ? <p className="text-[11px] text-slate-900 font-mono">GSTIN: {customer.gstin}</p> : null}
+                  {customer?.phone ? <p className="text-[11px] text-slate-700">Phone: {customer.phone}</p> : null}
+                  {customer?.email ? <p className="text-[11px] text-slate-700">Email: {customer.email}</p> : null}
+                </div>
+                <div className="text-right space-y-0.5">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Payment Terms</p>
+                  <p className="text-[11px] text-slate-700">
+                    {advanceAmount > 0
+                      ? `Advance received: ${formatINR(advanceAmount)}${advanceDate ? ` on ${formatDate(advanceDate)}` : ''}`
+                      : 'Advance payment as agreed'}
+                  </p>
+                  <p className="text-[11px] text-slate-700">Balance due before dispatch</p>
+                </div>
+              </div>
+
+              {/* Line items — table-fixed with explicit column widths so a long
+                  product name wraps instead of stretching the table past the
+                  dialog/print page width. */}
+              <div className="overflow-x-auto">
+              <table className="w-full table-fixed text-[11px] text-left border-collapse border border-slate-300">
+                <colgroup>
+                  <col className="w-8" />
+                  <col />
+                  <col className="w-[13%]" />
+                  <col className="w-[9%]" />
+                  <col className="w-[11%]" />
+                  <col className="w-[12%]" />
+                  <col className="w-[8%]" />
+                  <col className="w-[12%]" />
+                </colgroup>
+                <thead className="bg-primary text-primary-foreground font-bold">
+                  <tr>
+                    <th className="p-1.5 border border-slate-300 text-center">#</th>
+                    <th className="p-1.5 border border-slate-300">Product</th>
+                    <th className="p-1.5 border border-slate-300 text-center">Pack</th>
+                    <th className="p-1.5 border border-slate-300 text-right">Qty</th>
+                    <th className="p-1.5 border border-slate-300 text-right">Rate (₹)</th>
+                    <th className="p-1.5 border border-slate-300 text-right">Taxable (₹)</th>
+                    <th className="p-1.5 border border-slate-300 text-right">GST %</th>
+                    <th className="p-1.5 border border-slate-300 text-right">Total (₹)</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200">
+                  {lines.length === 0 ? (
+                    <tr>
+                      <td colSpan={8} className="p-4 text-center text-slate-400">No line items on this order.</td>
+                    </tr>
+                  ) : (
+                    lines.map((line, idx) => {
+                      const qty = Number(line.quantity) || 0
+                      const rate = Number(line.unit_price_net) || 0
+                      const taxRate = Number(line.tax_rate) || 0
+                      const taxable = qty * rate
+                      const total = taxable * (1 + taxRate / 100)
+                      return (
+                        <tr key={line.id}>
+                          <td className="p-1.5 border border-slate-200 text-center font-semibold">{idx + 1}</td>
+                          <td className="p-1.5 border border-slate-200 break-words">
+                            <div className="font-bold text-slate-900">{line.name || 'Item'}</div>
+                            {line.cf_brand_name ? <div className="text-[10px] text-slate-600">{line.cf_brand_name}</div> : null}
+                          </td>
+                          <td className="p-1.5 border border-slate-200 text-center break-words">
+                            {line.cf_pack_size ? `${line.cf_pack_size} ${line.cf_uom || ''}`.trim() : '—'}
+                          </td>
+                          <td className="p-1.5 border border-slate-200 text-right font-mono">{qty.toLocaleString('en-IN')}</td>
+                          <td className="p-1.5 border border-slate-200 text-right font-mono">{rate.toFixed(2)}</td>
+                          <td className="p-1.5 border border-slate-200 text-right font-mono">{taxable.toFixed(2)}</td>
+                          <td className="p-1.5 border border-slate-200 text-right font-mono">{taxRate}%</td>
+                          <td className="p-1.5 border border-slate-200 text-right font-mono font-bold">{total.toFixed(2)}</td>
+                        </tr>
+                      )
+                    })
+                  )}
+                </tbody>
+              </table>
+              </div>
+
+              {/* Totals */}
+              <div className="flex justify-end">
+                <div className="w-64 space-y-1 text-[11px]">
+                  <div className="flex justify-between">
+                    <span className="text-slate-600">Taxable Subtotal</span>
+                    <span className="font-mono text-slate-900">{formatINR(subtotal)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-600">Total GST</span>
+                    <span className="font-mono text-slate-900">{formatINR(totalTax)}</span>
+                  </div>
+                  {advanceAmount > 0 ? (
+                    <div className="flex justify-between">
+                      <span className="text-slate-600">Less: Advance Received</span>
+                      <span className="font-mono text-slate-900">-{formatINR(advanceAmount)}</span>
+                    </div>
+                  ) : null}
+                  <div className="flex justify-between border-t border-slate-300 pt-1 text-sm font-extrabold">
+                    <span className="text-slate-900">
+                      {advanceAmount > 0 ? 'Balance Due' : 'Grand Total'}
+                    </span>
+                    <span className="font-mono text-primary">
+                      {formatINR(Math.max(0, grandTotal - advanceAmount))}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <p className="text-[10px] text-slate-500 border-t border-slate-200 pt-3">
+                This is a proforma invoice for reference purposes only and does not constitute a tax invoice.
+                Prices and taxes are estimates and may be revised at the time of final dispatch.
+              </p>
+            </div>
+
+            <DialogFooter className="print:hidden">
+              <Button variant="outline" size="sm" onClick={() => setProformaOpen(false)}>
+                Close
+              </Button>
+              <Button size="sm" onClick={() => window.print()} className="gap-1.5 font-bold">
+                <Printer className="h-3.5 w-3.5" />
+                <span>Print / Save as PDF</span>
               </Button>
             </DialogFooter>
           </DialogContent>
