@@ -96,7 +96,7 @@ async function run() {
         const placeholders = keys.map((_, idx) => `$${idx + 1}`).join(', ');
         const quotedCols = keys.map(k => `"${k}"`).join(', ');
 
-        const sql = `INSERT INTO "${table}" (${quotedCols}) VALUES (${placeholders}) ON CONFLICT (id) DO NOTHING;`;
+        const sql = `INSERT INTO "${table}" (${quotedCols}) VALUES (${placeholders}) ON CONFLICT DO NOTHING;`;
         const res = await client.query(sql, values);
         if (res.rowCount > 0) inserted++;
       }
