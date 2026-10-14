@@ -6,7 +6,7 @@ import { OrderRecord } from './OrderRecord'
 import { useGranted } from '../../dermat_departments/components/useGranted'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { ArrowLeft, Ban, CheckCircle2, Copy, FileStack, Layers, Lock, Package, Pencil } from 'lucide-react'
+import { Ban, CheckCircle2, Copy, FileStack, Layers, Lock, Package, Pencil } from 'lucide-react'
 import { useT } from '@open-mercato/shared/lib/i18n/context'
 import { cn } from '@open-mercato/shared/lib/utils'
 import { Page, PageBody } from '@open-mercato/ui/backend/Page'
@@ -40,6 +40,7 @@ import { openServerExport } from '../../dermat_products/lib/csvExport'
 import { paymentTermLabel } from '../../dermat_lists/lib/paymentTerms'
 import { useStageSettings } from './useStageSettings'
 import { MaterialsAccount, useOrderFile } from './OrderFile'
+import { BackLink } from '../../dermat_departments/components/BackLink'
 
 
 const KIND_LABEL: Record<string, string> = { raw_material: 'RM', packing_material: 'PM', bulk: 'Bulk', finished_goods: 'FG' }
@@ -287,10 +288,7 @@ export function OrderView({ orderId }: { orderId: string }) {
         <div className="mx-auto max-w-7xl space-y-5 pb-16">
           <div className="flex flex-col gap-4 border-b pb-4 lg:flex-row lg:items-start lg:justify-between">
             <div className="min-w-0 space-y-1">
-              <Link href="/backend/orders" className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
-                <ArrowLeft className="h-3 w-3" />
-                {t('dermat_orders.back', 'Order book')}
-              </Link>
+              <BackLink href="/backend/orders" label={t('dermat_orders.back', 'Order book')} feature="dermat_orders.view" />
               <div className="flex flex-wrap items-center gap-2">
                 <h1 className="font-mono text-xl font-bold">{order.orderNo}</h1>
                 <StatusBadge variant={ORDER_VARIANT[order.status] ?? 'neutral'} dot>

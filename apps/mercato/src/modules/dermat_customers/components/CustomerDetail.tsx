@@ -4,7 +4,7 @@ import * as React from 'react'
 import { useGranted } from '../../dermat_departments/components/useGranted'
 import { useListOptions } from '../../dermat_lists/components/useListOptions'
 import Link from 'next/link'
-import { ArrowLeft, Building2, ClipboardList, Copy, MapPin, Package, Pencil, Plus } from 'lucide-react'
+import { Building2, ClipboardList, Copy, MapPin, Package, Pencil, Plus } from 'lucide-react'
 import { useT } from '@open-mercato/shared/lib/i18n/context'
 import { cn } from '@open-mercato/shared/lib/utils'
 import { Page, PageBody } from '@open-mercato/ui/backend/Page'
@@ -25,6 +25,7 @@ import { CustomerStatement } from '../../dermat_accounts/components/CustomerStat
 import { usePaymentTerms } from '../../dermat_lists/components/usePaymentTerms'
 import { paymentTermLabel } from '../../dermat_lists/lib/paymentTerms'
 import { CustomerSamples } from './CustomerSamples'
+import { BackLink } from '../../dermat_departments/components/BackLink'
 
 type Row = Record<string, unknown> & { id: string }
 type Address = { id: string; name: string | null; purpose: string | null; address_line1: string | null; address_line2: string | null; city: string | null; region: string | null; postal_code: string | null; country: string | null; is_primary: boolean | null }
@@ -353,10 +354,7 @@ export function CustomerDetail({ customerId }: { customerId: string }) {
         <div className="mx-auto max-w-7xl space-y-5 pb-16">
           <div className="flex flex-col gap-4 border-b pb-4 lg:flex-row lg:items-start lg:justify-between">
             <div className="min-w-0 space-y-1">
-              <Link href="/backend/customers/companies" className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
-                <ArrowLeft className="h-3 w-3" />
-                {t('dermat_customers.nav.customer', 'Customer')}
-              </Link>
+              <BackLink href="/backend/customers/companies" label={t('dermat_customers.nav.customer', 'Customer')} />
               <div className="flex flex-wrap items-center gap-2">
                 <Building2 className="h-5 w-5 text-primary" />
                 <h1 className="text-xl font-bold">{name}</h1>

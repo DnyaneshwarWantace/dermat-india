@@ -7,7 +7,6 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import {
   ArrowDown,
-  ArrowLeft,
   ArrowUp,
   CheckCircle2,
   Copy,
@@ -57,6 +56,7 @@ import { BomDetailsCard } from './bom/BomDetailsCard'
 import type { BomView, ComponentOption } from './types'
 import { ExportButton } from '../../dermat_products/components/ExportButton'
 import { downloadCsv } from '../../dermat_products/lib/csvExport'
+import { BackLink } from '../../dermat_departments/components/BackLink'
 
 type Row = {
   key: string
@@ -666,10 +666,7 @@ export function BomEditor({ bomId, productId }: { bomId?: string; productId?: st
         <div className="mx-auto max-w-7xl space-y-5 pb-16">
           <div className="flex flex-col gap-4 border-b pb-4 lg:flex-row lg:items-start lg:justify-between">
             <div className="min-w-0 space-y-1">
-              <Link href="/backend/boms" className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
-                <ArrowLeft className="h-3 w-3" />
-                {t('dermat_boms.back', 'Bill of Material')}
-              </Link>
+              <BackLink href="/backend/boms" label={t('dermat_boms.back', 'Bill of Material')} feature="dermat_boms.view" />
               <div className="flex flex-wrap items-center gap-2">
                 <KindIcon className="h-5 w-5 text-primary" />
                 <h1 className="truncate text-xl font-bold">

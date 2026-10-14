@@ -2,13 +2,14 @@
 
 import * as React from 'react'
 import Link from 'next/link'
-import { ArrowLeft, FlaskConical, MessageSquare, Pencil, Play, Send } from 'lucide-react'
+import { FlaskConical, MessageSquare, Pencil, Play, Send } from 'lucide-react'
 import { useT } from '@open-mercato/shared/lib/i18n/context'
 import { Button } from '@open-mercato/ui/primitives/button'
 import { StatusBadge } from '@open-mercato/ui/primitives/status-badge'
 import { REQUEST_STATUS, dayText } from '../labels'
 import type { RdRequest } from '../types'
 import type { RequestActionKind } from './RequestActionDialog'
+import { BackLink } from '../../../dermat_departments/components/BackLink'
 
 type RequestHeaderProps = {
   request: RdRequest
@@ -36,10 +37,7 @@ export function RequestHeader({ request, canRequest, canManage, busy, backHref, 
 
   return (
     <header className="flex flex-col gap-3 border-b pb-4">
-      <Link href={backHref} className="flex w-fit items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
-        <ArrowLeft className="size-3.5" aria-hidden="true" />
-        {t('dermat_rnd.back', 'All R&D requests')}
-      </Link>
+      <BackLink href={backHref} label={t('dermat_rnd.back', 'All R&D requests')} />
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div className="flex min-w-0 flex-col gap-1">
           <div className="flex flex-wrap items-center gap-2">

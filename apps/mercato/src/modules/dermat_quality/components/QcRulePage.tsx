@@ -2,9 +2,8 @@
 
 import * as React from 'react'
 import { ListSelectItems } from '../../dermat_lists/components/ListSelectItems'
-import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, Plus, Trash2 } from 'lucide-react'
+import { Plus, Trash2 } from 'lucide-react'
 import { useT } from '@open-mercato/shared/lib/i18n/context'
 import { cn } from '@open-mercato/shared/lib/utils'
 import { Page, PageBody } from '@open-mercato/ui/backend/Page'
@@ -21,6 +20,7 @@ import { flash } from '@open-mercato/ui/backend/FlashMessages'
 import { ErrorMessage, LoadingMessage } from '@open-mercato/ui/backend/detail'
 import { DEFAULT_RULES } from '../lib/defaults'
 import { OPERATION_LABEL } from './shared'
+import { BackLink } from '../../dermat_departments/components/BackLink'
 
 type Param = { key: string; name: string; class: string; spec: string; test: 'chemical' | 'micro'; min?: number | null; max?: number | null; unit?: string | null }
 type Rule = {
@@ -230,10 +230,7 @@ export function QcRulePage({ ruleId }: { ruleId?: string }) {
         >
           <div className="flex flex-wrap items-center justify-between gap-3 border-b pb-4">
             <div className="space-y-1">
-              <Link href="/backend/qc/rules" className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
-                <ArrowLeft className="h-3 w-3" />
-                {t('dermat_quality.nav.rules', 'QC rules')}
-              </Link>
+              <BackLink href="/backend/qc/rules" label={t('dermat_quality.nav.rules', 'QC rules')} />
               <h1 className="text-xl font-bold">
                 {rule ? `${rule.code} · ${rule.title}` : t('dermat_quality.rules.newTitle', 'New QC rule for a product')}
               </h1>

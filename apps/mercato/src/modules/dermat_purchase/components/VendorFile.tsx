@@ -3,7 +3,7 @@
 import * as React from 'react'
 import { useGranted } from '../../dermat_departments/components/useGranted'
 import Link from 'next/link'
-import { ArrowLeft, Mail, MapPin, Pencil, Phone, Plus, ShoppingCart, Truck } from 'lucide-react'
+import { Mail, MapPin, Pencil, Phone, Plus, ShoppingCart, Truck } from 'lucide-react'
 import { useT } from '@open-mercato/shared/lib/i18n/context'
 import { Page, PageBody } from '@open-mercato/ui/backend/Page'
 import { LoadingMessage, ErrorMessage } from '@open-mercato/ui/backend/detail'
@@ -21,6 +21,7 @@ import { useGuardedMutation } from '@open-mercato/ui/backend/injection/useGuarde
 import { flash } from '@open-mercato/ui/backend/FlashMessages'
 import { GSTIN_PATTERN, stateFromGstin } from '../../dermat_accounts/lib/gstStates'
 import { GRN_STATUS, PO_STATUS, day, money, qty, type GrnStatus, type PoStatus } from './shared'
+import { BackLink } from '../../dermat_departments/components/BackLink'
 
 type VendorView = {
   id: string
@@ -251,10 +252,7 @@ export function VendorFile({ vendorId }: { vendorId: string }) {
         <div className="flex flex-col gap-5">
           <header className="flex flex-col gap-4 border-b pb-4 lg:flex-row lg:items-end lg:justify-between">
             <div className="min-w-0 space-y-1">
-              <Link href="/backend/dermat_vendors" className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
-                <ArrowLeft className="h-3 w-3" aria-hidden="true" />
-                {t('dermat_purchase.vendor.vendors', 'Vendors')}
-              </Link>
+              <BackLink href="/backend/dermat_vendors" label={t('dermat_purchase.vendor.vendors', 'Vendors')} />
               <div className="flex flex-wrap items-center gap-2">
                 <h1 className="text-2xl font-bold tracking-tight">{vendor.name}</h1>
                 {vendor.code ? <span className="rounded-md border px-2 py-0.5 font-mono text-xs text-muted-foreground">{vendor.code}</span> : null}

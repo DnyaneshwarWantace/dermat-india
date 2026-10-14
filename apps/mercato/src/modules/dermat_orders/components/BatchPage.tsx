@@ -2,7 +2,7 @@
 
 import * as React from 'react'
 import Link from 'next/link'
-import { ArrowLeft, ArrowRight, CheckCircle2, Circle, CircleDot, FlaskConical, Package, Printer, Truck } from 'lucide-react'
+import { ArrowRight, CheckCircle2, Circle, CircleDot, FlaskConical, Package, Printer, Truck } from 'lucide-react'
 import { useT } from '@open-mercato/shared/lib/i18n/context'
 import { cn } from '@open-mercato/shared/lib/utils'
 import { Page, PageBody } from '@open-mercato/ui/backend/Page'
@@ -16,6 +16,7 @@ import { formatDate, formatDateTime, formatQty } from './format'
 import { BATCH_STATUS, type BatchRow } from './BatchRegister'
 import { printBatchRecord } from './batchRecord'
 import type { DocCompany } from './printDocs'
+import { BackLink } from '../../dermat_departments/components/BackLink'
 
 type Step = { key: string; status: string; openedAt: string | null; completedAt: string | null; completedByName: string | null; responsibleName: string | null; fields: Record<string, unknown>; ticks: string[]; rework: Array<Record<string, unknown>> }
 type Material = { requestCode: string; requestId: string; stageKey: string; store: string | null; productId: string; title: string; code: string | null; unit: string; required: number; issued: number; used: number; returned: number; lots: Array<{ lotNumber: string | null; quantity: number; used: number; returned: number; at: string; by: string | null }> }
@@ -87,10 +88,7 @@ export function BatchPage({ batchNo }: { batchNo: string }) {
         <div className="flex flex-col gap-5">
           <header className="flex flex-col gap-3 border-b pb-4 lg:flex-row lg:items-end lg:justify-between">
             <div className="min-w-0 space-y-1">
-              <Link href="/backend/production/batches" className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
-                <ArrowLeft className="h-3 w-3" aria-hidden="true" />
-                {t('dermat_orders.batch.register', 'Batch register')}
-              </Link>
+              <BackLink href="/backend/production/batches" label={t('dermat_orders.batch.register', 'Batch register')} />
               <div className="flex flex-wrap items-center gap-2">
                 <h1 className="font-mono text-2xl font-bold">{t('dermat_orders.batch.title', 'Batch {no}', { no: batch.batchNo })}</h1>
                 <StatusBadge variant={BATCH_STATUS[batch.status].variant}>{BATCH_STATUS[batch.status].label}</StatusBadge>

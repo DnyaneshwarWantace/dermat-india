@@ -3,7 +3,7 @@
 import * as React from 'react'
 import { Checkbox } from '@open-mercato/ui/primitives/checkbox'
 import Link from 'next/link'
-import { ArrowLeft, CheckCircle2, CircleSlash, ExternalLink, PackageOpen, Send, Undo2 } from 'lucide-react'
+import { CheckCircle2, CircleSlash, ExternalLink, PackageOpen, Send, Undo2 } from 'lucide-react'
 import { useT } from '@open-mercato/shared/lib/i18n/context'
 import { cn } from '@open-mercato/shared/lib/utils'
 import { Page, PageBody } from '@open-mercato/ui/backend/Page'
@@ -34,6 +34,7 @@ import {
   type LineView,
   type RequestView,
 } from './shared'
+import { BackLink } from '../../dermat_departments/components/BackLink'
 
 type IssueDraft = Record<string, { lotId: string; quantity: string }>
 type Dialogs = 'return' | 'cancel' | 'receive' | null
@@ -252,10 +253,7 @@ export function StoreRequestPage({ requestId }: { requestId: string }) {
       <PageBody>
         <div className="mx-auto flex max-w-6xl flex-col gap-6 pb-16">
           <div className="space-y-4">
-            <Link href="/backend/store/requests" className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
-              <ArrowLeft className="h-3 w-3" aria-hidden="true" />
-              {t('dermat_store.nav.requests', 'Store requests')}
-            </Link>
+            <BackLink href="/backend/store/requests" label={t('dermat_store.nav.requests', 'Store requests')} feature="dermat_store.view" />
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div className="flex min-w-0 items-start gap-4">
                 <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-border bg-card shadow-xs">

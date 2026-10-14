@@ -4,7 +4,7 @@ import * as React from 'react'
 import { useGranted } from '../../dermat_departments/components/useGranted'
 import { ViewOnlyNote } from '../../dermat_departments/components/ViewOnlyNote'
 import Link from 'next/link'
-import { AlertTriangle, ArrowLeft, Archive, CheckCircle2, FlaskConical, History, Microscope, Pipette, RotateCcw, XCircle } from 'lucide-react'
+import { AlertTriangle, Archive, CheckCircle2, FlaskConical, History, Microscope, Pipette, RotateCcw, XCircle } from 'lucide-react'
 import { useT } from '@open-mercato/shared/lib/i18n/context'
 import { Page, PageBody } from '@open-mercato/ui/backend/Page'
 import { Button } from '@open-mercato/ui/primitives/button'
@@ -18,6 +18,7 @@ import { useGuardedMutation } from '@open-mercato/ui/backend/injection/useGuarde
 import { flash } from '@open-mercato/ui/backend/FlashMessages'
 import { ErrorMessage, LoadingMessage } from '@open-mercato/ui/backend/detail'
 import { CHECK_LABEL, CHECK_VARIANT, OPERATION_LABEL, PART_LABEL, PART_VARIANT, limitText, when, type QcCheckView, type QcWorksheet } from './shared'
+import { BackLink } from '../../dermat_departments/components/BackLink'
 
 type Part = 'chemical' | 'micro'
 
@@ -188,10 +189,7 @@ export function QcCheckPage({ checkId }: { checkId: string }) {
         <div className="mx-auto max-w-6xl space-y-5 pb-16">
           <div className="flex flex-col gap-4 border-b pb-4 lg:flex-row lg:items-start lg:justify-between">
             <div className="space-y-1">
-              <Link href="/backend/qc/checks" className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
-                <ArrowLeft className="h-3 w-3" />
-                {t('dermat_quality.nav.checks', 'QC checks')}
-              </Link>
+              <BackLink href="/backend/qc/checks" label={t('dermat_quality.nav.checks', 'QC checks')} />
               <div className="flex flex-wrap items-center gap-2">
                 <h1 className="font-mono text-xl font-bold">{check.arNo ?? check.code}</h1>
                 <StatusBadge variant={CHECK_VARIANT[check.status] ?? 'neutral'} dot>

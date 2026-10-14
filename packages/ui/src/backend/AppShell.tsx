@@ -577,6 +577,21 @@ function AppShellBody({ productName, logo, email, canManageUpgradeActions = fals
   const [collapsed, setCollapsed] = React.useState(sidebarCollapsedDefault)
   // Maintain internal nav state so we can augment it client-side
   const [navGroups, setNavGroups] = React.useState(resolvedGroups)
+  const activeNavHref = React.useMemo<string | null>(() => {
+    if (!pathname) return null
+    const hrefs: string[] = []
+    for (const group of navGroups) {
+      for (const item of group.items) {
+        hrefs.push(item.href)
+        for (const child of item.children ?? []) if (child.hidden !== true) hrefs.push(child.href)
+      }
+    }
+    return hrefs
+      .map((href) => href.split('?')[0])
+      .filter((base) => base && (pathname === base || pathname.startsWith(`${base}/`)))
+      .reduce<string | null>((best, base) => (!best || base.length > best.length ? base : best), null)
+  }, [pathname, navGroups])
+
   const [openGroups, setOpenGroups] = React.useState<Record<string, boolean>>(() =>
     Object.fromEntries(resolvedGroups.map((g) => [resolveGroupKey(g), true])) as Record<string, boolean>
   )
@@ -787,12 +802,15 @@ function AppShellBody({ productName, logo, email, canManageUpgradeActions = fals
 
   // Ensure current route's group is expanded on load
   React.useEffect(() => {
-    const activeGroup = navGroups.find((g) => g.items.some((i) => pathname?.startsWith(i.href)))
+    const activeGroup = navGroups.find((g) => g.items.some((i) => {
+      const base = i.href.split('?')[0]
+      return base === activeNavHref || (i.children ?? []).some((c) => c.href.split('?')[0] === activeNavHref)
+    }))
     if (!activeGroup) return
     const key = resolveGroupKey(activeGroup)
     setOpenGroups((prev) => (prev[key] === false ? { ...prev, [key]: true } : prev))
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pathname, navGroups])
+  }, [activeNavHref, navGroups])
   // Keep header state in sync with props (server-side updates)
   React.useEffect(() => {
     setHeaderTitle(currentTitle)
@@ -810,8 +828,15 @@ function AppShellBody({ productName, logo, email, canManageUpgradeActions = fals
       prevPathname.current = pathname
       setHeaderTitle(undefined)
       setHeaderBreadcrumb(undefined)
+      try { window.sessionStorage.setItem('om:inAppNavigation', '1') } catch { /* sessionStorage blocked — back links fall back to their list page */ }
     }
   }, [pathname])
+
+  React.useEffect(() => {
+    if (!activeNavHref) return
+    const active = document.querySelector('[data-sidebar-active="true"]')
+    if (active instanceof HTMLElement) active.scrollIntoView({ block: 'nearest' })
+  }, [activeNavHref])
 
   // Keep navGroups in sync when server-provided groups change
   React.useEffect(() => {
@@ -1123,11 +1148,12 @@ function AppShellBody({ productName, logo, email, canManageUpgradeActions = fals
                                   ? allChildItems.filter((c) => matchesQuery(c.title))
                                   : allChildItems
                                 const childItems = navQueryActive ? matchingChildItems : allChildItems
+                                const isOwnHref = i.href.split('?')[0] === activeNavHref
+                                const hasActiveChild = allChildItems.some((c) => c.href.split('?')[0] === activeNavHref)
                                 const showChildren = navQueryActive
                                   ? matchingChildItems.length > 0
-                                  : (!!pathname && allChildItems.length > 0 && pathname.startsWith(i.href))
-                                const hasActiveChild = !!(pathname && allChildItems.some((c) => pathname.startsWith(c.href)))
-                                const isParentActive = (pathname === i.href) || (!navQueryActive && showChildren && !hasActiveChild)
+                                  : allChildItems.length > 0 && (isOwnHref || hasActiveChild)
+                                const isParentActive = isOwnHref
                                 const base = compact ? 'w-10 h-10 justify-center' : 'w-full px-3 py-2 gap-2'
                                 return (
                                   <React.Fragment key={i.href}>
@@ -1139,6 +1165,7 @@ function AppShellBody({ productName, logo, email, canManageUpgradeActions = fals
                                       aria-disabled={i.enabled === false}
                                       title={compact ? i.title : undefined}
                                       data-menu-item-id={i.id ?? i.href}
+                                      data-sidebar-active={isParentActive ? 'true' : undefined}
                                       onClick={() => setMobileOpen(false)}
                                     >
                                       {isParentActive ? (
@@ -1160,7 +1187,7 @@ function AppShellBody({ productName, logo, email, canManageUpgradeActions = fals
                                           <span aria-hidden className="pointer-events-none absolute left-1.5 top-1 bottom-1 w-px bg-border" />
                                         )}
                                         {childItems.map((c) => {
-                                          const childActive = pathname?.startsWith(c.href)
+                                          const childActive = c.href.split('?')[0] === activeNavHref
                                           const childBase = compact ? 'w-10 h-8 justify-center' : 'w-full pl-5 pr-3 py-2 gap-2'
                                           return (
                                             <Link
@@ -1172,6 +1199,7 @@ function AppShellBody({ productName, logo, email, canManageUpgradeActions = fals
                                               aria-disabled={c.enabled === false}
                                               title={compact ? c.title : undefined}
                                               data-menu-item-id={c.id ?? c.href}
+                                              data-sidebar-active={childActive ? 'true' : undefined}
                                               onClick={() => setMobileOpen(false)}
                                             >
                                               {childActive ? (
