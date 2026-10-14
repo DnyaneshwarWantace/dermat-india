@@ -161,6 +161,23 @@
           "enumItems": [],
           "mappedType": "uuid"
         },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": true,
+          "unique": false,
+          "length": null,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "collation": null,
+          "enumItems": [],
+          "mappedType": "text"
+        },
         "notes": {
           "name": "notes",
           "type": "text",
@@ -330,6 +347,23 @@
           "collation": null,
           "enumItems": [],
           "mappedType": "integer"
+        },
+        "yield_percent": {
+          "name": "yield_percent",
+          "type": "numeric(6,2)",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": false,
+          "unique": false,
+          "length": null,
+          "precision": 6,
+          "scale": 2,
+          "default": "100",
+          "comment": null,
+          "collation": null,
+          "enumItems": [],
+          "mappedType": "decimal"
         }
       },
       "indexes": [

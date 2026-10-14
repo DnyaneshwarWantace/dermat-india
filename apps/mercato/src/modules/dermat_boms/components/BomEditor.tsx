@@ -10,6 +10,7 @@ import {
   ArrowLeft,
   ArrowUp,
   CheckCircle2,
+  Copy,
   CopyPlus,
   FlaskConical,
   Layers,
@@ -24,7 +25,6 @@ import { Page, PageBody } from '@open-mercato/ui/backend/Page'
 import { Button } from '@open-mercato/ui/primitives/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@open-mercato/ui/primitives/card'
 import { Input } from '@open-mercato/ui/primitives/input'
-import { Label } from '@open-mercato/ui/primitives/label'
 import { Textarea } from '@open-mercato/ui/primitives/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@open-mercato/ui/primitives/select'
 import { StatusBadge, type StatusBadgeVariant } from '@open-mercato/ui/primitives/status-badge'
@@ -52,6 +52,8 @@ import { BomTree } from './BomTree'
 import { BomLinks } from './BomLinks'
 import { FillPlan } from './FillPlan'
 import { openPrintSheet } from './printSheet'
+import { AvailabilityBadge } from './bom/AvailabilityBadge'
+import { BomDetailsCard } from './bom/BomDetailsCard'
 import type { BomView, ComponentOption } from './types'
 import { ExportButton } from '../../dermat_products/components/ExportButton'
 import { downloadCsv } from '../../dermat_products/lib/csvExport'
@@ -78,7 +80,9 @@ type EditorState = {
   bom: BomView | null
   product: ProductInfo
   kind: BomKind
+  name: string
   batchSize: string
+  yieldPercent: string
   notes: string
   rows: Row[]
 }
@@ -92,6 +96,8 @@ export const STATUS_VARIANT: Record<string, StatusBadgeVariant> = {
 }
 
 const KIND_ICON: Record<BomKind, typeof FlaskConical> = { formula: FlaskConical, pack: Package }
+
+const NO_PRODUCT: ProductInfo = { id: '', title: '', kind: null, unit: null, code: null, packSize: null }
 
 function rowFromOption(option: ComponentOption, kind: BomKind, packSize: string | null): Row {
   const usesFill = kind === 'pack' && option.kind === 'bulk'
@@ -129,7 +135,9 @@ function stateFromBom(bom: BomView): EditorState {
       packSize: bom.product?.packSize ?? null,
     },
     kind: bom.kind,
+    name: bom.name ?? '',
     batchSize: String(bom.batchSize),
+    yieldPercent: String(bom.yieldPercent ?? 100),
     notes: bom.notes ?? '',
     rows: bom.items.map((item) => ({
       key: item.id,
@@ -165,18 +173,6 @@ function kindShort(kind: string): string {
   if (kind === 'packing_material') return 'PM'
   if (kind === 'bulk') return 'Bulk'
   return KIND_CONFIG[kind as ProductKind]?.singular ?? kind
-}
-
-function Tile({ label, value, hint, tone }: { label: string; value: React.ReactNode; hint?: React.ReactNode; tone?: 'ok' | 'bad' }) {
-  return (
-    <div className="rounded-lg border bg-card p-3">
-      <div className="text-xs text-muted-foreground">{label}</div>
-      <div className={cn('text-lg font-semibold', tone === 'bad' && 'text-status-error-text', tone === 'ok' && 'text-status-success-text')}>
-        {value}
-      </div>
-      {hint ? <div className="text-xs text-muted-foreground">{hint}</div> : null}
-    </div>
-  )
 }
 
 async function readProduct(productId: string): Promise<ProductInfo | null> {
@@ -240,18 +236,9 @@ export function BomEditor({ bomId, productId }: { bomId?: string; productId?: st
       setDirty(false)
       return
     }
+    const blank = { bom: null, name: '', yieldPercent: '100', notes: '', rows: [] }
     if (!productId) {
-      setState(null)
-      return
-    }
-    const existing = await apiCall<{ items?: Array<{ id: string; status: string }> }>(
-      `/api/dermat_boms/boms?productId=${encodeURIComponent(productId)}&pageSize=20`,
-      undefined,
-      { fallback: { items: [] } },
-    )
-    const current = (existing.result?.items ?? []).find((item) => item.status !== 'superseded')
-    if (current) {
-      router.replace(`/backend/boms/${current.id}`)
+      setState({ ...blank, product: NO_PRODUCT, kind: 'formula', batchSize: String(BOM_KINDS.formula.defaultBatchSize) })
       return
     }
     const product = await readProduct(productId)
@@ -260,8 +247,8 @@ export function BomEditor({ bomId, productId }: { bomId?: string; productId?: st
       setLoadError(t('dermat_boms.errors.productType', 'A BOM can only be made for a Bulk, R&D or Finished Good product.'))
       return
     }
-    setState({ bom: null, product, kind, batchSize: String(BOM_KINDS[kind].defaultBatchSize), notes: '', rows: [] })
-  }, [bomId, productId, router, t])
+    setState({ ...blank, product, kind, name: product.title, batchSize: String(BOM_KINDS[kind].defaultBatchSize) })
+  }, [bomId, productId, t])
 
   React.useEffect(() => {
     load()
@@ -350,10 +337,39 @@ export function BomEditor({ bomId, productId }: { bomId?: string; productId?: st
     setDirty(true)
   }
 
-  const selectProduct = (option: ComponentOption) => router.replace(`/backend/boms/new?productId=${option.id}`)
+  const selectProduct = async (option: ComponentOption) => {
+    const product = (await readProduct(option.id)) ?? { ...NO_PRODUCT, id: option.id, title: option.title, kind: option.kind, unit: option.unit, code: option.code }
+    const kind = bomKindForProduct(product.kind)
+    if (!kind) {
+      flash(t('dermat_boms.errors.productType', 'A BOM can only be made for a Bulk, R&D or Finished Good product.'), 'error')
+      return
+    }
+    setState((prev) => {
+      if (!prev) return prev
+      const sameKind = prev.kind === kind && Boolean(prev.product.id)
+      return {
+        ...prev,
+        product,
+        kind,
+        name: !prev.name.trim() || prev.name === prev.product.title ? product.title : prev.name,
+        batchSize: sameKind ? prev.batchSize : String(BOM_KINDS[kind].defaultBatchSize),
+        rows: sameKind ? prev.rows.filter((row) => row.componentProductId !== product.id) : [],
+      }
+    })
+    setDirty(true)
+  }
 
   const save = async (): Promise<SaveResult> => {
     if (!state) return { ok: false }
+    if (!state.product.id) {
+      flash(t('dermat_boms.errors.product', 'Pick the product this BOM is for.'), 'error')
+      return { ok: false }
+    }
+    const yieldValue = numberOf(state.yieldPercent)
+    if (!(yieldValue > 0) || yieldValue > 100) {
+      flash(t('dermat_boms.errors.yield', 'Yield % must be between 0 and 100.'), 'error')
+      return { ok: false }
+    }
     const errors: Record<string, string> = {}
     state.rows.forEach((row, index) => {
       const value = rowValue(row)
@@ -371,6 +387,8 @@ export function BomEditor({ bomId, productId }: { bomId?: string; productId?: st
       return { ok: false }
     }
     const body = {
+      name: state.name.trim() || null,
+      yieldPercent: yieldValue,
       batchSize: numberOf(state.batchSize),
       notes: state.notes.trim() || null,
       items: state.rows.map((row) =>
@@ -432,15 +450,15 @@ export function BomEditor({ bomId, productId }: { bomId?: string; productId?: st
     }
   }
 
-  const postAction = async (path: 'approve' | 'new-version', id: string) =>
+  const postAction = async (path: 'approve' | 'new-version', id: string, extra: Record<string, unknown> = {}) =>
     runMutation({
       context: { bomId: id, action: path },
-      mutationPayload: { id },
+      mutationPayload: { id, ...extra },
       operation: () =>
         apiCall<{ id?: string; error?: string }>(`/api/dermat_boms/boms/${path}`, {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ id }),
+          body: JSON.stringify({ id, ...extra }),
         }),
     })
 
@@ -470,17 +488,18 @@ export function BomEditor({ bomId, productId }: { bomId?: string; productId?: st
     }
   }
 
-  const handleNewVersion = async () => {
+  const handleNewVersion = async (copy = false) => {
     if (!state?.bom) return
     setBusy(true)
     try {
-      const call = await postAction('new-version', state.bom.id)
+      const extra = copy ? { name: t('dermat_boms.copyName', 'Copy of {name}', { name: state.name || state.product.title }) } : {}
+      const call = await postAction('new-version', state.bom.id, extra)
       const targetId = call.result?.id
       if (!targetId) {
         flash(call.result?.error ?? t('dermat_boms.errors.version', 'Could not start a new version.'), 'error')
         return
       }
-      if (!call.ok) flash(call.result?.error ?? '', 'info')
+      flash(copy ? t('dermat_boms.flash.copied', 'BOM copied. Change it and save.') : t('dermat_boms.flash.newVersion', 'New draft made from this BOM'), 'success')
       router.push(`/backend/boms/${targetId}`)
     } catch {
       flash(t('dermat_boms.errors.save', 'Could not save the BOM.'), 'error')
@@ -506,9 +525,8 @@ export function BomEditor({ bomId, productId }: { bomId?: string; productId?: st
         flash(call.result?.error ?? t('dermat_boms.errors.delete', 'Could not delete the BOM.'), 'error')
         return
       }
-      flash(t('dermat_boms.flash.deleted', 'Draft deleted'), 'success')
-      const previous = bom.versions.find((entry) => entry.id !== bom.id)
-      router.push(previous ? `/backend/boms/${previous.id}` : '/backend/boms')
+      flash(t('dermat_boms.flash.deleted', 'BOM deleted'), 'success')
+      router.push('/backend/boms')
     } catch {
       flash(t('dermat_boms.errors.save', 'Could not save the BOM.'), 'error')
     } finally {
@@ -611,30 +629,6 @@ export function BomEditor({ bomId, productId }: { bomId?: string; productId?: st
     )
   }
 
-  if (!bomId && !productId) {
-    return (
-      <Page>
-        <PageBody>
-          <div className="mx-auto max-w-xl space-y-4 py-8">
-            <h1 className="text-xl font-semibold">{t('dermat_boms.new.title', 'New BOM')}</h1>
-            <p className="text-sm text-muted-foreground">
-              {t(
-                'dermat_boms.new.hint',
-                'Pick the product this BOM is for. Bulk and R&D products get a formula in RM %; Finished Goods get a pack BOM per piece.',
-              )}
-            </p>
-            <MaterialPicker
-              variant="field"
-              kinds={['bulk', 'rnd', 'finished_goods']}
-              onSelect={selectProduct}
-              label={t('dermat_boms.new.pick', 'Search Bulk, R&D or Finished Good…')}
-            />
-          </div>
-        </PageBody>
-      </Page>
-    )
-  }
-
   if (!state) {
     return (
       <Page>
@@ -655,11 +649,16 @@ export function BomEditor({ bomId, productId }: { bomId?: string; productId?: st
     const need = batchQuantity(state.kind, batchSize, rowValue(row), batchUnit, row.unit, row.specificGravity)
     return { row, need, short: need > row.onHand }
   })
-  const shortCount = lines.filter((line) => line.short && rowValue(line.row) > 0).length
-  const bulkPerPiece = state.rows.filter((row) => row.componentKind === 'bulk').reduce((sum, row) => sum + rowValue(row), 0)
   const valueLabel = state.kind === 'formula' ? t('dermat_boms.table.percent', 'RM %') : t('dermat_boms.table.perPiece', 'Qty per piece')
   const status = state.bom?.status ?? 'draft'
+  const isNew = !state.bom
+  const hasProduct = Boolean(state.product.id)
   const otherVersions = state.bom?.versions.filter((entry) => entry.id !== state.bom?.id) ?? []
+  const needed = lines.filter((line) => rowValue(line.row) > 0 && line.need > 0)
+  const readyToProduce = needed.length && batchSize > 0
+    ? Math.max(0, Math.min(...needed.map((line) => (line.row.onHand / line.need) * batchSize)))
+    : null
+  const statusLabel = status === 'approved' ? t('dermat_boms.status.issued', 'Issued') : t(`dermat_boms.status.${status}`, status)
 
   return (
     <Page>
@@ -669,43 +668,41 @@ export function BomEditor({ bomId, productId }: { bomId?: string; productId?: st
             <div className="min-w-0 space-y-1">
               <Link href="/backend/boms" className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
                 <ArrowLeft className="h-3 w-3" />
-                {t('dermat_boms.back', 'All BOMs')}
+                {t('dermat_boms.back', 'Bill of Material')}
               </Link>
               <div className="flex flex-wrap items-center gap-2">
                 <KindIcon className="h-5 w-5 text-primary" />
-                <h1 className="truncate text-xl font-bold">{state.product.title}</h1>
-                <span className="rounded-full bg-primary/10 px-2 py-0.5 font-mono text-xs font-bold text-primary">
-                  v{state.bom?.version ?? 1}
-                </span>
-                <StatusBadge variant={STATUS_VARIANT[status] ?? 'neutral'} dot>
-                  {t(`dermat_boms.status.${status}`, status)}
-                </StatusBadge>
+                <h1 className="truncate text-xl font-bold">
+                  {isNew ? t('dermat_boms.new.title', 'New Bill of Material') : state.name || state.product.title}
+                </h1>
+                {isNew ? null : (
+                  <>
+                    <span className="rounded-full bg-muted px-2 py-0.5 font-mono text-xs font-semibold text-muted-foreground">
+                      v{state.bom?.version ?? 1}
+                    </span>
+                    <StatusBadge variant={STATUS_VARIANT[status] ?? 'neutral'} dot>
+                      {statusLabel}
+                    </StatusBadge>
+                  </>
+                )}
               </div>
               <p className="text-xs text-muted-foreground">
-                {[
-                  state.product.code,
-                  state.kind === 'formula' ? t('dermat_boms.kind.formula', 'Formula') : t('dermat_boms.kind.pack', 'Pack BOM'),
-                  state.bom?.createdByName ? t('dermat_boms.createdBy', 'Made by {name}', { name: state.bom.createdByName }) : null,
-                  state.bom?.approvedByName && state.bom.approvedAt
-                    ? t('dermat_boms.approvedBy', 'Approved by {name} on {date}', {
-                        name: state.bom.approvedByName,
-                        date: new Date(state.bom.approvedAt).toLocaleDateString('en-IN'),
-                      })
-                    : null,
-                ]
-                  .filter(Boolean)
-                  .join(' · ')}
+                {isNew
+                  ? t('dermat_boms.new.hint', 'Fill in the BOM details, then add the raw materials (RM %) or the bulk and packing (per piece).')
+                  : state.kind === 'formula'
+                    ? t('dermat_boms.kind.formulaHint', 'Formula in RM % · quantities are for the batch below')
+                    : t('dermat_boms.kind.packHint', 'Pack BOM · quantity per piece')}
               </p>
               {otherVersions.length ? (
                 <div className="flex flex-wrap items-center gap-1.5 pt-1 text-xs">
-                  <span className="text-muted-foreground">{t('dermat_boms.versions', 'Other versions:')}</span>
+                  <span className="text-muted-foreground">{t('dermat_boms.versions', 'Other BOMs of this product:')}</span>
                   {otherVersions.map((entry) => (
                     <Link
                       key={entry.id}
                       href={`/backend/boms/${entry.id}`}
                       className="rounded border bg-muted/30 px-2 py-0.5 hover:bg-muted"
                     >
-                      v{entry.version} · {t(`dermat_boms.status.${entry.status}`, entry.status)}
+                      v{entry.version} · {entry.status === 'approved' ? t('dermat_boms.status.issued', 'Issued') : t(`dermat_boms.status.${entry.status}`, entry.status)}
                       {entry.orderNo ? ` · ${entry.orderNo}` : ''}
                     </Link>
                   ))}
@@ -725,9 +722,9 @@ export function BomEditor({ bomId, productId }: { bomId?: string; productId?: st
                       {state.rows
                         .filter((row) => row.componentKind === 'bulk')
                         .map((row) => (
-                          <button key={row.key} type="button" className="font-medium underline" onClick={() => copyForOrder(row.componentProductId)}>
+                          <Button key={row.key} type="button" variant="link" size="sm" className="h-auto p-0 text-xs" onClick={() => copyForOrder(row.componentProductId)}>
                             {t('dermat_boms.orderFormula', 'Change the formula of {name} for this order', { name: row.name })}
-                          </button>
+                          </Button>
                         ))}
                     </p>
                   ) : null}
@@ -735,81 +732,73 @@ export function BomEditor({ bomId, productId }: { bomId?: string; productId?: st
               ) : null}
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <ExportButton size="sm" onExport={handleExport} disabled={!state.rows.length} />
-              <Button type="button" variant="outline" size="sm" onClick={handlePrint} disabled={!state.rows.length}>
-                <Printer className="mr-1.5 h-4 w-4" />
-                {t('dermat_boms.print.button', 'Print / PDF')}
-              </Button>
-              <Button asChild variant="ghost" size="sm">
-                <Link href={`/backend/products/${state.product.id}`}>{t('dermat_boms.openProduct', 'Open product')}</Link>
-              </Button>
-              {canManage && state.bom && status === 'draft' ? (
-                <Button type="button" variant="destructive-ghost" size="sm" onClick={handleDelete} disabled={busy}>
-                  <Trash2 className="mr-1.5 h-4 w-4" />
-                  {t('dermat_boms.delete', 'Delete draft')}
+              {isNew ? (
+                <Button asChild variant="outline" size="sm">
+                  <Link href="/backend/boms">{t('dermat_boms.cancel', 'Cancel')}</Link>
+                </Button>
+              ) : (
+                <>
+                  <ExportButton size="sm" onExport={handleExport} disabled={!state.rows.length} />
+                  <Button type="button" variant="outline" size="sm" onClick={handlePrint} disabled={!state.rows.length}>
+                    <Printer className="mr-1.5 h-4 w-4" />
+                    {t('dermat_boms.print.button', 'Print / PDF')}
+                  </Button>
+                </>
+              )}
+              {canManage && state.bom ? (
+                <Button type="button" variant="outline" size="sm" onClick={() => handleNewVersion(true)} disabled={busy}>
+                  <Copy className="mr-1.5 h-4 w-4" />
+                  {t('dermat_boms.copy', 'Copy BOM')}
                 </Button>
               ) : null}
               {canManage && state.bom && status !== 'draft' ? (
-                <Button type="button" variant="outline" size="sm" onClick={handleNewVersion} disabled={busy}>
+                <Button type="button" variant="outline" size="sm" onClick={() => handleNewVersion(false)} disabled={busy}>
                   <CopyPlus className="mr-1.5 h-4 w-4" />
                   {t('dermat_boms.newVersion', 'Edit as new version')}
                 </Button>
               ) : null}
+              {canManage && state.bom && status === 'draft' ? (
+                <Button type="button" variant="destructive-ghost" size="sm" onClick={handleDelete} disabled={busy}>
+                  <Trash2 className="mr-1.5 h-4 w-4" />
+                  {t('dermat_boms.delete', 'Delete')}
+                </Button>
+              ) : null}
               {editable ? (
                 <Button type="button" variant={state.bom ? 'outline' : 'default'} size="sm" onClick={handleSave} disabled={busy}>
-                  {busy ? t('dermat_boms.saving', 'Saving…') : t('dermat_boms.save', 'Save draft')}
+                  {busy ? t('dermat_boms.saving', 'Saving…') : isNew ? t('dermat_boms.create', 'Save BOM') : t('dermat_boms.save', 'Save')}
                 </Button>
               ) : null}
               {canApprove && state.bom && status === 'draft' ? (
                 <Button type="button" size="sm" onClick={handleApprove} disabled={busy}>
                   <CheckCircle2 className="mr-1.5 h-4 w-4" />
-                  {t('dermat_boms.approve', 'Approve')}
+                  {t('dermat_boms.approve', 'Approve & issue')}
                 </Button>
               ) : null}
             </div>
           </div>
 
           {!canManage ? <ViewOnlyNote>{t('dermat_boms.viewOnly', 'View only: BOMs are made, changed and approved by R&D.')}</ViewOnlyNote> : null}
-          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-            <Tile
-              label={t('dermat_boms.tile.lines', 'Lines')}
-              value={state.rows.length}
-              hint={
-                state.kind === 'formula'
-                  ? t('dermat_boms.tile.linesFormula', 'raw materials')
-                  : t('dermat_boms.tile.linesPack', 'bulk + packing')
-              }
-            />
-            {state.kind === 'formula' ? (
-              <Tile
-                label={t('dermat_boms.tile.total', 'Total RM %')}
-                value={`${formatQty(totalPercent, 4)} %`}
-                hint={
-                  percentOk
-                    ? t('dermat_boms.tile.totalOk', 'Adds up to 100')
-                    : t('dermat_boms.tile.balance', '{value} % to go', { value: formatQty(PERCENT_TOTAL - totalPercent, 4) })
-                }
-                tone={state.rows.length ? (percentOk ? 'ok' : 'bad') : undefined}
-              />
-            ) : (
-              <Tile
-                label={t('dermat_boms.tile.bulkPerPiece', 'Bulk per piece')}
-                value={`${formatQty(bulkPerPiece, 5)} ${state.rows.find((row) => row.componentKind === 'bulk')?.unit ?? 'kg'}`}
-                hint={t('dermat_boms.tile.bulkHint', 'all bulk lines together')}
-              />
-            )}
-            <Tile
-              label={t('dermat_boms.tile.batch', 'Batch size')}
-              value={`${formatQty(batchSize)} ${batchUnit}`}
-              hint={t('dermat_boms.tile.batchHint', 'quantities below are for this batch')}
-            />
-            <Tile
-              label={t('dermat_boms.tile.short', 'Short in stock')}
-              value={shortCount}
-              hint={t('dermat_boms.tile.shortHint', 'lines where stock is less than the batch needs')}
-              tone={shortCount ? 'bad' : state.rows.length ? 'ok' : undefined}
-            />
-          </div>
+
+          <BomDetailsCard
+            editable={editable}
+            productLocked={!isNew}
+            name={state.name}
+            product={hasProduct ? state.product : null}
+            batchSize={state.batchSize}
+            batchUnit={batchUnit}
+            yieldPercent={state.yieldPercent}
+            readyToProduce={readyToProduce}
+            madeBy={state.bom?.createdByName ?? null}
+            approvedBy={
+              state.bom?.approvedByName && state.bom.approvedAt
+                ? `${state.bom.approvedByName} · ${new Date(state.bom.approvedAt).toLocaleDateString('en-IN')}`
+                : null
+            }
+            onName={(value) => patch({ name: value })}
+            onBatchSize={(value) => patch({ batchSize: value })}
+            onYield={(value) => patch({ yieldPercent: value })}
+            onPickProduct={(option) => void selectProduct(option)}
+          />
 
           {state.bom ? (
             <div className="inline-flex rounded-lg border bg-muted p-1 text-xs">
@@ -855,8 +844,8 @@ export function BomEditor({ bomId, productId }: { bomId?: string; productId?: st
                     <CardTitle className="flex items-center gap-2 text-sm font-bold">
                       <Layers className="h-4 w-4 text-primary" />
                       {state.kind === 'formula'
-                        ? t('dermat_boms.table.formulaTitle', 'Formula')
-                        : t('dermat_boms.table.packTitle', 'Pack BOM')}
+                        ? t('dermat_boms.table.formulaTitle', 'Raw Materials')
+                        : t('dermat_boms.table.packTitle', 'Bulk & Packing')}
                     </CardTitle>
                     <CardDescription className="text-xs">
                       {state.kind === 'formula'
@@ -870,20 +859,6 @@ export function BomEditor({ bomId, productId }: { bomId?: string; productId?: st
                           )}
                     </CardDescription>
                   </div>
-                  <div className="flex items-end gap-2">
-                    <div className="space-y-1">
-                      <Label className="text-xs">{t('dermat_boms.batchSize', 'Batch size ({unit})', { unit: batchUnit })}</Label>
-                      <Input
-                        type="number"
-                        min={0}
-                        step="any"
-                        className="h-8 w-32 text-right font-mono"
-                        value={state.batchSize}
-                        disabled={!editable}
-                        onChange={(event) => patch({ batchSize: event.target.value })}
-                      />
-                    </div>
-                  </div>
                 </CardHeader>
                 <CardContent className="p-0">
                   <div className="overflow-x-auto">
@@ -891,12 +866,11 @@ export function BomEditor({ bomId, productId }: { bomId?: string; productId?: st
                       <thead className="border-b bg-muted/50 text-xs uppercase tracking-wide text-muted-foreground">
                         <tr>
                           <th className="w-10 p-3 text-center">#</th>
-                          <th className="w-28 p-3 text-left">{t('dermat_boms.table.code', 'Code')}</th>
-                          <th className="min-w-56 p-3 text-left">{t('dermat_boms.table.material', 'Material')}</th>
-                          <th className="w-16 p-3 text-center">{t('dermat_boms.table.type', 'Type')}</th>
-                          <th className="w-32 p-3 text-right">{valueLabel}</th>
-                          <th className="w-36 p-3 text-right">{t('dermat_boms.table.batchQty', 'Qty for batch')}</th>
-                          <th className="w-32 p-3 text-right">{t('dermat_boms.table.onHand', 'On hand')}</th>
+                          <th className="min-w-64 p-3 text-left">{t('dermat_boms.table.component', 'Component')}</th>
+                          <th className="w-32 p-3 text-right">{t('dermat_boms.table.onHand', 'On Hand')}</th>
+                          <th className="w-32 p-3 text-left">{t('dermat_boms.table.availability', 'Availability')}</th>
+                          <th className="w-36 p-3 text-right">{valueLabel}</th>
+                          <th className="w-36 p-3 text-right">{t('dermat_boms.table.usage', 'Usage')}</th>
                           <th className="min-w-40 p-3 text-left">{t('dermat_boms.table.remark', 'Remark')}</th>
                           {editable ? <th className="w-28 p-3" /> : null}
                         </tr>
@@ -907,15 +881,19 @@ export function BomEditor({ bomId, productId }: { bomId?: string; productId?: st
                           return (
                             <tr key={row.key} className={cn('align-top', error && 'bg-status-error-bg')}>
                               <td className="p-3 text-center font-mono text-xs text-muted-foreground">{index + 1}</td>
-                              <td className="p-3 font-mono text-xs">{row.code ?? '—'}</td>
                               <td className="p-3">
-                                <span className="font-medium">{row.name}</span>
+                                <div className="flex flex-wrap items-center gap-1.5">
+                                  {row.code ? <span className="font-mono text-xs text-primary">{row.code}</span> : null}
+                                  <span className="rounded-sm bg-muted px-1.5 py-0.5 text-xs font-semibold text-muted-foreground">{kindShort(row.componentKind)}</span>
+                                </div>
+                                <span className="mt-0.5 block font-medium">{row.name}</span>
                                 {error ? <span className="block text-xs text-status-error-text">{error}</span> : null}
                               </td>
-                              <td className="p-3 text-center">
-                                <span className="rounded border bg-muted/40 px-1.5 py-0.5 text-xs font-semibold">
-                                  {kindShort(row.componentKind)}
-                                </span>
+                              <td className={cn('p-3 text-right font-mono', short && rowValue(row) > 0 && 'text-status-error-text')}>
+                                {formatQty(row.onHand)} <span className="text-xs font-normal text-muted-foreground">{row.unit}</span>
+                              </td>
+                              <td className="p-3">
+                                <AvailabilityBadge need={rowValue(row) > 0 ? need : 0} onHand={row.onHand} />
                               </td>
                               <td className="p-2 text-right">
                                 {row.usesFill ? (
@@ -990,9 +968,6 @@ export function BomEditor({ bomId, productId }: { bomId?: string; productId?: st
                               <td className="p-3 text-right font-mono font-semibold">
                                 {formatQty(need)} <span className="text-xs font-normal text-muted-foreground">{row.unit}</span>
                               </td>
-                              <td className={cn('p-3 text-right font-mono', short && rowValue(row) > 0 && 'text-status-error-text')}>
-                                {formatQty(row.onHand)} <span className="text-xs font-normal text-muted-foreground">{row.unit}</span>
-                              </td>
                               <td className="p-2">
                                 {editable ? (
                                   <Input
@@ -1047,8 +1022,10 @@ export function BomEditor({ bomId, productId }: { bomId?: string; productId?: st
                         })}
                         {!state.rows.length ? (
                           <tr>
-                            <td colSpan={editable ? 9 : 8} className="p-8 text-center text-sm text-muted-foreground">
-                              {t('dermat_boms.table.empty', 'No lines yet. Use "Add material" below.')}
+                            <td colSpan={editable ? 8 : 7} className="p-8 text-center text-sm text-muted-foreground">
+                              {hasProduct
+                                ? t('dermat_boms.table.empty', 'No lines yet. Use "Add material" below.')
+                                : t('dermat_boms.table.pickFirst', 'Pick the product in BOM details first, then add materials here.')}
                             </td>
                           </tr>
                         ) : null}
@@ -1067,7 +1044,7 @@ export function BomEditor({ bomId, productId }: { bomId?: string; productId?: st
                             <td className="p-3 text-right font-mono">
                               {state.kind === 'formula' ? `${formatQty((totalPercent * batchSize) / PERCENT_TOTAL)} ${batchUnit}` : ''}
                             </td>
-                            <td colSpan={editable ? 3 : 2} />
+                            <td colSpan={editable ? 2 : 1} />
                           </tr>
                         </tfoot>
                       ) : null}
@@ -1078,10 +1055,11 @@ export function BomEditor({ bomId, productId }: { bomId?: string; productId?: st
                       <MaterialPicker
                         kinds={config.componentKinds}
                         excludeIds={[state.product.id, ...state.rows.map((row) => row.componentProductId)]}
+                        disabled={!hasProduct}
                         onSelect={addRow}
                         label={t('dermat_boms.table.add', 'Add material')}
                       />
-                      {state.kind === 'pack' ? (
+                      {state.kind === 'pack' && hasProduct ? (
                         <Button type="button" variant="outline" size="sm" onClick={addOwnPacking}>
                           <Package className="mr-1.5 h-4 w-4" />
                           {t('dermat_boms.packing.add', 'Add packing of this product')}

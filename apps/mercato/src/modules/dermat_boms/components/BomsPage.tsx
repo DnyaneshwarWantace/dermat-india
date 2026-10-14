@@ -4,7 +4,7 @@ import * as React from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import type { LegacyColumnDef as ColumnDef } from '@tanstack/react-table/legacy'
-import { Plus } from 'lucide-react'
+import { Plus, Trash2 } from 'lucide-react'
 import { useT } from '@open-mercato/shared/lib/i18n/context'
 import { cn } from '@open-mercato/shared/lib/utils'
 import { Page, PageBody } from '@open-mercato/ui/backend/Page'
@@ -12,7 +12,14 @@ import { DataTable } from '@open-mercato/ui/backend/DataTable'
 import { Button } from '@open-mercato/ui/primitives/button'
 import { Tabs, TabsList, TabsTrigger } from '@open-mercato/ui/primitives/tabs'
 import { StatusBadge } from '@open-mercato/ui/primitives/status-badge'
-import { apiCall } from '@open-mercato/ui/backend/utils/apiCall'
+import { IconButton } from '@open-mercato/ui/primitives/icon-button'
+import { apiCall, withScopedApiRequestHeaders } from '@open-mercato/ui/backend/utils/apiCall'
+import { buildOptimisticLockHeader } from '@open-mercato/ui/backend/utils/optimisticLock'
+import { useGuardedMutation } from '@open-mercato/ui/backend/injection/useGuardedMutation'
+import { useConfirmDialog } from '@open-mercato/ui/backend/confirm-dialog'
+import { useGranted } from '../../dermat_departments/components/useGranted'
+import { KIND_CONFIG } from '../../dermat_products/lib/kindConfig'
+import type { ProductKind } from '../../dermat_products/lib/kinds'
 import { flash } from '@open-mercato/ui/backend/FlashMessages'
 import type { BomKind } from '../lib/bomKinds'
 import { STATUS_VARIANT } from './BomEditor'
@@ -36,6 +43,10 @@ export function BomsPage() {
   const [total, setTotal] = React.useState(0)
   const [totalPages, setTotalPages] = React.useState(1)
   const [isLoading, setIsLoading] = React.useState(true)
+  const granted = useGranted()
+  const canManage = granted.ready && granted.has('dermat_boms.manage')
+  const { runMutation } = useGuardedMutation({ contextId: 'dermat-boms-list' })
+  const { confirm: confirmDialog, ConfirmDialogElement } = useConfirmDialog()
 
   React.useEffect(() => {
     setPage(1)
@@ -60,33 +71,68 @@ export function BomsPage() {
     }
   }, [kind, page, search, t])
 
+  const deleteBom = async (row: BomListItem) => {
+    const confirmed = await confirmDialog({ title: t('dermat_boms.list.confirmDelete', 'Delete the BOM "{name}"?', { name: row.name }), variant: 'destructive' })
+    if (!confirmed) return
+    const call = await runMutation({
+      context: { bomId: row.id, action: 'delete' },
+      mutationPayload: { id: row.id },
+      operation: () =>
+        withScopedApiRequestHeaders(buildOptimisticLockHeader(row.updatedAt), () =>
+          apiCall<{ error?: string }>(`/api/dermat_boms/boms?id=${encodeURIComponent(row.id)}`, { method: 'DELETE' }),
+        ),
+    })
+    if (!call.ok) {
+      flash(call.result?.error ?? t('dermat_boms.errors.delete', 'Could not delete the BOM.'), 'error')
+      return
+    }
+    flash(t('dermat_boms.flash.deleted', 'BOM deleted'), 'success')
+    setRows((current) => current.filter((entry) => entry.id !== row.id))
+    setTotal((value) => Math.max(0, value - 1))
+  }
+
+  const deleteRef = React.useRef(deleteBom)
+  deleteRef.current = deleteBom
+
   const columns = React.useMemo<ColumnDef<BomListItem>[]>(() => {
     const base: ColumnDef<BomListItem>[] = [
+      {
+        id: 'name',
+        header: t('dermat_boms.list.name', 'BOM name'),
+        cell: ({ row }) => (
+          <span className="font-medium">
+            {row.original.name}
+            {row.original.orderNo ? (
+              <span className="block text-xs font-normal text-muted-foreground">{t('dermat_boms.list.forOrder', 'only {order}', { order: row.original.orderNo })}</span>
+            ) : null}
+          </span>
+        ),
+      },
       {
         id: 'product',
         header: t('dermat_boms.list.product', 'Product'),
         cell: ({ row }) => (
           <span>
-            <span className="font-medium">{row.original.productName}</span>
-            <span className="block font-mono text-xs text-muted-foreground">{row.original.productCode ?? ''}</span>
+            <span className="block font-mono text-xs text-primary">{row.original.productCode ?? ''}</span>
+            <span>{row.original.productName}</span>
           </span>
         ),
       },
       {
-        id: 'version',
-        header: t('dermat_boms.list.version', 'Version'),
-        cell: ({ row }) => (row.original.orderNo ? `v${row.original.version} · ${t('dermat_boms.list.forOrder', 'only {order}', { order: row.original.orderNo })}` : `v${row.original.version}`),
-      },
-      {
-        id: 'status',
-        header: t('dermat_boms.list.status', 'Status'),
+        id: 'category',
+        header: t('dermat_boms.list.category', 'Category'),
         cell: ({ row }) => (
-          <StatusBadge variant={STATUS_VARIANT[row.original.status] ?? 'neutral'} dot>
-            {t(`dermat_boms.status.${row.original.status}`, row.original.status)}
-          </StatusBadge>
+          <span className="rounded-sm bg-muted px-1.5 py-0.5 text-xs">
+            {KIND_CONFIG[row.original.productKind as ProductKind]?.singular ?? row.original.productKind}
+          </span>
         ),
       },
-      { id: 'lines', header: t('dermat_boms.list.lines', 'Lines'), cell: ({ row }) => row.original.lineCount },
+      {
+        id: 'quantity',
+        header: t('dermat_boms.list.quantity', 'Quantity'),
+        cell: ({ row }) => <span className="font-mono">{`${formatQty(row.original.batchSize)} ${row.original.batchUnit}`}</span>,
+      },
+      { id: 'lines', header: t('dermat_boms.list.lines', 'Components'), cell: ({ row }) => row.original.lineCount },
     ]
     const percent: ColumnDef<BomListItem>[] =
       kind === 'formula'
@@ -105,30 +151,53 @@ export function BomsPage() {
         : []
     const tail: ColumnDef<BomListItem>[] = [
       {
-        id: 'batch',
-        header: t('dermat_boms.list.batch', 'Batch'),
-        cell: ({ row }) => `${formatQty(row.original.batchSize)} ${row.original.batchUnit}`,
+        id: 'status',
+        header: t('dermat_boms.list.status', 'Status'),
+        cell: ({ row }) => (
+          <StatusBadge variant={STATUS_VARIANT[row.original.status] ?? 'neutral'} dot>
+            {row.original.status === 'approved' ? t('dermat_boms.status.issued', 'Issued') : t(`dermat_boms.status.${row.original.status}`, row.original.status)}
+          </StatusBadge>
+        ),
       },
       {
-        id: 'updated',
-        header: t('dermat_boms.list.updated', 'Updated'),
+        id: 'created',
+        header: t('dermat_boms.list.created', 'Created'),
         cell: ({ row }) => (
           <span className="text-xs">
-            {new Date(row.original.updatedAt).toLocaleDateString('en-IN')}
-            <span className="block text-muted-foreground">{row.original.approvedByName ?? row.original.createdByName ?? ''}</span>
+            {new Date(row.original.createdAt).toLocaleDateString('en-IN')}
+            <span className="block text-muted-foreground">{row.original.createdByName ?? ''}</span>
           </span>
         ),
       },
+      {
+        id: 'delete',
+        header: '',
+        cell: ({ row }) =>
+          canManage && row.original.status === 'draft' ? (
+            <IconButton
+              type="button"
+              variant="ghost"
+              size="sm"
+              aria-label={t('dermat_boms.delete', 'Delete')}
+              onClick={(event) => {
+                event.stopPropagation()
+                void deleteRef.current(row.original)
+              }}
+            >
+              <Trash2 className="size-4 text-status-error-icon" />
+            </IconButton>
+          ) : null,
+      },
     ]
     return [...base, ...percent, ...tail]
-  }, [kind, t])
+  }, [kind, t, canManage])
 
   const exportBoms = async () => {
     const params = new URLSearchParams({ kind })
     if (search.trim()) params.set('search', search.trim())
     const items = await fetchAllPages<BomListItem>(`/api/dermat_boms/boms?${params.toString()}`)
     downloadCsv(kind === 'formula' ? 'formulas' : 'pack-boms', [
-      { header: 'BOM', value: (row) => row.code },
+      { header: 'BOM name', value: (row) => row.name },
       { header: 'Product ID', value: (row) => row.productCode ?? '' },
       { header: 'Product', value: (row) => row.productName },
       { header: 'Only for order', value: (row) => row.orderNo ?? '' },
@@ -174,7 +243,7 @@ export function BomsPage() {
               <Button asChild>
                 <Link href="/backend/boms/new">
                   <Plus className="mr-2 h-4 w-4" />
-                  {t('dermat_boms.list.new', 'New BOM')}
+                  {t('dermat_boms.list.new', 'New Bill of Material')}
                 </Link>
               </Button>
             </div>
@@ -182,6 +251,7 @@ export function BomsPage() {
           pagination={{ page, pageSize: PAGE_SIZE, total, totalPages, onPageChange: setPage }}
           isLoading={isLoading}
         />
+        {ConfirmDialogElement}
       </PageBody>
     </Page>
   )

@@ -17,7 +17,9 @@ export const bomItemInputSchema = z
 
 export const bomCreateSchema = z.object({
   productId: z.string().uuid(),
+  name: z.string().trim().max(200).optional().nullable(),
   batchSize: decimal.positive().max(10_000_000),
+  yieldPercent: decimal.positive().max(100).optional(),
   notes: z.string().trim().max(4000).optional().nullable(),
   items: z.array(bomItemInputSchema).max(200),
 })

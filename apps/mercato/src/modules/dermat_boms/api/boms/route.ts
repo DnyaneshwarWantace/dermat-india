@@ -19,6 +19,9 @@ export const metadata = {
 type ListRow = {
   id: string
   code: string
+  name: string | null
+  yield_percent: string
+  created_at: Date
   product_id: string
   product_kind: string
   version: number
@@ -66,7 +69,7 @@ async function GET(req: Request) {
   }
   if (search) {
     const term = `%${search.replace(/[\\%_]/g, (char) => `\\${char}`)}%`
-    where.push('(p.title ilike ? or h.code ilike ? or code.value_text ilike ?)')
+    where.push('(p.title ilike ? or h.name ilike ? or code.value_text ilike ?)')
     params.push(term, term, term)
   }
   const from = `from dermat_bom_headers h
@@ -81,12 +84,12 @@ async function GET(req: Request) {
   const connection = (ctx.em as EntityManager).getConnection()
   const [countRow] = await connection.execute<Array<{ total: string }>>(`select count(*) as total ${from}`, params)
   const rows = await connection.execute<ListRow[]>(
-    `select h.id, h.code, h.product_id, h.product_kind, h.version, h.status, h.batch_size, h.batch_unit, h.order_id, h.order_no,
+    `select h.id, h.code, h.name, h.yield_percent, h.created_at, h.product_id, h.product_kind, h.version, h.status, h.batch_size, h.batch_unit, h.order_id, h.order_no,
             h.created_by_name, h.approved_by_name, h.updated_at, p.title, code.value_text as item_code,
             (select count(*) from dermat_bom_items i where i.bom_id = h.id) as line_count,
             (select sum(i.percent) from dermat_bom_items i where i.bom_id = h.id) as total_percent
        ${from}
-      order by p.title asc, h.version desc
+      order by h.created_at desc, h.version desc
       limit ? offset ?`,
     [...params, pageSize, (page - 1) * pageSize],
   )
@@ -95,6 +98,9 @@ async function GET(req: Request) {
     items: rows.map((row) => ({
       id: row.id,
       code: row.code,
+      name: row.name?.trim() || row.title,
+      yieldPercent: Number(row.yield_percent ?? 100),
+      createdAt: new Date(row.created_at).toISOString(),
       productId: row.product_id,
       productKind: row.product_kind,
       productName: row.title,
@@ -151,6 +157,8 @@ async function PUT(req: Request) {
       await ctx.em.transactional(async (em) => {
         const txCtx = { ...ctx, em: em as EntityManager }
         const header = await findBom(txCtx, bom.id)
+        if (input.name !== undefined) header.name = input.name?.trim() || header.name
+        if (input.yieldPercent !== undefined) header.yieldPercent = String(input.yieldPercent)
         header.batchSize = String(input.batchSize)
         header.notes = input.notes?.trim() || null
         header.updatedAt = new Date()
@@ -200,8 +208,7 @@ export const openApi: OpenApiRouteDoc = {
       responses: [{ status: 201, description: 'Created', schema: z.object({ id: z.string(), code: z.string() }) }],
       errors: [
         { status: 400, description: 'Invalid lines' },
-        { status: 409, description: 'A draft already exists' },
-      ],
+              ],
     },
     PUT: {
       summary: 'Replace a draft BOM and its lines',

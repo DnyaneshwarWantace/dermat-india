@@ -33,6 +33,8 @@ export type BomItemView = {
 export type BomView = {
   id: string
   code: string
+  name: string
+  yieldPercent: number
   kind: BomKind
   productId: string
   product: {
@@ -67,6 +69,9 @@ export type BomListItem = {
   orderNo?: string | null
   id: string
   code: string
+  name: string
+  yieldPercent: number
+  createdAt: string
   productId: string
   productKind: string
   productName: string
