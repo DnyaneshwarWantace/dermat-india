@@ -249,6 +249,11 @@ export function StageRecord({ order, file, people, busy, shortCount, focusKey, o
               </button>
               {isOpen && stage.status !== 'waiting' ? (
                 <div className="border-t bg-card px-4 py-4 sm:pl-16">
+                  <div className="mb-3 flex justify-end">
+                    <Link href={`/backend/orders/${order.id}/stages/${stage.key}`} className="text-xs font-medium text-primary hover:underline">
+                      {t('dermat_orders.record.openStage', 'Open {stage} page →', { stage: stage.label })}
+                    </Link>
+                  </div>
                   {working ? (
                     <div className="space-y-4">
                       <StageWorkArea order={order} stage={stage} people={people} canWork busy={busy} shortCount={shortCount} onAction={onAction} variant="page" />

@@ -3,7 +3,8 @@
 Sets up a new server with the full Dermat setup: departments, roles and access, department logins,
 company details, product fields, vendors, customers, products (raw material, packing material, bulk,
 finished goods, with opening stock), formulas and pack BOMs, QC rules, and optionally about 23 demo
-orders at every stage (with purchases, GRNs, QC, store issues, invoices, payments and dispatch).
+orders at every stage (with purchases, GRNs, QC, store issues, invoices, payments and dispatch), R&D
+requests with trial batches, formulas, lab results and stability studies, and saved weekly planning runs.
 
 Everything goes through the app's own API, so all records are connected exactly as in normal use.
 Only Python 3.9+ is needed (standard library, nothing to install).
@@ -117,6 +118,7 @@ repository private.
 |---|---|
 | `seed.py` | the seed (masters, logins, demo orders) |
 | `orders.py` | the demo orders and how far each one goes |
+| `labdemo.py` | demo R&D trials, formulas, lab results, stability readings and planning runs |
 | `export_data.py` | refreshes `data/` from a running instance |
 | `client.py` | small HTTP client used by both |
 | `data/*.json` | exported master data (no passwords, no keys) |

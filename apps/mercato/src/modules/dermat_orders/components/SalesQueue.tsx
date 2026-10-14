@@ -81,7 +81,7 @@ export function SalesQueue() {
                       {items.map((task, index) => (
                         <li key={`${task.orderId}-${index}`} className="flex items-start justify-between gap-3 px-4 py-2.5 text-sm hover:bg-muted/30">
                           <div className="min-w-0">
-                            <Link href={task.stageKey ? `/backend/orders/${task.orderId}?stage=${task.stageKey}` : `/backend/orders/${task.orderId}`} className="font-mono font-medium hover:underline">
+                            <Link href={task.stageKey ? `/backend/orders/${task.orderId}/stages/${task.stageKey}` : `/backend/orders/${task.orderId}`} className="font-mono font-medium hover:underline">
                               {task.orderNo}
                             </Link>
                             {task.priority === 'urgent' ? <span className="ml-2 rounded-sm bg-status-error-bg px-1.5 py-0.5 text-xs font-medium text-status-error-text">{t('dermat_orders.priority.urgent', 'Urgent')}</span> : null}

@@ -7,6 +7,7 @@ import math
 import os
 import subprocess
 
+import labdemo
 from client import LOCK, quote
 
 TODAY = datetime.date.today()
@@ -367,13 +368,11 @@ def extras(api):
     if not driver.state['orders']:
         print('  skipped: no demo orders from this seed run')
         return
-    customers = driver.customers
-    sampling = next((oid for oid, v in driver.state['orders'].items() if v['target'] == 'sampling'), None)
-    if 'Baebbe Mother & Baby Care LLP' in customers:
-        api.ok('R&D request Baebbe', *api.call('POST', '/api/dermat_rnd/requests', {'kind': 'client', 'customerId': customers['Baebbe Mother & Baby Care LLP'], 'orderId': sampling, 'productName': 'Baebbe Barrier Soothing Serum 30ml', 'brand': 'Baebbe', 'productType': 'Serum', 'ingredients': 'Ceramide complex, allantoin 0.3%, DPG 0.3%', 'texture': 'Light, non-sticky', 'fragrance': 'Very mild', 'colour': 'Clear', 'packSize': '30 ml', 'dueDate': day(4), 'assignedName': 'R&D'}))
-    if 'Asvella Lifesciences Private Limited' in customers:
-        api.ok('R&D request Asvella', *api.call('POST', '/api/dermat_rnd/requests', {'kind': 'client', 'customerId': customers['Asvella Lifesciences Private Limited'], 'productName': 'Asvella Ceramide Barrier Repair Cream 50gm', 'brand': 'Asvella', 'productType': 'Cream', 'ingredients': 'Ceramide NP, allantoin 0.5%, hyaluronic acid', 'texture': 'Rich cream', 'fragrance': 'Fragrance free', 'colour': 'White', 'packSize': '50 gm', 'dueDate': day(7), 'assignedName': 'R&D'}))
-    api.ok('R&D NPD', *api.call('POST', '/api/dermat_rnd/requests', {'kind': 'npd', 'productName': 'Tulsi Neem Anti-Acne Face Wash 100ml', 'productType': 'Face wash', 'ingredients': 'Tulsi ext 1%, salicylic acid 1%', 'texture': 'Gel', 'packSize': '100 ml', 'dueDate': day(14), 'assignedName': 'R&D'}))
+    labdemo.lab(api, driver)
+    labdemo.plans(api, driver)
+    labdemo.accounts(api, driver)
+    labdemo.qa_documents(api)
+    labdemo.live_queues(api, driver)
     if 'PM-SHP-01' in driver.ids:
         api.ok('indent from Packing', *api.call('POST', '/api/dermat_purchase/indents', {'department': 'Packing', 'source': 'department', 'neededBy': day(6), 'notes': 'Shipper boxes running low for next week packing.', 'lines': [{'productId': driver.ids['PM-SHP-01'], 'quantity': 400}]}))
     if 'RM-CAR-04' in driver.ids:

@@ -3,7 +3,10 @@
 import * as React from 'react'
 import Link from 'next/link'
 import type { LegacyColumnDef as ColumnDef } from '@tanstack/react-table/legacy'
-import { ExternalLink } from 'lucide-react'
+import { ArrowRight, PanelRight } from 'lucide-react'
+import { useRouter } from 'next/navigation'
+import { Button } from '@open-mercato/ui/primitives/button'
+import { IconButton } from '@open-mercato/ui/primitives/icon-button'
 import { useT } from '@open-mercato/shared/lib/i18n/context'
 import { cn } from '@open-mercato/shared/lib/utils'
 import { Page, PageBody } from '@open-mercato/ui/backend/Page'
@@ -29,6 +32,7 @@ const PAGE_SIZE = 50
 
 export function StageQueue({ stageKey }: { stageKey: string }) {
   const t = useT()
+  const router = useRouter()
   useStageSettings()
   const def = stageDef(stageKey)
   const [tab, setTab] = React.useState<QueueTab>('active')
@@ -210,21 +214,28 @@ export function StageQueue({ stageKey }: { stageKey: string }) {
       id: 'open',
       header: '',
       cell: ({ row }) => (
-        <span className="flex flex-col gap-1 text-xs">
-          <button type="button" onClick={(event) => { event.stopPropagation(); void openOrder(row.original.id) }} className="inline-flex items-center gap-1 font-medium text-primary hover:underline">
-            {tab === 'active' ? t('dermat_orders.queue.openForm', 'Open form') : t('dermat_orders.queue.view', 'View')}
-          </button>
-          <Link
-            href={`/backend/orders/${row.original.id}/stages/${stageKey}`}
-            onClick={(event) => event.stopPropagation()}
-            className="inline-flex items-center gap-1 text-muted-foreground hover:underline"
-          >
-            {t('dermat_orders.queue.stagePage', 'Stage page')}
-            <ExternalLink className="h-3 w-3" />
-          </Link>
-          <Link href={`/backend/orders/${row.original.id}`} onClick={(event) => event.stopPropagation()} className="text-muted-foreground hover:underline">
-            {t('dermat_orders.queue.openOrder', 'Order page')}
-          </Link>
+        <span className="flex items-center justify-end gap-1">
+          <Button asChild size="2xs" variant={tab === 'active' ? 'default' : 'outline'}>
+            <Link href={`/backend/orders/${row.original.id}/stages/${stageKey}`} onClick={(event) => event.stopPropagation()}>
+              {tab === 'active' ? t('dermat_orders.queue.openTask', 'Open task') : t('dermat_orders.queue.view', 'View')}
+              <ArrowRight className="size-3" aria-hidden="true" />
+            </Link>
+          </Button>
+          {tab === 'active' ? (
+            <IconButton
+              type="button"
+              variant="ghost"
+              size="xs"
+              aria-label={t('dermat_orders.queue.quickForm', 'Quick form here')}
+              title={t('dermat_orders.queue.quickForm', 'Quick form here')}
+              onClick={(event) => {
+                event.stopPropagation()
+                void openOrder(row.original.id)
+              }}
+            >
+              <PanelRight className="size-3.5" />
+            </IconButton>
+          ) : null}
         </span>
       ),
     },
@@ -269,7 +280,7 @@ export function StageQueue({ stageKey }: { stageKey: string }) {
           }
           columns={columns}
           data={rows}
-          onRowClick={(row) => (table.editing ? undefined : openOrder(row.id))}
+          onRowClick={(row) => (table.editing ? undefined : router.push(`/backend/orders/${row.id}/stages/${stageKey}`))}
           searchValue={search}
           onSearchChange={(value) => {
             setSearch(value)

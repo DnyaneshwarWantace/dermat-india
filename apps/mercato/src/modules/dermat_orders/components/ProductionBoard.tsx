@@ -96,7 +96,7 @@ export function ProductionBoard() {
                       <ul className="flex flex-col gap-2 px-2 pb-2">
                         {cards.map((card) => (
                           <li key={`${card.orderId}-${card.stageKey}`}>
-                            <Link href={`/backend/orders/${card.orderId}?stage=${card.stageKey}`} className={cn('block rounded-md border bg-card p-2.5 text-sm shadow-xs hover:border-primary', card.onHold && 'border-status-error-border')}>
+                            <Link href={`/backend/orders/${card.orderId}/stages/${card.stageKey}`} className={cn('block rounded-md border bg-card p-2.5 text-sm shadow-xs hover:border-primary', card.onHold && 'border-status-error-border')}>
                               <span className="flex items-center justify-between gap-2">
                                 <span className="font-mono text-xs font-semibold">{card.batchNo ? `#${card.batchNo}` : card.orderNo}</span>
                                 {card.priority === 'urgent' ? <span className="rounded-sm bg-status-error-bg px-1 text-xs text-status-error-text">{t('dermat_orders.priority.urgent', 'Urgent')}</span> : null}
@@ -165,7 +165,7 @@ export function ProductionBoard() {
                                 .map((item) => (
                                   <Link
                                     key={item.orderId}
-                                    href={`/backend/orders/${item.orderId}?stage=manufacturing`}
+                                    href={`/backend/orders/${item.orderId}/stages/manufacturing`}
                                     className={cn(
                                       'block rounded-md border px-2 py-1 text-xs hover:border-primary',
                                       item.state === 'made' ? 'bg-status-success-bg text-status-success-text' : item.state === 'in_progress' ? 'bg-status-warning-bg text-status-warning-text' : 'bg-card',

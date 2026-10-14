@@ -40,7 +40,18 @@ async function GET(req: Request) {
     }
     const items = await ctx.em.find(RdRequest, where, { orderBy: { updatedAt: 'desc' }, limit: 300 })
     const counts = await ctx.em.getConnection().execute<Array<{ status: string; total: string }>>('select status, count(*) as total from dermat_rnd_requests where tenant_id = ? and organization_id = ? and deleted_at is null group by status', [ctx.tenantId, ctx.organizationId])
-    return NextResponse.json({ items: items.map(requestView), counts: Object.fromEntries(counts.map((row) => [row.status, Number(row.total)])) })
+    const ids = items.map((item) => item.id)
+    const trialRows = ids.length
+      ? await ctx.em.getConnection().execute<Array<{ request_id: string; total: string; latest: string | null }>>(
+          `select request_id, count(*) as total, (array_agg(status order by trial_no desc))[1] as latest from dermat_rnd_trials where request_id = any(?::uuid[]) and deleted_at is null group by request_id`,
+          [`{${ids.join(',')}}`],
+        )
+      : []
+    const trialsOf = new Map(trialRows.map((row) => [row.request_id, { trialCount: Number(row.total), latestTrialStatus: row.latest }]))
+    return NextResponse.json({
+      items: items.map((item) => ({ ...requestView(item), ...(trialsOf.get(item.id) ?? { trialCount: 0, latestTrialStatus: null }) })),
+      counts: Object.fromEntries(counts.map((row) => [row.status, Number(row.total)])),
+    })
   } catch (error) {
     return rdErrorResponse(error)
   }

@@ -125,7 +125,7 @@ export function ArtworkBoard() {
                   {data.jobs.map((job) => (
                     <tr key={job.orderId} className="align-top hover:bg-muted/30">
                       <td className="px-3 py-2">
-                        <Link href={`/backend/orders/${job.orderId}?stage=artwork`} className="font-mono font-medium hover:underline">
+                        <Link href={`/backend/orders/${job.orderId}/stages/artwork`} className="font-mono font-medium hover:underline">
                           {job.orderNo}
                         </Link>
                         {job.priority === 'urgent' ? <span className="ml-2 rounded-sm bg-status-error-bg px-1.5 py-0.5 text-xs text-status-error-text">{t('dermat_orders.priority.urgent', 'Urgent')}</span> : null}
@@ -192,7 +192,7 @@ export function ArtworkBoard() {
                     {items.map((item) => (
                       <tr key={`${item.orderId}-${item.productId}`} className="hover:bg-muted/30">
                         <td className="px-3 py-2">
-                          <Link href={`/backend/orders/${item.orderId}?stage=artwork`} className="font-mono hover:underline">
+                          <Link href={`/backend/orders/${item.orderId}/stages/artwork`} className="font-mono hover:underline">
                             {item.orderNo}
                           </Link>
                           <span className="block text-xs text-muted-foreground">{item.customer ?? ''}</span>

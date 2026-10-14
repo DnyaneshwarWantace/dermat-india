@@ -6,5 +6,5 @@ import { RdRequestsPage } from '../../../components/RdRequestsPage'
 
 export default function DermatSalesSamplesPage() {
   const t = useT()
-  return <RdRequestsPage defaultView="samples" title={t('dermat_rnd.salesTitle', 'R&D requests & samples')} />
+  return <RdRequestsPage defaultView="samples" detailBase="/backend/sales/samples" title={t('dermat_rnd.salesTitle', 'R&D requests & samples')} />
 }
