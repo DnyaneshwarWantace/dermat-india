@@ -251,6 +251,12 @@ export function BomEditor({ bomId, productId }: { bomId?: string; productId?: st
     )
     const current = (existing.result?.items ?? []).find((item) => item.status !== 'superseded')
     if (current) {
+      flash(
+        current.status === 'draft'
+          ? t('dermat_boms.existingDraft', 'This product already has a draft BOM — opening it instead of starting a new one.')
+          : t('dermat_boms.existingApproved', 'This product already has an approved BOM — opening it. Edit and save to create the next version.'),
+        'info',
+      )
       router.replace(`/backend/boms/${current.id}`)
       return
     }

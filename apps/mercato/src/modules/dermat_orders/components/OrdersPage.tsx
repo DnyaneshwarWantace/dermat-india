@@ -101,6 +101,52 @@ function ReopenClock({ order, onOpen }: { order: SheetOrder; onOpen: (orderId: s
   )
 }
 
+const PROGRESS_SEGMENT_TONE: Record<string, string> = {
+  coming: 'bg-muted text-muted-foreground opacity-40',
+  pending: 'bg-status-warning-bg text-status-warning-text opacity-40',
+  in_progress: 'bg-status-info-bg text-status-info-text ring-2 ring-status-info-icon',
+  on_hold: 'bg-status-error-bg text-status-error-text ring-2 ring-status-error-icon',
+  completed: 'bg-status-success-bg text-status-success-text',
+  skipped: 'bg-muted text-muted-foreground opacity-40',
+}
+
+function StageProgressHover({ order, children }: { order: SheetOrder; children: React.ReactNode }) {
+  const t = useT()
+  const [open, setOpen] = React.useState(false)
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <span
+          className="flex min-w-0 flex-1 items-center"
+          onMouseEnter={() => setOpen(true)}
+          onMouseLeave={() => setOpen(false)}
+        >
+          {children}
+        </span>
+      </PopoverTrigger>
+      <PopoverContent
+        align="start"
+        className="w-64 p-2"
+        onMouseEnter={() => setOpen(true)}
+        onMouseLeave={() => setOpen(false)}
+      >
+        <p className="px-1 pb-2 text-xs font-semibold text-muted-foreground">{t('dermat_orders.book.allStages', 'All stages')}</p>
+        <ul className="flex flex-col gap-1">
+          {STAGES.map((def) => {
+            const state = sheetWorkState(order.stages[def.key])
+            return (
+              <li key={def.key} className={cn('flex items-center justify-between gap-2 rounded-sm px-2 py-1 text-xs font-medium transition-opacity', PROGRESS_SEGMENT_TONE[state])}>
+                <span className="truncate">{def.label}</span>
+                <span className="shrink-0 text-overline uppercase tracking-wide">{WORK_STATE_LABEL[state as keyof typeof WORK_STATE_LABEL]}</span>
+              </li>
+            )
+          })}
+        </ul>
+      </PopoverContent>
+    </Popover>
+  )
+}
+
 function ActionCell({ order, onOpen, opening }: { order: SheetOrder; onOpen: (orderId: string, stageKey: string) => void; opening: string | null }) {
   const t = useT()
   const view = (
@@ -115,9 +161,10 @@ function ActionCell({ order, onOpen, opening }: { order: SheetOrder; onOpen: (or
     </Link>
   )
   if (order.status === 'cancelled') return <span className="flex items-center justify-between gap-1"><StatePill state="skipped" label={t('dermat_orders.status.cancelled', 'Cancelled')} />{view}</span>
-  if (!order.current.length) return <span className="flex items-center justify-between gap-1"><StatePill state="completed" label={t('dermat_orders.book.allDone', 'All stages done')} /><span className="flex items-center gap-1"><ReopenClock order={order} onOpen={onOpen} />{view}</span></span>
+  if (!order.current.length) return <span className="flex items-center justify-between gap-1"><StageProgressHover order={order}><StatePill state="completed" label={t('dermat_orders.book.allDone', 'All stages done')} /></StageProgressHover><span className="flex items-center gap-1"><ReopenClock order={order} onOpen={onOpen} />{view}</span></span>
   return (
     <span className="flex items-center gap-1">
+      <StageProgressHover order={order}>
       <span className="flex min-w-0 flex-1 flex-col gap-0.5">
         {order.current.map((entry) => {
           const state = sheetWorkState(order.stages[entry.key])
@@ -143,6 +190,7 @@ function ActionCell({ order, onOpen, opening }: { order: SheetOrder; onOpen: (or
           )
         })}
       </span>
+      </StageProgressHover>
       <ReopenClock order={order} onOpen={onOpen} />
       {view}
     </span>
