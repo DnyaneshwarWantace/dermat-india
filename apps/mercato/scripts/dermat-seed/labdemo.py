@@ -279,3 +279,72 @@ def live_queues(api, driver):
         for item in res.get('items', []):
             req = api.call('GET', f"/api/dermat_store/requests?id={item['id']}")[1]
             api.ok('issue live request', *api.call('POST', '/api/dermat_store/requests/issue', {'id': req['id'], 'lines': [{'lineId': line['id'], 'quantity': line['required']} for line in req['lines']]}, {LOCK: req['updatedAt']}))
+
+
+STAGE_PERSON = {'order': 'Sales 1', 'advance': 'Accounts 1', 'sampling': 'R&D', 'formulation': 'R&D', 'planning': 'Planning 1', 'artwork': 'Design 1', 'manufacturing': 'Production 1', 'filling': 'Production 2', 'packing': 'Packing Supervisor 1', 'qc_qa': 'QA Head', 'billing': 'Accounts 2', 'dispatch': 'Finished Stock Manager'}
+
+PERSON_COLUMNS = [
+    ('dermat_orders', 'created_by_name', 'Sales 1', False),
+    ('dermat_order_payments', 'by_name', 'Accounts 1', False),
+    ('dermat_order_payments', 'history', 'Accounts 1', True),
+    ('dermat_planning_reservations', 'by_name', 'Planning 1', False),
+    ('dermat_planning_log', 'by_name', 'Planning 1', False),
+    ('dermat_planning_plans', 'created_by_name', 'Planning 1', False),
+    ('dermat_planning_plans', 'sent_by_name', 'Planning 1', False),
+    ('dermat_planning_plans', 'store_by_name', 'RM Store', False),
+    ('dermat_store_requests', 'requested_by_name', 'Production 1', False),
+    ('dermat_store_requests', 'received_by_name', 'Production 1', False),
+    ('dermat_store_requests', 'history', 'RM Store', True),
+    ('dermat_store_request_lines', 'issues', 'RM Store', True),
+    ('dermat_bom_headers', 'created_by_name', 'R&D', False),
+    ('dermat_bom_headers', 'approved_by_name', 'R&D', False),
+    ('dermat_pos', 'created_by_name', 'Purchase 1', False),
+    ('dermat_pos', 'approved_by_name', 'Purchase 2', False),
+    ('dermat_pos', 'history', 'Purchase 1', True),
+    ('dermat_grns', 'received_by_name', 'RM Store', False),
+    ('dermat_grns', 'history', 'RM Store', True),
+    ('dermat_purchase_indents', 'requested_by_name', 'Packing Supervisor 1', False),
+    ('dermat_purchase_indents', 'history', 'Packing Supervisor 1', True),
+    ('dermat_vendor_bills', 'created_by_name', 'Accounts 2', False),
+    ('dermat_vendor_bills', 'history', 'Accounts 2', True),
+    ('dermat_vendor_bills', 'payments', 'Accounts 2', True),
+    ('dermat_quality_checks', 'chemical_by', 'QC Analytical', False),
+    ('dermat_quality_checks', 'micro_by', 'QC Micro', False),
+    ('dermat_quality_checks', 'history', 'QC Analytical', True),
+    ('dermat_rnd_requests', 'requested_by_name', 'Sales 1', False),
+    ('dermat_rnd_requests', 'history', 'R&D', True),
+    ('dermat_rnd_requests', 'rounds', 'R&D', True),
+    ('dermat_rnd_trials', 'history', 'R&D', True),
+    ('dermat_rnd_trials', 'stability', 'QC Analytical', True),
+    ('dermat_rnd_trials', 'observations', 'QC Analytical', True),
+    ('dermat_proforma_invoices', 'created_by_name', 'Accounts 1', False),
+    ('dermat_proforma_invoices', 'sent_by_name', 'Accounts 1', False),
+    ('dermat_proforma_invoices', 'history', 'Accounts 1', True),
+    ('dermat_tax_invoices', 'created_by_name', 'Accounts 2', False),
+    ('dermat_tax_invoices', 'issued_by_name', 'Accounts 2', False),
+    ('dermat_tax_invoices', 'history', 'Accounts 2', True),
+    ('dermat_qa_documents', 'prepared_by_name', 'In Process QA 1', False),
+    ('dermat_qa_documents', 'approved_by_name', 'QA Head', False),
+    ('dermat_qa_documents', 'history', 'QA Head', True),
+]
+
+
+def rename_people(sql_cmd, admin_email):
+    """The seed works as the admin; show the department person who would really do each step instead."""
+    import subprocess
+
+    admin = admin_email.replace("'", "''")
+    stages = ', '.join(f"('{key}', '{person}')" for key, person in STAGE_PERSON.items())
+    stmts = [
+        f"create temp table who(stage_key text primary key, person text)",
+        f"insert into who values {stages}",
+        f"update dermat_order_stages s set completed_by_name = case when s.completed_by_name = '{admin}' then w.person else s.completed_by_name end, data = replace(s.data::text, '{admin}', w.person)::jsonb from who w where w.stage_key = s.stage_key and (s.completed_by_name = '{admin}' or s.data::text like '%{admin}%')",
+        f"update dermat_order_events e set by_name = coalesce((select person from who where who.stage_key = e.stage_key), 'Sales 1') where e.by_name = '{admin}'",
+    ]
+    for table, column, person, is_json in PERSON_COLUMNS:
+        value = f"replace({column}::text, '{admin}', '{person}')::jsonb" if is_json else f"replace({column}, '{admin}', '{person}')"
+        stmts.append(f"update {table} set {column} = {value} where {column}::text like '%{admin}%'")
+    out = subprocess.run(sql_cmd, shell=True, input='begin; ' + '; '.join(stmts) + '; commit;', capture_output=True, text=True)
+    if out.returncode:
+        raise SystemExit(out.stderr[:500])
+    print('  names: work shown under the department people instead of the admin login')

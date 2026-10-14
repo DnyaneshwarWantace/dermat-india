@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict xDABYrLy8lNCsBlZCbbZmlAgJBsxB27FYDxkM4WccblpYLFKqDkigzLdUcrf1Wb
+\restrict tHpSqxc1LISFRbqBC4nULChef3zNoCPNrf2d8tJmjN1hldO9PQ1TQjjvQlRtb1s
 
 -- Dumped from database version 17.11 (Debian 17.11-1.pgdg13+2)
 -- Dumped by pg_dump version 17.11 (Debian 17.11-1.pgdg13+2)
@@ -354,6 +354,7 @@ COPY public.mikro_orm_migrations_dermat_orders (id, name, executed_at) FROM stdi
 4	Migration20260927052431_dermat_orders	2026-09-27 05:24:47.135805+00
 5	Migration20260927135623_dermat_orders	2026-09-27 13:57:30.176376+00
 6	Migration20260927143641_dermat_orders	2026-09-27 14:36:51.271978+00
+7	Migration20261006130000_dermat_orders	2026-10-14 02:19:59.044263+00
 \.
 
 
@@ -440,6 +441,7 @@ COPY public.mikro_orm_migrations_dermat_rm_master (id, name, executed_at) FROM s
 
 COPY public.mikro_orm_migrations_dermat_rnd (id, name, executed_at) FROM stdin;
 1	Migration20260926192801_dermat_rnd	2026-09-26 19:28:16.151591+00
+2	Migration20261006120000_dermat_rnd_lab	2026-10-14 02:19:59.044263+00
 \.
 
 
@@ -1078,7 +1080,7 @@ SELECT pg_catalog.setval('public.mikro_orm_migrations_dermat_lists_id_seq', 1, t
 -- Name: mikro_orm_migrations_dermat_orders_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
-SELECT pg_catalog.setval('public.mikro_orm_migrations_dermat_orders_id_seq', 6, true);
+SELECT pg_catalog.setval('public.mikro_orm_migrations_dermat_orders_id_seq', 7, true);
 
 
 --
@@ -1141,7 +1143,7 @@ SELECT pg_catalog.setval('public.mikro_orm_migrations_dermat_rm_master_id_seq', 
 -- Name: mikro_orm_migrations_dermat_rnd_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
-SELECT pg_catalog.setval('public.mikro_orm_migrations_dermat_rnd_id_seq', 1, true);
+SELECT pg_catalog.setval('public.mikro_orm_migrations_dermat_rnd_id_seq', 2, true);
 
 
 --
@@ -1400,5 +1402,5 @@ SELECT pg_catalog.setval('public.mikro_orm_migrations_workflows_id_seq', 11, tru
 -- PostgreSQL database dump complete
 --
 
-\unrestrict xDABYrLy8lNCsBlZCbbZmlAgJBsxB27FYDxkM4WccblpYLFKqDkigzLdUcrf1Wb
+\unrestrict tHpSqxc1LISFRbqBC4nULChef3zNoCPNrf2d8tJmjN1hldO9PQ1TQjjvQlRtb1s
 

@@ -6,7 +6,7 @@ Steps run in order and each one is safe to re-run (existing records are matched 
 left alone). Use --only to run some steps, e.g. --only masters,users or --only orders.
 
 Steps: departments, roles, users, company, lists, stages, fields, vendors, customers, products,
-boms, qc, orders, extras, backdate.
+boms, qc, orders, extras, backdate, people.
 """
 
 import argparse
@@ -19,8 +19,8 @@ from client import LOCK, connect
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DATA = os.path.join(HERE, 'data')
-STEPS = ['departments', 'roles', 'users', 'company', 'lists', 'stages', 'fields', 'vendors', 'customers', 'products', 'boms', 'qc', 'orders', 'extras', 'backdate']
-GROUPS = {'masters': STEPS[:12], 'demo': ['orders', 'extras', 'backdate']}
+STEPS = ['departments', 'roles', 'users', 'company', 'lists', 'stages', 'fields', 'vendors', 'customers', 'products', 'boms', 'qc', 'orders', 'extras', 'backdate', 'people']
+GROUPS = {'masters': STEPS[:12], 'demo': ['orders', 'extras', 'backdate', 'people']}
 KIND_ORDER = ['raw_material', 'packing_material', 'bulk', 'finished_goods', 'rnd']
 VENDOR_CATEGORY = {'rm_supplier': 'rm_supplier', 'pm_supplier': 'pm_supplier', 'both': 'both'}
 
@@ -268,6 +268,13 @@ class Seeder:
         import orders
         orders.backdate(self.sql)
 
+    def step_people(self):
+        import labdemo
+        if not self.admin_email:
+            print('  skipped: needs --admin-email')
+            return
+        labdemo.rename_people(self.sql, self.admin_email)
+
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -292,11 +299,12 @@ def main():
     api = connect(args, verbose=args.verbose)
     seeder = Seeder(api, args.users)
     seeder.sql = args.sql
+    seeder.admin_email = args.admin_email
     for name in STEPS:
         if name not in wanted or name in skip:
             continue
-        if name == 'backdate' and not args.sql:
-            print('== backdate: skipped (pass --sql to spread demo dates over past weeks)')
+        if name in ('backdate', 'people') and not args.sql:
+            print(f'== {name}: skipped (pass --sql; it needs direct database access)')
             continue
         print(f'== {name}', flush=True)
         getattr(seeder, f'step_{name}')()

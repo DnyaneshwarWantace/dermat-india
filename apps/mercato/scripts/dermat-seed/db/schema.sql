@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict uozjfPuOsaIx2wv7tB9Yp7ENZ0vlMYGHRhFaqrXAvpzOfiol8xQvzggNoYMKrbe
+\restrict CDvPENaTYFxsyg2RoXXvJaf7FLhrgTaTj6Ntm16gDmz9hTPHgui6TB3k0f8DHjH
 
 -- Dumped from database version 17.11 (Debian 17.11-1.pgdg13+2)
 -- Dumped by pg_dump version 17.11 (Debian 17.11-1.pgdg13+2)
@@ -2950,6 +2950,44 @@ CREATE TABLE public.dermat_rnd_requests (
     history jsonb,
     created_at timestamp with time zone NOT NULL,
     updated_at timestamp with time zone NOT NULL,
+    deleted_at timestamp with time zone,
+    client_instruction text,
+    texture_reference text,
+    target_ph text,
+    claims text,
+    sample_qty text,
+    ingredient_refs jsonb,
+    approved_trial_id uuid,
+    bom_id uuid,
+    bom_product_id uuid
+);
+
+
+--
+-- Name: dermat_rnd_trials; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.dermat_rnd_trials (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    organization_id uuid NOT NULL,
+    tenant_id uuid NOT NULL,
+    request_id uuid NOT NULL,
+    code text NOT NULL,
+    trial_no integer NOT NULL,
+    status text DEFAULT 'draft'::text NOT NULL,
+    batch_date text,
+    chemist_name text,
+    batch_size numeric(14,3),
+    batch_unit text DEFAULT 'g'::text NOT NULL,
+    aim text,
+    procedure text,
+    formula jsonb,
+    observations jsonb,
+    stability jsonb,
+    stability_status text DEFAULT 'not_started'::text NOT NULL,
+    history jsonb,
+    created_at timestamp with time zone NOT NULL,
+    updated_at timestamp with time zone NOT NULL,
     deleted_at timestamp with time zone
 );
 
@@ -3059,7 +3097,8 @@ CREATE TABLE public.dermat_stage_settings (
     updated_by_name text,
     created_at timestamp with time zone NOT NULL,
     updated_at timestamp with time zone NOT NULL,
-    reopen_hours integer
+    reopen_hours integer,
+    shared_fields jsonb
 );
 
 
@@ -11736,6 +11775,22 @@ ALTER TABLE ONLY public.dermat_rnd_requests
 
 
 --
+-- Name: dermat_rnd_trials dermat_rnd_trials_code_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.dermat_rnd_trials
+    ADD CONSTRAINT dermat_rnd_trials_code_uq UNIQUE (organization_id, tenant_id, code);
+
+
+--
+-- Name: dermat_rnd_trials dermat_rnd_trials_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.dermat_rnd_trials
+    ADD CONSTRAINT dermat_rnd_trials_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: dermat_samples dermat_samples_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -15891,6 +15946,13 @@ CREATE INDEX dermat_rnd_requests_scope_idx ON public.dermat_rnd_requests USING b
 
 
 --
+-- Name: dermat_rnd_trials_request_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX dermat_rnd_trials_request_idx ON public.dermat_rnd_trials USING btree (organization_id, tenant_id, request_id);
+
+
+--
 -- Name: dermat_samples_order_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -18797,5 +18859,5 @@ ALTER TABLE ONLY public.wms_stock_valuations
 -- PostgreSQL database dump complete
 --
 
-\unrestrict uozjfPuOsaIx2wv7tB9Yp7ENZ0vlMYGHRhFaqrXAvpzOfiol8xQvzggNoYMKrbe
+\unrestrict CDvPENaTYFxsyg2RoXXvJaf7FLhrgTaTj6Ntm16gDmz9hTPHgui6TB3k0f8DHjH
 

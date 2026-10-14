@@ -57,8 +57,12 @@ corepack yarn build
 corepack yarn mercato init --org="Dermat India" --email=<admin email> --password=<strong password> --no-examples
 ```
 
-`init` also creates a demo login `employee@<your admin domain>` with the password `secret`.
-**Delete it** afterwards (Masters → Team & access, or Settings → Users).
+`init` also creates default logins such as `admin@acme.com` and `employee@acme.com` with well-known
+passwords. **Delete them** after the seed (Settings → Users). `admin@acme.com` holds the only "admin" role, so first
+give that role to your own admin login, then delete it.
+
+Set `DATABASE_URL` in `apps/mercato/.env`, not on the command line: `yarn start` and `yarn db:migrate` run through
+turbo, which does not pass a command-line `DATABASE_URL` to the app.
 
 ## 4. Start the app
 
@@ -83,6 +87,12 @@ python3 apps/mercato/scripts/dermat-seed/seed.py \
 It asks for the admin password (or set `DERMAT_ADMIN_PASSWORD`). It takes about 10–20 minutes,
 mostly for the demo orders. At the end it prints `Finished with 0 problem(s).`
 
+The last step (`people`) shows the demo work under the department people (Accounts 1, Production 1, R&D…)
+instead of the admin login the seed used. It needs `--sql` and `--admin-email`.
+
+For a server where the database runs in Docker, `--sql` can be
+`"docker exec -i <container> psql -U postgres -d <database> -At -F '|'"`.
+
 Useful options:
 
 | Option | What it does |
@@ -90,7 +100,7 @@ Useful options:
 | `--only masters` | everything except demo orders (for a server the client will fill with real orders) |
 | `--only demo` | only the demo orders, extras and back-dating |
 | `--only users` | only create the department logins |
-| `--skip backdate` | keep all demo dates as today (no direct database access needed) |
+| `--skip backdate,people` | keep all demo dates as today and the admin name on the work (no direct database access needed) |
 | `--sql "..."` | needed only for `backdate`, which spreads demo order dates over the past weeks |
 
 Running it again is safe: records that already exist (matched by name or code) are left alone, and
