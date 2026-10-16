@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from 'react'
+import { DndContext, useDraggable, useDroppable, type DragEndEvent } from '@dnd-kit/core'
 import { ViewsButton } from '../../dermat_products/components/ViewsPanel'
 import { useGranted } from '../../dermat_departments/components/useGranted'
 import Link from 'next/link'
@@ -210,64 +211,91 @@ const STATE_BAR: Record<string, string> = {
   skipped: 'bg-muted-foreground',
 }
 
-function BoardView({ orders, onOpen, opening }: { orders: SheetOrder[]; onOpen: (orderId: string, stageKey: string) => void; opening: string | null }) {
+function BoardCard({ order, def, onOpen, opening }: { order: SheetOrder; def: (typeof STAGES)[number]; onOpen: (orderId: string, stageKey: string) => void; opening: string | null }) {
   const t = useT()
-  const columns = STAGES.filter((def) => def.key !== 'order')
+  const stage = order.stages[def.key]
+  const state = sheetWorkState(stage)
+  const current = order.current.find((entry) => entry.key === def.key)
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: `${order.id}::${def.key}` })
   return (
-    <div className="overflow-x-auto pb-2" data-drag-scroll>
-      <div className="flex gap-3">
-        {columns.map((def) => {
-          const cards = orders.filter((order) => order.current.some((entry) => entry.key === def.key))
-          return (
-            <section key={def.key} className="flex w-64 shrink-0 flex-col rounded-lg border bg-muted/30">
-              <header className="flex items-center justify-between gap-2 border-b px-3 py-2">
-                <span className="min-w-0">
-                  <span className="block truncate text-sm font-semibold">{def.label}</span>
-                  <span className="block text-xs text-muted-foreground">{def.department}</span>
-                </span>
-                <span className="rounded-full bg-background px-2 py-0.5 text-xs font-semibold tabular-nums">{cards.length}</span>
-              </header>
-              <div className="flex flex-col gap-1.5 p-1.5">
-                {cards.length ? (
-                  cards.map((order) => {
-                    const stage = order.stages[def.key]
-                    const state = sheetWorkState(stage)
-                    const current = order.current.find((entry) => entry.key === def.key)
-                    return (
-                      <button
-                        key={order.id}
-                        type="button"
-                        disabled={opening === `${order.id}:${def.key}`}
-                        title={[WORK_STATE_LABEL[state], current?.responsibleName, order.late ? t('dermat_orders.book.wasDue', 'was due {date}', { date: formatDate(order.deliveryDate) }) : null].filter(Boolean).join(' · ')}
-                        onClick={() => onOpen(order.id, def.key)}
-                        className="flex gap-2 rounded-md border bg-card py-1.5 pl-1.5 pr-2 text-left text-xs transition-colors hover:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                      >
-                        <span className={cn('w-1 shrink-0 self-stretch rounded-full', STATE_BAR[state])} aria-hidden="true" />
-                        <span className="min-w-0 flex-1">
-                          <span className="flex items-center justify-between gap-2">
-                            <span className="font-mono font-semibold">{order.orderNo}</span>
-                            <span className="flex items-center gap-1 tabular-nums text-muted-foreground">
-                              {order.late ? <CalendarClock className="h-3 w-3 text-status-error-icon" aria-hidden="true" /> : null}
-                              {opening === `${order.id}:${def.key}` ? <Spinner className="h-3 w-3" /> : stage?.days != null ? `${formatQty(stage.days, 1)} d` : ''}
-                            </span>
-                          </span>
-                          <span className="block truncate font-medium">{order.customerName}</span>
-                          <span className="block truncate text-muted-foreground">
-                            {[order.lines.map((line) => `${line.brandName ?? line.productTitle} × ${formatQty(line.quantity, 0)}`).join(', '), current?.responsibleName].filter(Boolean).join(' · ')}
-                          </span>
-                        </span>
-                      </button>
-                    )
-                  })
-                ) : (
-                  <p className="px-1 py-6 text-center text-xs text-muted-foreground">{t('dermat_orders.book.emptyColumn', 'No orders here')}</p>
-                )}
-              </div>
-            </section>
-          )
-        })}
+    <button
+      ref={setNodeRef}
+      {...listeners}
+      {...attributes}
+      type="button"
+      disabled={opening === `${order.id}:${def.key}`}
+      title={[WORK_STATE_LABEL[state], current?.responsibleName, order.late ? t('dermat_orders.book.wasDue', 'was due {date}', { date: formatDate(order.deliveryDate) }) : null].filter(Boolean).join(' · ')}
+      onClick={() => onOpen(order.id, def.key)}
+      style={transform ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`, zIndex: 20 } : undefined}
+      className={cn(
+        'flex cursor-grab gap-2 rounded-md border bg-card py-1.5 pl-1.5 pr-2 text-left text-xs transition-colors hover:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:cursor-grabbing',
+        isDragging && 'opacity-60 shadow-lg',
+      )}
+    >
+      <span className={cn('w-1 shrink-0 self-stretch rounded-full', STATE_BAR[state])} aria-hidden="true" />
+      <span className="min-w-0 flex-1">
+        <span className="flex items-center justify-between gap-2">
+          <span className="font-mono font-semibold">{order.orderNo}</span>
+          <span className="flex items-center gap-1 tabular-nums text-muted-foreground">
+            {order.late ? <CalendarClock className="h-3 w-3 text-status-error-icon" aria-hidden="true" /> : null}
+            {opening === `${order.id}:${def.key}` ? <Spinner className="h-3 w-3" /> : stage?.days != null ? `${formatQty(stage.days, 1)} d` : ''}
+          </span>
+        </span>
+        <span className="block truncate font-medium">{order.customerName}</span>
+        <span className="block truncate text-muted-foreground">
+          {[order.lines.map((line) => `${line.brandName ?? line.productTitle} × ${formatQty(line.quantity, 0)}`).join(', '), current?.responsibleName].filter(Boolean).join(' · ')}
+        </span>
+      </span>
+    </button>
+  )
+}
+
+function BoardColumn({ def, cards, onOpen, opening }: { def: (typeof STAGES)[number]; cards: SheetOrder[]; onOpen: (orderId: string, stageKey: string) => void; opening: string | null }) {
+  const t = useT()
+  const { setNodeRef, isOver } = useDroppable({ id: def.key })
+  return (
+    <section ref={setNodeRef} className={cn('flex w-64 shrink-0 flex-col rounded-lg border bg-muted/30', isOver && 'border-primary bg-primary/5')}>
+      <header className="flex items-center justify-between gap-2 border-b px-3 py-2">
+        <span className="min-w-0">
+          <span className="block truncate text-sm font-semibold">{def.label}</span>
+          <span className="block text-xs text-muted-foreground">{def.department}</span>
+        </span>
+        <span className="rounded-full bg-background px-2 py-0.5 text-xs font-semibold tabular-nums">{cards.length}</span>
+      </header>
+      <div className="flex min-h-[3rem] flex-col gap-1.5 p-1.5">
+        {cards.length ? (
+          cards.map((order) => <BoardCard key={order.id} order={order} def={def} onOpen={onOpen} opening={opening} />)
+        ) : (
+          <p className="px-1 py-6 text-center text-xs text-muted-foreground">{t('dermat_orders.book.emptyColumn', 'No orders here')}</p>
+        )}
       </div>
-    </div>
+    </section>
+  )
+}
+
+function BoardView({ orders, onOpen, opening }: { orders: SheetOrder[]; onOpen: (orderId: string, stageKey: string) => void; opening: string | null }) {
+  const columns = STAGES.filter((def) => def.key !== 'order')
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event
+    if (!over) return
+    const [orderId, sourceKey] = String(active.id).split('::')
+    const targetKey = String(over.id)
+    if (!orderId || targetKey === sourceKey) return
+    onOpen(orderId, targetKey)
+  }
+
+  return (
+    <DndContext onDragEnd={handleDragEnd}>
+      <div className="overflow-x-auto pb-2" data-drag-scroll>
+        <div className="flex gap-3">
+          {columns.map((def) => {
+            const cards = orders.filter((order) => order.current.some((entry) => entry.key === def.key))
+            return <BoardColumn key={def.key} def={def} cards={cards} onOpen={onOpen} opening={opening} />
+          })}
+        </div>
+      </div>
+    </DndContext>
   )
 }
 
