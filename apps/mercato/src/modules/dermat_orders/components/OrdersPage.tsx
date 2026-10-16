@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from 'react'
-import { DndContext, useDraggable, useDroppable, type DragEndEvent } from '@dnd-kit/core'
+import { DndContext, PointerSensor, useDraggable, useDroppable, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core'
 import { ViewsButton } from '../../dermat_products/components/ViewsPanel'
 import { useGranted } from '../../dermat_departments/components/useGranted'
 import Link from 'next/link'
@@ -275,6 +275,7 @@ function BoardColumn({ def, cards, onOpen, opening }: { def: (typeof STAGES)[num
 
 function BoardView({ orders, onOpen, opening }: { orders: SheetOrder[]; onOpen: (orderId: string, stageKey: string) => void; opening: string | null }) {
   const columns = STAGES.filter((def) => def.key !== 'order')
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }))
 
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event
@@ -286,7 +287,7 @@ function BoardView({ orders, onOpen, opening }: { orders: SheetOrder[]; onOpen: 
   }
 
   return (
-    <DndContext onDragEnd={handleDragEnd}>
+    <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
       <div className="overflow-x-auto pb-2" data-drag-scroll>
         <div className="flex gap-3">
           {columns.map((def) => {
