@@ -139,14 +139,14 @@ function BomChip({ bom, productId }: { bom: BomRef | undefined; productId: strin
   if (bom === undefined) return null
   if (!bom) {
     return (
-      <Link href={`/backend/boms/new?productId=${productId}`} className="inline-flex items-center gap-1 text-xs text-status-warning-text hover:underline">
+      <Link href={`/backend/boms/new?productId=${productId}`} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs text-status-warning-text hover:underline">
         <FileStack className="h-3.5 w-3.5" />
         {t('dermat_orders.form.noBom', 'No BOM yet — create')}
       </Link>
     )
   }
   return (
-    <Link href={`/backend/boms/${bom.id}`} className="inline-flex items-center gap-1.5 text-xs hover:underline">
+    <Link href={`/backend/boms/${bom.id}`} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 text-xs hover:underline">
       <FileStack className="h-3.5 w-3.5 text-muted-foreground" />
       <StatusBadge variant={bom.status === 'approved' ? 'success' : 'warning'}>
         {bom.status === 'approved' ? t('dermat_orders.form.bomApproved', 'BOM v{version} approved', { version: bom.version }) : t('dermat_orders.form.bomDraft', 'BOM v{version} draft', { version: bom.version })}
