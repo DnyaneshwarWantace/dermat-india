@@ -37,6 +37,7 @@ export type BomItemView = {
 export type BomView = {
   id: string
   code: string
+  name: string
   kind: BomKind
   productId: string
   product: ProductSummary | null
@@ -44,6 +45,7 @@ export type BomView = {
   status: string
   batchSize: number
   batchUnit: string
+  yieldPercent: number
   notes: string | null
   createdByName: string | null
   approvedByName: string | null
@@ -221,6 +223,7 @@ export async function serializeBom(ctx: BomRequestContext, bom: BomHeader): Prom
   return {
     id: bom.id,
     code: bom.code,
+    name: bom.name?.trim() || products.get(bom.productId)?.title || '',
     kind,
     productId: bom.productId,
     product: products.get(bom.productId) ?? null,
@@ -228,6 +231,7 @@ export async function serializeBom(ctx: BomRequestContext, bom: BomHeader): Prom
     status: bom.status,
     batchSize,
     batchUnit: bom.batchUnit,
+    yieldPercent: Number(bom.yieldPercent ?? 100),
     notes: bom.notes ?? null,
     createdByName: bom.createdByName ?? null,
     approvedByName: bom.approvedByName ?? null,
@@ -252,19 +256,10 @@ export function assertReadyToApprove(kind: BomKind, items: Array<{ value: number
   }
 }
 
-export type DraftBomInput = { productId: string; batchSize: number; notes?: string | null; items: BomItemInput[] }
+export type DraftBomInput = { productId: string; name?: string | null; batchSize: number; yieldPercent?: number; notes?: string | null; items: BomItemInput[] }
 
 export async function prepareDraftBom(ctx: BomRequestContext, input: DraftBomInput) {
   const { product, kind } = await resolveProductKind(ctx, input.productId)
-  const existingDraft = await ctx.em.findOne(BomHeader, {
-    productId: input.productId,
-    orderId: null,
-    status: 'draft',
-    tenantId: ctx.tenantId,
-    organizationId: ctx.organizationId,
-    deletedAt: null,
-  })
-  if (existingDraft) throw new BomError('This product already has a draft BOM', 409, { id: existingDraft.id })
   const items = await validateItems(ctx, kind, input.productId, input.items)
   return { product, kind, items }
 }
@@ -282,12 +277,14 @@ export async function createDraftBom(ctx: BomRequestContext, input: DraftBomInpu
       organizationId: ctx.organizationId,
       tenantId: ctx.tenantId,
       code: await nextBomCode(txCtx),
+      name: input.name?.trim() || prepared.product.title,
       productId: input.productId,
       productKind: prepared.product.kind ?? '',
       version: (latest?.version ?? 0) + 1,
       status: 'draft',
       batchSize: String(input.batchSize),
       batchUnit: BOM_KINDS[prepared.kind].defaultBatchUnit ?? prepared.product.unit ?? 'kg',
+      yieldPercent: String(input.yieldPercent ?? 100),
       notes: input.notes?.trim() || null,
       createdByName,
     })

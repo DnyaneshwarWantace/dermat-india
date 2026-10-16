@@ -5,7 +5,7 @@ import { useGranted } from '../../dermat_departments/components/useGranted'
 import { ViewOnlyNote } from '../../dermat_departments/components/ViewOnlyNote'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, Ban, CheckCircle2, FileMinus, History, Printer, Save } from 'lucide-react'
+import { Ban, CheckCircle2, FileMinus, History, Printer, Save } from 'lucide-react'
 import { useT } from '@open-mercato/shared/lib/i18n/context'
 import { Page, PageBody } from '@open-mercato/ui/backend/Page'
 import { Button } from '@open-mercato/ui/primitives/button'
@@ -22,6 +22,7 @@ import { WhatsAppMenu } from '../../dermat_products/components/WhatsAppMenu'
 import { dateText, rupeeText } from '../../dermat_products/lib/whatsapp'
 import { buildInvoiceHtml, printInvoice } from './invoicePrint'
 import { INVOICE_STATUS, type CompanyView, type InvoiceView } from './types'
+import { BackLink } from '../../dermat_departments/components/BackLink'
 
 const HISTORY: Record<string, string> = { created: 'Drafted', edited: 'Edited', quantities: 'Quantities changed', issued: 'Issued', credited: 'Credit note made', cancelled: 'Cancelled' }
 
@@ -190,10 +191,7 @@ export function InvoicePage({ id }: { id: string }) {
         <div className="mx-auto flex max-w-7xl flex-col gap-5 pb-16">
           <header className="flex flex-col gap-4 border-b pb-4 xl:flex-row xl:items-start xl:justify-between">
             <div className="min-w-0 space-y-1">
-              <Link href="/backend/accounts/invoices" className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
-                <ArrowLeft className="h-3 w-3" aria-hidden="true" />
-                {t('dermat_accounts.inv.back', 'All invoices')}
-              </Link>
+              <BackLink href="/backend/accounts/invoices" label={t('dermat_accounts.inv.back', 'All invoices')} />
               <div className="flex flex-wrap items-center gap-2">
                 <h1 className="font-mono text-xl font-bold">{doc.code}</h1>
                 <StatusBadge variant={status.variant} dot>

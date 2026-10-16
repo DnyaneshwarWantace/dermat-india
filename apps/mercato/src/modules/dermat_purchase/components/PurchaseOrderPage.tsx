@@ -2,7 +2,7 @@
 
 import * as React from 'react'
 import Link from 'next/link'
-import { ArrowLeft, Building2, CheckCircle2, CircleSlash, PackageOpen, Pencil, Printer, Send } from 'lucide-react'
+import { Building2, CheckCircle2, CircleSlash, PackageOpen, Pencil, Printer, Send } from 'lucide-react'
 import { useT } from '@open-mercato/shared/lib/i18n/context'
 import { cn } from '@open-mercato/shared/lib/utils'
 import { Page, PageBody } from '@open-mercato/ui/backend/Page'
@@ -24,6 +24,7 @@ import { WhatsAppMenu, type WhatsAppMessage } from '../../dermat_products/compon
 import { dateText, rupeeText } from '../../dermat_products/lib/whatsapp'
 import { EmailPoButton } from './EmailPoDialog'
 import { useGranted } from '../../dermat_departments/components/useGranted'
+import { BackLink } from '../../dermat_departments/components/BackLink'
 
 function steps(po: PoView): StepIndicatorStep[] {
   const order = ['draft', 'pending_approval', 'approved', 'partly_received', 'received']
@@ -180,10 +181,7 @@ export function PurchaseOrderPage({ poId }: { poId: string }) {
       <PageBody>
         <div className="mx-auto flex max-w-6xl flex-col gap-6 pb-16">
           <div className="space-y-4">
-            <Link href="/backend/purchase/orders" className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
-              <ArrowLeft className="h-3 w-3" aria-hidden="true" />
-              {t('dermat_purchase.list.title', 'Purchase orders')}
-            </Link>
+            <BackLink href="/backend/purchase/orders" label={t('dermat_purchase.list.title', 'Purchase orders')} feature="dermat_purchase.view" />
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div className="space-y-1">
                 <div className="flex flex-wrap items-center gap-2">

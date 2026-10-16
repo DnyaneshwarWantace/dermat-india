@@ -8,7 +8,7 @@ export type BomStatus = 'draft' | 'approved' | 'superseded'
 @Index({ name: 'dermat_bom_headers_product_idx', properties: ['productId'] })
 @Unique({ name: 'dermat_bom_headers_org_code_uq', properties: ['organizationId', 'tenantId', 'code'] })
 export class BomHeader {
-  [OptionalProps]?: 'version' | 'status' | 'notes' | 'orderId' | 'orderNo' | 'createdByName' | 'approvedByName' | 'approvedAt' | 'createdAt' | 'updatedAt' | 'deletedAt'
+  [OptionalProps]?: 'name' | 'yieldPercent' | 'version' | 'status' | 'notes' | 'orderId' | 'orderNo' | 'createdByName' | 'approvedByName' | 'approvedAt' | 'createdAt' | 'updatedAt' | 'deletedAt'
 
   @PrimaryKey({ type: 'uuid', defaultRaw: 'gen_random_uuid()' })
   id!: string
@@ -28,6 +28,9 @@ export class BomHeader {
   @Property({ type: 'text' })
   code!: string
 
+  @Property({ type: 'text', nullable: true })
+  name?: string | null
+
   @Property({ name: 'product_id', type: 'uuid' })
   productId!: string
 
@@ -45,6 +48,9 @@ export class BomHeader {
 
   @Property({ name: 'batch_unit', type: 'text' })
   batchUnit!: string
+
+  @Property({ name: 'yield_percent', type: 'numeric', precision: 6, scale: 2, default: 100 })
+  yieldPercent: string = '100'
 
   @Property({ type: 'text', nullable: true })
   notes?: string | null

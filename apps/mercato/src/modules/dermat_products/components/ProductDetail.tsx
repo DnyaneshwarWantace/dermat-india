@@ -3,7 +3,7 @@
 import * as React from 'react'
 import { useGranted } from '../../dermat_departments/components/useGranted'
 import Link from 'next/link'
-import { ArrowLeft, Boxes, ClipboardList, FileStack, History, Layers, Pencil, Plus, Users, Warehouse } from 'lucide-react'
+import { Boxes, ClipboardList, FileStack, History, Layers, Pencil, Plus, Users, Warehouse } from 'lucide-react'
 import { useT } from '@open-mercato/shared/lib/i18n/context'
 import { cn } from '@open-mercato/shared/lib/utils'
 import { Page, PageBody } from '@open-mercato/ui/backend/Page'
@@ -15,6 +15,7 @@ import { ErrorMessage, LoadingMessage } from '@open-mercato/ui/backend/detail'
 import { KIND_CONFIG } from '../lib/kindConfig'
 import type { ProductKind } from '../lib/kinds'
 import { COMMON_FIELD_KEYS, fieldsForKind, loadProductFieldDefs, type ProductFieldDef } from '../lib/fieldDefs'
+import { BackLink } from '../../dermat_departments/components/BackLink'
 
 type Row = Record<string, unknown> & { id: string }
 type StockDetail = {
@@ -300,10 +301,7 @@ export function ProductDetail({ productId }: { productId: string }) {
         <div className="mx-auto max-w-7xl space-y-5 pb-16">
           <div className="flex flex-col gap-4 border-b pb-4 lg:flex-row lg:items-start lg:justify-between">
             <div className="min-w-0 space-y-1">
-              <Link href={`/backend/products?tab=${config.slug}`} className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
-                <ArrowLeft className="h-3 w-3" />
-                {config.title}
-              </Link>
+              <BackLink href={`/backend/products?tab=${config.slug}`} label={config.title} />
               <div className="flex flex-wrap items-center gap-2">
                 {code !== '—' ? <span className="font-mono text-lg font-semibold text-muted-foreground">{code}</span> : null}
                 <h1 className="text-xl font-bold">{text(product.title)}</h1>

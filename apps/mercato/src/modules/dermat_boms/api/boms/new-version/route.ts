@@ -4,7 +4,7 @@ import type { EntityManager } from '@mikro-orm/postgresql'
 import type { OpenApiRouteDoc } from '@open-mercato/shared/lib/openapi'
 import { BomHeader, BomItem } from '../../../data/entities'
 import { bomActionSchema } from '../../../data/validators'
-import { BomError, findBom } from '../../../lib/service'
+import { findBom } from '../../../lib/service'
 import { currentUserName, nextBomCode, resolveBomContext } from '../../../lib/server'
 import { bomErrorResponse, runGuarded } from '../../../lib/guard'
 
@@ -12,7 +12,7 @@ export const metadata = {
   POST: { requireAuth: true, requireFeatures: ['dermat_boms.manage'] },
 }
 
-const bodySchema = bomActionSchema.pick({ id: true })
+const bodySchema = bomActionSchema.pick({ id: true }).extend({ name: z.string().trim().max(200).optional().nullable() })
 
 async function POST(req: Request) {
   const ctx = await resolveBomContext(req)
@@ -21,15 +21,6 @@ async function POST(req: Request) {
   if (!parsed.success) return NextResponse.json({ error: 'id is required' }, { status: 400 })
   try {
     const source = await findBom(ctx, parsed.data.id)
-    const draft = await ctx.em.findOne(BomHeader, {
-      productId: source.productId,
-      orderId: source.orderId ?? null,
-      status: 'draft',
-      tenantId: ctx.tenantId,
-      organizationId: ctx.organizationId,
-      deletedAt: null,
-    })
-    if (draft) throw new BomError('This product already has a draft BOM', 409, { id: draft.id })
     const latest = await ctx.em.findOne(
       BomHeader,
       { productId: source.productId, tenantId: ctx.tenantId, organizationId: ctx.organizationId, deletedAt: null },
@@ -43,6 +34,7 @@ async function POST(req: Request) {
           organizationId: ctx.organizationId,
           tenantId: ctx.tenantId,
           code: await nextBomCode(txCtx),
+          name: parsed.data.name?.trim() || source.name || null,
           productId: source.productId,
           productKind: source.productKind,
           orderId: source.orderId ?? null,
@@ -51,6 +43,7 @@ async function POST(req: Request) {
           status: 'draft',
           batchSize: source.batchSize,
           batchUnit: source.batchUnit,
+          yieldPercent: source.yieldPercent,
           notes: source.notes ?? null,
           createdByName,
         })
@@ -90,11 +83,10 @@ export const openApi: OpenApiRouteDoc = {
   summary: 'Start a new version of a BOM',
   methods: {
     POST: {
-      summary: 'Copy a BOM into a new draft version',
+      summary: 'Copy a BOM into a new draft (Copy BOM, or edit an approved BOM as a new version)',
       tags: ['Dermat BOM'],
       requestBody: { schema: bodySchema },
       responses: [{ status: 201, description: 'Draft created', schema: z.object({ id: z.string(), code: z.string() }) }],
-      errors: [{ status: 409, description: 'A draft already exists' }],
     },
   },
 }

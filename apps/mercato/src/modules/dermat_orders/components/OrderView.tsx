@@ -6,12 +6,13 @@ import { OrderRecord } from './OrderRecord'
 import { useGranted } from '../../dermat_departments/components/useGranted'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { ArrowLeft, Ban, Copy, FileStack, Package, Pencil } from 'lucide-react'
+import { Ban, CheckCircle2, Copy, FileStack, Layers, Lock, Package, Pencil } from 'lucide-react'
 import { useT } from '@open-mercato/shared/lib/i18n/context'
 import { cn } from '@open-mercato/shared/lib/utils'
 import { Page, PageBody } from '@open-mercato/ui/backend/Page'
 import { Button } from '@open-mercato/ui/primitives/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@open-mercato/ui/primitives/card'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@open-mercato/ui/primitives/card'
+import { HorizontalScroll } from '@open-mercato/ui/primitives/drag-scroll'
 import { Textarea } from '@open-mercato/ui/primitives/textarea'
 import { StatusBadge } from '@open-mercato/ui/primitives/status-badge'
 import { SegmentedControl, SegmentedControlItem } from '@open-mercato/ui/primitives/segmented-control'
@@ -22,15 +23,14 @@ import { useGuardedMutation } from '@open-mercato/ui/backend/injection/useGuarde
 import { flash } from '@open-mercato/ui/backend/FlashMessages'
 import { ErrorMessage, LoadingMessage } from '@open-mercato/ui/backend/detail'
 import { LINE_SPEC_SECTIONS } from '../lib/specs'
-import { stageList } from '../lib/stages'
-import { ORDER_VARIANT, daysUntil, formatDate, formatDateTime, formatQty } from './format'
+import { stageList, stageDef } from '../lib/stages'
+import { ORDER_VARIANT, STAGE_VARIANT, daysUntil, formatDate, formatDateTime, formatQty } from './format'
 import { type StageActionRequest } from './StageSheet'
 import { StageRecord } from './StageRecord'
+import { subStageProgress } from './subStages'
 import { useStageAction } from './useStageAction'
 import { useOrderMaterials } from './useOrderMaterials'
 import { OrderMoneyCard } from './OrderMoneyCard'
-import { OrderKpis } from './order/OrderKpis'
-import { StageBar } from './stage/StageBar'
 import { AttentionList, DocumentsOverview, orderAttention, type OrderTab } from './OrderPanels'
 import type { Order, Stage } from './types'
 import { ExportButton } from '../../dermat_products/components/ExportButton'
@@ -40,9 +40,98 @@ import { openServerExport } from '../../dermat_products/lib/csvExport'
 import { paymentTermLabel } from '../../dermat_lists/lib/paymentTerms'
 import { useStageSettings } from './useStageSettings'
 import { MaterialsAccount, useOrderFile } from './OrderFile'
+import { BackLink } from '../../dermat_departments/components/BackLink'
 
 
 const KIND_LABEL: Record<string, string> = { raw_material: 'RM', packing_material: 'PM', bulk: 'Bulk', finished_goods: 'FG' }
+
+type RailBlock = { kind: 'single'; key: string } | { kind: 'arms'; lanes: Array<{ label: string; keys: string[] }> }
+
+const RAIL: RailBlock[] = [
+  { kind: 'single', key: 'order' },
+  { kind: 'single', key: 'advance' },
+  { kind: 'single', key: 'sampling' },
+  {
+    kind: 'arms',
+    lanes: [
+      { label: 'Packaging arm', keys: ['artwork'] },
+      { label: 'Formula arm', keys: ['formulation', 'planning'] },
+    ],
+  },
+  { kind: 'single', key: 'manufacturing' },
+  { kind: 'single', key: 'filling' },
+  { kind: 'single', key: 'packing' },
+  { kind: 'single', key: 'qc_qa' },
+  { kind: 'single', key: 'billing' },
+  { kind: 'single', key: 'dispatch' },
+]
+
+const STAGE_TONE: Record<string, string> = {
+  done: 'border-status-success-border bg-status-success-bg',
+  skipped: 'border-border bg-muted/40',
+  open: 'border-status-warning-border bg-status-warning-bg',
+  on_hold: 'border-status-error-border bg-status-error-bg',
+  waiting: 'border-dashed border-border bg-background opacity-50',
+}
+
+
+function StageCard({ order, stage, onOpen }: { order: Order; stage: Stage; onOpen: () => void }) {
+  const t = useT()
+  useStageSettings()
+  const progress = subStageProgress(order, stage)
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      title={stage.status === 'waiting' ? 'Opens when the earlier stages are done' : undefined}
+      className={cn(
+        'w-full rounded-lg border p-2.5 text-left transition-shadow',
+        stage.status === 'waiting' ? 'cursor-default' : 'hover:shadow-sm',
+        stage.status === 'open' && !stage.locked && 'ring-2 ring-status-warning-border',
+        stage.locked && 'opacity-80',
+        STAGE_TONE[stage.status] ?? STAGE_TONE.waiting,
+      )}
+    >
+      <div className="flex items-start justify-between gap-1">
+        <span className="text-xs font-semibold leading-tight">{stage.label}</span>
+        {stage.status === 'done' ? <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-status-success-icon" /> : null}
+        {stage.status === 'waiting' || stage.locked ? <Lock className="h-3 w-3 shrink-0 text-muted-foreground" aria-label={stage.locked ? t('dermat_orders.locked.with', 'Details with {department}', { department: stage.department }) : undefined} /> : null}
+      </div>
+      <div className="mt-1 text-xs text-muted-foreground">{stage.department}</div>
+      <div className="mt-1.5 truncate text-xs">
+        {stage.status === 'open' ? (
+          <span className={cn('mr-1 rounded-sm px-1 font-semibold', stage.data?.__started ? 'bg-status-info-bg text-status-info-text' : 'bg-status-warning-bg text-status-warning-text')}>
+            {stage.data?.__started ? t('dermat_orders.workState.in_progress', 'In progress') : t('dermat_orders.workState.pending', 'Pending')}
+          </span>
+        ) : null}
+        {stage.status === 'waiting'
+          ? t('dermat_orders.rail.waiting', 'Coming')
+          : stage.status === 'skipped'
+            ? t('dermat_orders.rail.skipped', 'Skipped')
+            : stage.responsibleName ?? (stage.status === 'done' ? stage.completedByName : null) ?? t('dermat_orders.rail.unassigned', 'Not assigned')}
+      </div>
+      {progress.total && !stage.locked && stage.status !== 'waiting' && stage.status !== 'skipped' ? (
+        <div className="mt-1.5 space-y-1">
+          <div className="flex h-1 overflow-hidden rounded-full bg-input" aria-hidden="true">
+            <span className={cn('h-full rounded-full', stage.status === 'done' ? 'bg-status-success-icon' : 'bg-status-warning-icon')} style={{ width: `${(progress.done / progress.total) * 100}%` }} />
+          </div>
+          <div className="truncate text-xs">
+            <span className="tabular-nums">
+              {progress.done}/{progress.total}
+            </span>
+            {progress.current ? <span className="text-muted-foreground"> · {progress.current}</span> : null}
+          </div>
+        </div>
+      ) : null}
+      {stage.days != null && stage.status !== 'waiting' ? (
+        <div className={cn('text-xs', stage.status === 'on_hold' ? 'font-semibold text-status-error-text' : 'text-muted-foreground')}>
+          {stage.status === 'on_hold' ? `${stage.holdParty ?? t('dermat_orders.rail.hold', 'On hold')} · ` : ''}
+          {t('dermat_orders.rail.days', '{days} d', { days: formatQty(stage.days, 1) })}
+        </div>
+      ) : null}
+    </button>
+  )
+}
 
 function Info({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -199,10 +288,7 @@ export function OrderView({ orderId }: { orderId: string }) {
         <div className="mx-auto max-w-7xl space-y-5 pb-16">
           <div className="flex flex-col gap-4 border-b pb-4 lg:flex-row lg:items-start lg:justify-between">
             <div className="min-w-0 space-y-1">
-              <Link href="/backend/orders" className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
-                <ArrowLeft className="h-3 w-3" />
-                {t('dermat_orders.back', 'Order book')}
-              </Link>
+              <BackLink href="/backend/orders" label={t('dermat_orders.back', 'Order book')} feature="dermat_orders.view" />
               <div className="flex flex-wrap items-center gap-2">
                 <h1 className="font-mono text-xl font-bold">{order.orderNo}</h1>
                 <StatusBadge variant={ORDER_VARIANT[order.status] ?? 'neutral'} dot>
@@ -265,8 +351,53 @@ export function OrderView({ orderId }: { orderId: string }) {
             </div>
           </div>
 
-          <OrderKpis order={order} />
-          <StageBar order={order} current={current[0]?.key ?? ''} />
+          <Card>
+            <CardHeader className="border-b bg-muted/20 pb-3">
+              <CardTitle className="text-sm font-bold">{t('dermat_orders.view.stages', 'Stages')}</CardTitle>
+              <CardDescription className="text-xs">
+                {t('dermat_orders.view.stagesHint', 'Green = done · Orange = in progress · Red = on hold · Grey = coming. Click a stage to open its work.')}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="p-3">
+              <HorizontalScroll showButtons showGradients step={340}>
+                <div className="flex min-w-max items-stretch gap-2 py-1 px-1">
+                  {RAIL.map((block, index) => (
+                    <React.Fragment key={block.kind === 'single' ? block.key : 'arms'}>
+                      {index > 0 ? <div className="flex items-center text-muted-foreground">›</div> : null}
+                      {block.kind === 'single' ? (
+                        <div className="flex w-36 flex-col justify-center">
+                          {stagesByKey.get(block.key) ? (
+                            <StageCard order={order} stage={stagesByKey.get(block.key)!} onOpen={() => goToStage(block.key)} />
+                          ) : null}
+                        </div>
+                      ) : (
+                        <div className="flex flex-col gap-2 rounded-lg border border-dashed p-2">
+                          {block.lanes.map((lane) => (
+                            <div key={lane.label} className="flex items-center gap-2">
+                              <span className="w-20 shrink-0 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                                {t(`dermat_orders.rail.lane.${lane.keys[0]}`, lane.label)}
+                              </span>
+                              {lane.keys.map((key, laneIndex) => (
+                                <React.Fragment key={key}>
+                                  {laneIndex > 0 ? <span className="text-muted-foreground">›</span> : null}
+                                  <div className="w-36">
+                                    {stagesByKey.get(key) ? <StageCard order={order} stage={stagesByKey.get(key)!} onOpen={() => goToStage(key)} /> : null}
+                                  </div>
+                                </React.Fragment>
+                              ))}
+                            </div>
+                          ))}
+                          <span className="text-center text-xs text-muted-foreground">
+                            {t('dermat_orders.rail.merge', 'Both arms must finish before Manufacturing')}
+                          </span>
+                        </div>
+                      )}
+                    </React.Fragment>
+                  ))}
+                </div>
+              </HorizontalScroll>
+            </CardContent>
+          </Card>
 
           <div className="grid grid-cols-1 gap-5 lg:grid-cols-12">
             <div className="min-w-0 space-y-4 lg:col-span-8">

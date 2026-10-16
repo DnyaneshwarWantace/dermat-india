@@ -2037,7 +2037,9 @@ CREATE TABLE public.dermat_bom_headers (
     updated_at timestamp with time zone NOT NULL,
     deleted_at timestamp with time zone,
     order_id uuid,
-    order_no text
+    order_no text,
+    name text,
+    yield_percent numeric(6,2) DEFAULT 100 NOT NULL
 );
 
 
@@ -15572,13 +15574,6 @@ CREATE INDEX dermat_batch_stages_batch_idx ON public.dermat_batch_stages USING b
 --
 
 CREATE INDEX dermat_batch_stages_org_tenant_idx ON public.dermat_batch_stages USING btree (organization_id, tenant_id);
-
-
---
--- Name: dermat_bom_headers_one_draft_uq; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE UNIQUE INDEX dermat_bom_headers_one_draft_uq ON public.dermat_bom_headers USING btree (product_id, COALESCE(order_id, '00000000-0000-0000-0000-000000000000'::uuid)) WHERE ((status = 'draft'::text) AND (deleted_at IS NULL));
 
 
 --

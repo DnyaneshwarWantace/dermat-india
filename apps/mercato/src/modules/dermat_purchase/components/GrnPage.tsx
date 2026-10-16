@@ -3,7 +3,7 @@
 import * as React from 'react'
 import { useGranted } from '../../dermat_departments/components/useGranted'
 import Link from 'next/link'
-import { ArrowLeft, FlaskConical, Undo2 } from 'lucide-react'
+import { FlaskConical, Undo2 } from 'lucide-react'
 import { useT } from '@open-mercato/shared/lib/i18n/context'
 import { cn } from '@open-mercato/shared/lib/utils'
 import { Page, PageBody } from '@open-mercato/ui/backend/Page'
@@ -19,6 +19,7 @@ import { useGuardedMutation } from '@open-mercato/ui/backend/injection/useGuarde
 import { flash } from '@open-mercato/ui/backend/FlashMessages'
 import { ErrorMessage, LoadingMessage } from '@open-mercato/ui/backend/detail'
 import { GRN_STATUS, HISTORY_LABEL, LINE_QC, day, qty, when, type GrnLineView, type GrnView } from './shared'
+import { BackLink } from '../../dermat_departments/components/BackLink'
 
 export function GrnPage({ grnId }: { grnId: string }) {
   const t = useT()
@@ -98,10 +99,7 @@ export function GrnPage({ grnId }: { grnId: string }) {
       <PageBody>
         <div className="mx-auto flex max-w-6xl flex-col gap-6 pb-16">
           <div className="space-y-3">
-            <Link href="/backend/purchase/grns" className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
-              <ArrowLeft className="h-3 w-3" aria-hidden="true" />
-              {t('dermat_purchase.grns.title', 'Goods receiving (GRN)')}
-            </Link>
+            <BackLink href="/backend/purchase/grns" label={t('dermat_purchase.grns.title', 'Goods receiving (GRN)')} feature="dermat_purchase.view" />
             <div className="flex flex-wrap items-center gap-2">
               <h1 className="font-mono text-2xl font-bold tracking-tight">{grn.code}</h1>
               <StatusBadge variant={GRN_STATUS[grn.status].variant} dot>

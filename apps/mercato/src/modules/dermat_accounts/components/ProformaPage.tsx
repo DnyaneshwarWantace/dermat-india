@@ -4,7 +4,7 @@ import * as React from 'react'
 import { useGranted } from '../../dermat_departments/components/useGranted'
 import { ViewOnlyNote } from '../../dermat_departments/components/ViewOnlyNote'
 import Link from 'next/link'
-import { ArrowLeft, Ban, CheckCircle2, History, Printer, RefreshCcw, Save } from 'lucide-react'
+import { Ban, CheckCircle2, History, Printer, RefreshCcw, Save } from 'lucide-react'
 import { useT } from '@open-mercato/shared/lib/i18n/context'
 import { Page, PageBody } from '@open-mercato/ui/backend/Page'
 import { Button } from '@open-mercato/ui/primitives/button'
@@ -21,6 +21,7 @@ import { WhatsAppMenu } from '../../dermat_products/components/WhatsAppMenu'
 import { dateText, rupeeText } from '../../dermat_products/lib/whatsapp'
 import { buildPiHtml, printPi } from './piPrint'
 import { PI_STATUS, type CompanyView, type PiView } from './types'
+import { BackLink } from '../../dermat_departments/components/BackLink'
 
 const HISTORY: Record<string, string> = { created: 'Drafted', edited: 'Edited', refreshed: 'Lines refreshed from the order', sent: 'Sent to customer', cancelled: 'Cancelled' }
 
@@ -165,10 +166,7 @@ export function ProformaPage({ id }: { id: string }) {
         <div className="mx-auto flex max-w-7xl flex-col gap-5 pb-16">
           <header className="flex flex-col gap-4 border-b pb-4 xl:flex-row xl:items-start xl:justify-between">
             <div className="min-w-0 space-y-1">
-              <Link href="/backend/accounts/proformas" className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
-                <ArrowLeft className="h-3 w-3" aria-hidden="true" />
-                {t('dermat_accounts.pi.back', 'All proforma invoices')}
-              </Link>
+              <BackLink href="/backend/accounts/proformas" label={t('dermat_accounts.pi.back', 'All proforma invoices')} />
               <div className="flex flex-wrap items-center gap-2">
                 <h1 className="font-mono text-xl font-bold">{pi.code}</h1>
                 <StatusBadge variant={status.variant} dot>
