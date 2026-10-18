@@ -125,7 +125,7 @@ export const STAGES: StageDef[] = [
       { key: 'pi_number', label: 'Proforma invoice no.', type: 'text' },
       { key: 'advance_percent', label: 'Advance %', type: 'number', placeholder: '40' },
       { key: 'advance_amount', label: 'Advance amount (₹)', type: 'number', required: true },
-      { key: 'received_on', label: 'Received on', type: 'date', required: true },
+      { key: 'received_on', label: 'Received on (blank = today)', type: 'date' },
       { key: 'payment_ref', label: 'Payment reference / UTR', type: 'text' },
     ],
   },
@@ -134,7 +134,7 @@ export const STAGES: StageDef[] = [
     label: 'Sampling / R&D',
     department: 'R&D',
     group: 'rnd',
-    hint: 'Sample made after the order, tracked by R&D number. Skip for a repeat order.',
+    hint: 'Formula arm: the sample is made and approved, tracked by R&D number (e.g. RD0486-01). Skipped by itself for a repeat order or a product with the same formula. Artwork does not wait for it.',
     after: ['advance'],
     canSkip: true,
     steps: [
@@ -156,8 +156,8 @@ export const STAGES: StageDef[] = [
     label: 'Artwork & packaging',
     department: 'Artwork & PM',
     group: 'artwork',
-    hint: 'Design, client approval, QA finalise, packing material ordered and received. Runs side by side with the formula.',
-    after: ['sampling'],
+    hint: 'Design, client approval, QA finalise, packing material ordered and received. Starts right after the advance and runs side by side with sampling and the formula.',
+    after: ['advance'],
     steps: [
       { key: 'design', label: 'Artwork designed' },
       { key: 'client_approved', label: 'Client approved the artwork' },

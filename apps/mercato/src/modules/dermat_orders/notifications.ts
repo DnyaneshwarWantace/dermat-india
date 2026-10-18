@@ -26,6 +26,17 @@ export const notificationTypes: NotificationTypeDefinition[] = [
     expiresAfterHours: 336,
   },
   {
+    type: 'dermat_orders.order.shortage',
+    module: 'dermat_orders',
+    titleKey: 'dermat_orders.notifications.shortage.title',
+    bodyKey: 'dermat_orders.notifications.shortage.body',
+    icon: 'alert-triangle',
+    severity: 'warning',
+    actions: openAction,
+    linkHref: '/backend/orders/{sourceEntityId}',
+    expiresAfterHours: 336,
+  },
+  {
     type: 'dermat_orders.stage.paused',
     module: 'dermat_orders',
     titleKey: 'dermat_orders.notifications.paused.title',

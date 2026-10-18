@@ -50,12 +50,11 @@ type RailBlock = { kind: 'single'; key: string } | { kind: 'arms'; lanes: Array<
 const RAIL: RailBlock[] = [
   { kind: 'single', key: 'order' },
   { kind: 'single', key: 'advance' },
-  { kind: 'single', key: 'sampling' },
   {
     kind: 'arms',
     lanes: [
       { label: 'Packaging arm', keys: ['artwork'] },
-      { label: 'Formula arm', keys: ['formulation', 'planning'] },
+      { label: 'Formula arm', keys: ['sampling', 'formulation', 'planning'] },
     ],
   },
   { kind: 'single', key: 'manufacturing' },
@@ -540,7 +539,8 @@ export function OrderView({ orderId }: { orderId: string }) {
               </span>
             </Info>
             <Info label={t('dermat_orders.view.pieces', 'Total pieces')}>{formatQty(totalPieces, 0)}</Info>
-            <Info label={t('dermat_orders.view.salesManager', 'Sales manager')}>{order.salesManager ?? '—'}</Info>
+            <Info label={t('dermat_orders.view.salesPerson', 'Sales person')}>{order.salesManager ?? '—'}</Info>
+            <Info label={t('dermat_orders.view.coordinator', 'Coordinator (POC)')}>{order.coordinator ?? '—'}</Info>
             {order.paymentTerms || order.paymentRemarks ? (
               <Info label={t('dermat_orders.view.payment', 'Payment')}>
                 {[paymentTermLabel(order.paymentTerms), order.paymentRemarks].filter(Boolean).join(' · ')}

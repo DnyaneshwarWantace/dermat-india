@@ -16,6 +16,7 @@ export const orderLineInputSchema = z.object({
   discountPercent: z.coerce.number().min(0).max(100).default(0),
   batchNo: optionalText(60),
   sampleNeeded: z.boolean().default(false),
+  sameAsProductId: z.string().uuid().optional().nullable(),
   rdNumber: optionalText(60),
   specs: z.object({ production: specSection, primary: specSection, secondary: specSection }).optional(),
 })
@@ -28,6 +29,9 @@ export const orderInputSchema = z.object({
   orderType: z.enum(['new', 'repeat', 'revision']).default('new'),
   sourceOrderId: z.string().uuid().optional().nullable(),
   salesManager: optionalText(120),
+  coordinator: optionalText(120),
+  fromPiId: z.string().uuid().optional().nullable(),
+  advanceReceived: z.object({ amount: z.coerce.number().positive().max(100_000_000), receivedOn: isoDate.optional().nullable(), reference: optionalText(120) }).optional().nullable(),
   paymentTerms: optionalText(120),
   paymentRemarks: optionalText(200),
   productRemarks: optionalText(2000),

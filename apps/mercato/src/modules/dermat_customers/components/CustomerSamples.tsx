@@ -36,7 +36,7 @@ export function CustomerSamples({ customerId }: { customerId: string }) {
 
   React.useEffect(() => {
     void apiCall<{ items?: Formula[] }>(`/api/dermat_customers/formulas?customerId=${encodeURIComponent(customerId)}`, undefined, { fallback: { items: [] } }).then((call) => setFormulas(call.result?.items ?? []))
-    void apiCall<{ items?: Request[] }>(`/api/dermat_rnd/requests?view=all&customerId=${encodeURIComponent(customerId)}`, undefined, { fallback: { items: [] } }).then((call) => setRequests(call.ok ? (call.result?.items ?? []) : null))
+    void apiCall<{ items?: Request[] }>(`/api/dermat_rnd/requests?view=all&customerId=${encodeURIComponent(customerId)}`, { headers: { 'x-om-forbidden-redirect': '0' } }, { fallback: { items: [] } }).then((call) => setRequests(call.ok ? (call.result?.items ?? []) : null))
   }, [customerId])
 
   return (

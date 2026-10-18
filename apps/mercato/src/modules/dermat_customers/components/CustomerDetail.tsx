@@ -22,6 +22,7 @@ import { useGuardedMutation } from '@open-mercato/ui/backend/injection/useGuarde
 import { flash } from '@open-mercato/ui/backend/FlashMessages'
 import { ErrorMessage, LoadingMessage } from '@open-mercato/ui/backend/detail'
 import { CustomerStatement } from '../../dermat_accounts/components/CustomerStatement'
+import { SampleChargesCard } from '../../dermat_accounts/components/SampleChargesCard'
 import { usePaymentTerms } from '../../dermat_lists/components/usePaymentTerms'
 import { paymentTermLabel } from '../../dermat_lists/lib/paymentTerms'
 import { CustomerSamples } from './CustomerSamples'
@@ -269,7 +270,7 @@ export function CustomerDetail({ customerId }: { customerId: string }) {
   const load = React.useCallback(async () => {
     const [companyCall, addressCall, orderCall] = await Promise.all([
       apiCall<{ items?: Row[] }>(`/api/customers/companies?id=${encodeURIComponent(customerId)}&pageSize=1`, undefined, { fallback: { items: [] } }),
-      apiCall<{ items?: Address[] }>(`/api/customers/addresses?entityId=${encodeURIComponent(customerId)}&pageSize=20`, undefined, { fallback: { items: [] } }),
+      apiCall<{ items?: Address[] }>(`/api/customers/addresses?entityId=${encodeURIComponent(customerId)}&pageSize=20`, { headers: { 'x-om-forbidden-redirect': '0' } }, { fallback: { items: [] } }),
       apiCall<{ items?: OrderRow[] }>(`/api/dermat_orders/orders?customerId=${encodeURIComponent(customerId)}&pageSize=100`, undefined, { fallback: { items: [] } }),
     ])
     const row = companyCall.result?.items?.[0]
@@ -486,6 +487,10 @@ export function CustomerDetail({ customerId }: { customerId: string }) {
                 <CustomerStatement customerId={customerId} customerName={name} />
               </CardContent>
             </Card>
+
+            <div className="lg:col-span-8">
+              <SampleChargesCard customerId={customerId} />
+            </div>
 
             <div className="lg:col-span-12">
               <CustomerSamples customerId={customerId} />

@@ -17,8 +17,8 @@ export type PiLine = {
 export type PiView = {
   id: string
   code: string
-  orderId: string
-  orderNo: string
+  orderId: string | null
+  orderNo: string | null
   customerId: string
   customerName: string
   customerGstin: string | null

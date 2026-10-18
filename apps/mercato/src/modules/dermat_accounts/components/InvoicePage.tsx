@@ -39,6 +39,7 @@ export function InvoicePage({ id }: { id: string }) {
   const [doc, setDoc] = React.useState<InvoiceView | null>(null)
   const [company, setCompany] = React.useState<CompanyView | null>(null)
   const [phone, setPhone] = React.useState<string | null>(null)
+  const [billingRemarks, setBillingRemarks] = React.useState<string | null>(null)
   const [loadError, setLoadError] = React.useState<string | null>(null)
   const [busy, setBusy] = React.useState(false)
   const [form, setForm] = React.useState<Record<string, string>>({})
@@ -72,8 +73,9 @@ export function InvoicePage({ id }: { id: string }) {
     }
     apply(call.result)
     setCompany(companyCall.result ?? null)
-    const order = await apiCall<{ customer?: { phone?: string | null } | null }>(`/api/dermat_orders/orders?id=${encodeURIComponent(call.result.orderId)}`)
+    const order = await apiCall<{ customer?: { phone?: string | null } | null; billingRemarks?: string | null }>(`/api/dermat_orders/orders?id=${encodeURIComponent(call.result.orderId)}`)
     setPhone(order.result?.customer?.phone ?? null)
+    setBillingRemarks(order.result?.billingRemarks ?? null)
   }, [id, t])
 
   React.useEffect(() => {
@@ -241,6 +243,12 @@ export function InvoicePage({ id }: { id: string }) {
               ) : null}
             </div>
           </header>
+          {billingRemarks && doc.status === 'draft' ? (
+            <div className="rounded-md border border-status-warning-border bg-status-warning-bg px-4 py-3 text-sm text-status-warning-text">
+              <p className="text-xs font-semibold uppercase tracking-wide">{t('dermat_accounts.inv.billingRemarks', 'Billing remarks from the order — add these to the bill')}</p>
+              <p className="whitespace-pre-wrap">{billingRemarks}</p>
+            </div>
+          ) : null}
           {!canRecord ? <ViewOnlyNote>{t('dermat_accounts.viewOnly', 'View only: making, issuing and cancelling documents is done by Accounts.')}</ViewOnlyNote> : null}
 
           {doc.status === 'cancelled' ? <p className="rounded-lg border bg-muted/40 p-3 text-sm text-muted-foreground">{t('dermat_accounts.inv.cancelledNote', 'Cancelled: {reason}', { reason: doc.cancelReason ?? '—' })}</p> : null}

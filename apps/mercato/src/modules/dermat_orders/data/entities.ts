@@ -19,6 +19,7 @@ export class DermatOrder {
     | 'customerPoRef'
     | 'sourceOrderId'
     | 'salesManager'
+    | 'coordinator'
     | 'paymentTerms'
     | 'paymentRemarks'
     | 'productRemarks'
@@ -68,6 +69,9 @@ export class DermatOrder {
 
   @Property({ name: 'sales_manager', type: 'text', nullable: true })
   salesManager?: string | null
+
+  @Property({ type: 'text', nullable: true })
+  coordinator?: string | null
 
   @Property({ name: 'payment_terms', type: 'text', nullable: true })
   paymentTerms?: string | null
@@ -125,7 +129,7 @@ export class DermatOrder {
 @Index({ name: 'dermat_order_lines_order_idx', properties: ['orderId'] })
 @Index({ name: 'dermat_order_lines_product_idx', properties: ['productId'] })
 export class DermatOrderLine {
-  [OptionalProps]?: 'brandName' | 'packSize' | 'mrp' | 'rate' | 'gstPercent' | 'discountPercent' | 'batchNo' | 'sampleNeeded' | 'rdNumber' | 'specs' | 'createdAt' | 'updatedAt'
+  [OptionalProps]?: 'brandName' | 'packSize' | 'mrp' | 'rate' | 'gstPercent' | 'discountPercent' | 'batchNo' | 'sampleNeeded' | 'sameAsProductId' | 'rdNumber' | 'specs' | 'createdAt' | 'updatedAt'
 
   @PrimaryKey({ type: 'uuid', defaultRaw: 'gen_random_uuid()' })
   id!: string
@@ -171,6 +175,9 @@ export class DermatOrderLine {
 
   @Property({ name: 'sample_needed', type: 'boolean', default: false })
   sampleNeeded: boolean = false
+
+  @Property({ name: 'same_as_product_id', type: 'uuid', nullable: true })
+  sameAsProductId?: string | null
 
   @Property({ name: 'rd_number', type: 'text', nullable: true })
   rdNumber?: string | null

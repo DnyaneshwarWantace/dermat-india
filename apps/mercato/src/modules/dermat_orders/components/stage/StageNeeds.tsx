@@ -161,7 +161,7 @@ export function StageContext({ order, stage, materials }: { order: Order; stage:
       return (
         <dl className="divide-y">
           <Row label={t('dermat_orders.stagePage.orderValue', 'Order value')}>{money(value)}</Row>
-          <Row label={t('dermat_orders.stagePage.expected', 'Expected advance (40%)')}>{money(value == null ? null : value * 0.4)}</Row>
+          <Row label={t('dermat_orders.stagePage.expected', 'Expected advance (40% unless agreed otherwise)')}>{money(value == null ? null : value * 0.4)}</Row>
           <Row label={t('dermat_orders.view.payment', 'Payment')}>
             {[paymentTermLabel(order.paymentTerms), order.paymentRemarks].filter(Boolean).join(' · ') || '—'}
           </Row>
@@ -254,12 +254,19 @@ export function StageContext({ order, stage, materials }: { order: Order; stage:
       )
     case 'billing':
       return (
+        <div className="space-y-3">
+        {order.billingRemarks ? (
+          <div className="rounded-md border border-status-warning-border bg-status-warning-bg px-3 py-2 text-sm text-status-warning-text">
+            <p className="text-xs font-semibold uppercase tracking-wide">{t('dermat_orders.stagePage.billingRemarksTitle', 'Add to the bill (written at booking)')}</p>
+            <p className="whitespace-pre-wrap">{order.billingRemarks}</p>
+          </div>
+        ) : null}
         <dl className="divide-y">
           <Row label={t('dermat_orders.stagePage.orderValue', 'Order value')}>{money(value)}</Row>
           <Row label={t('dermat_orders.stagePage.advance', 'Advance received')}>{money(advanceAmount)}</Row>
           <Row label={t('dermat_orders.stagePage.balance', 'Balance to collect')}>{money(value == null ? null : value - (advanceAmount ?? 0))}</Row>
-          <Row label={t('dermat_orders.form.billingRemarks', 'Billing remarks')}>{order.billingRemarks ?? '—'}</Row>
         </dl>
+        </div>
       )
     case 'dispatch':
       return (

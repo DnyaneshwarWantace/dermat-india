@@ -11,6 +11,7 @@ import { reservationsForOrder } from '../../dermat_planning/lib/service'
 import { USE_EXISTING_BULK, existingBulkProblem, packItems } from './productionStock'
 import { paymentView, paymentsFor, received, recordAdvanceFromStage } from '../../dermat_accounts/lib/service'
 import { priceLine, priceOrder } from './pricing'
+import { paymentTermDays, paymentTermLabel } from '../../dermat_lists/lib/paymentTerms'
 import { canSeeMoney, isMoneyEvent, isMoneyStageField, withoutMoneyFields } from './money'
 import { documentCounts, documentStatus, missingDocuments } from './stageDocuments'
 
@@ -122,6 +123,50 @@ async function afterOpened(ctx: OrderContext, order: DermatOrder, opened: string
       byName,
     })
     if (created) logEvent(ctx, order, 'qc_created', key, `${created} QC check${created > 1 ? 's' : ''} sent to QC`, null)
+  }
+}
+
+function todayIst(): string {
+  return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' })
+}
+
+async function autoPassStages(ctx: OrderContext, order: DermatOrder, stages: DermatOrderStage[], opened: string[]): Promise<boolean> {
+  const byKey = new Map(stages.map((stage) => [stage.stageKey, stage]))
+  let changed = false
+  const advance = byKey.get('advance')
+  if (opened.includes('advance') && advance?.status === 'open' && (paymentTermDays(order.paymentTerms) ?? 0) > 0) {
+    advance.status = 'done'
+    advance.completedAt = new Date()
+    advance.completedByName = null
+    advance.data = { ...(advance.data ?? {}), __credit: true, received_on: todayIst() }
+    logEvent(ctx, order, 'completed', 'advance', `Credit customer (${paymentTermLabel(order.paymentTerms)}): no advance needed`, null)
+    changed = true
+  }
+  const sampling = byKey.get('sampling')
+  if (opened.includes('sampling') && sampling?.status === 'open') {
+    const lines = await ctx.em.find(DermatOrderLine, { orderId: order.id })
+    if (lines.length && lines.every((line) => !line.sampleNeeded)) {
+      sampling.status = 'skipped'
+      sampling.completedAt = new Date()
+      sampling.completedByName = null
+      const reason = order.orderType === 'repeat'
+        ? 'Repeat order: no new sample needed'
+        : lines.some((line) => line.sameAsProductId)
+          ? 'Same formula as an existing product: no new sample needed'
+          : 'No product on this order needs a sample'
+      logEvent(ctx, order, 'skipped', 'sampling', reason, null)
+      changed = true
+    }
+  }
+  return changed
+}
+
+export async function progressStages(ctx: OrderContext, order: DermatOrder, stages: DermatOrderStage[], byName: string | null): Promise<void> {
+  for (let round = 0; round < 6; round += 1) {
+    const opened = openReadyStages(stages)
+    if (!opened.length) return
+    await afterOpened(ctx, order, opened, byName)
+    if (!(await autoPassStages(ctx, order, stages, opened))) return
   }
 }
 
@@ -444,10 +489,11 @@ export async function applyStageAction(ctx: OrderContext, order: DermatOrder, in
       logEvent(ctx, order, 'completed', def.key, note, byName, changed)
       if (def.key === 'sampling') await linkSampleApproval(ctx, order, stage.data ?? {}, byName)
       if (def.key === 'manufacturing') stage.data = { ...(stage.data ?? {}), __bom_used: await bomsInUse(ctx, order.id, byName) }
+      if (def.key === 'advance' && !stage.data?.received_on) stage.data = { ...(stage.data ?? {}), received_on: todayIst() }
       if (def.key === 'advance' && (await recordAdvanceFromStage(ctx, order, stage.data ?? {}, byName))) {
         logEvent(ctx, order, 'payment', def.key, `Advance ₹${Number(stage.data?.advance_amount).toLocaleString('en-IN')} recorded in Accounts`, byName)
       }
-      await afterOpened(ctx, order, openReadyStages(stages), byName)
+      await progressStages(ctx, order, stages, byName)
       break
     }
     case 'skip': {
@@ -457,7 +503,7 @@ export async function applyStageAction(ctx: OrderContext, order: DermatOrder, in
       stage.completedAt = new Date()
       stage.completedByName = byName
       logEvent(ctx, order, 'skipped', def.key, note, byName)
-      await afterOpened(ctx, order, openReadyStages(stages), byName)
+      await progressStages(ctx, order, stages, byName)
       break
     }
     case 'hold': {
@@ -543,7 +589,7 @@ export function stageViews(stages: DermatOrderStage[], overrides?: StageOverride
     const closed = stage?.completedAt ? stage.completedAt.getTime() : null
     return {
       key: def.key,
-      label: def.label,
+      label: def.key === 'advance' && def.label === 'Advance received' && !isFinished(stage?.status) ? 'Advance pending' : def.label,
       department: def.department,
       hint: def.hint,
       status: stage?.status ?? 'waiting',
@@ -595,6 +641,7 @@ export async function serializeOrder(ctx: OrderContext, order: DermatOrder) {
     orderType: order.orderType,
     sourceOrderId: order.sourceOrderId ?? null,
     salesManager: order.salesManager ?? null,
+    coordinator: order.coordinator ?? null,
     paymentTerms: order.paymentTerms ?? null,
     paymentRemarks: order.paymentRemarks ?? null,
     productRemarks: order.productRemarks ?? null,
@@ -629,6 +676,7 @@ export async function serializeOrder(ctx: OrderContext, order: DermatOrder) {
       price: priceLine(pricedLine(line), order.pricesIncludeGst),
       batchNo: line.batchNo ?? null,
       sampleNeeded: line.sampleNeeded,
+      sameAsProductId: line.sameAsProductId ?? null,
       rdNumber: line.rdNumber ?? null,
       specs: line.specs ?? {},
     })),

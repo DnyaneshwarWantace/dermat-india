@@ -4,7 +4,9 @@ import type { EntityManager } from '@mikro-orm/postgresql'
 import type { OpenApiRouteDoc } from '@open-mercato/shared/lib/openapi'
 import { DermatOrder, DermatOrderLine, DermatOrderStage } from '../../data/entities'
 import { orderInputSchema, orderListQuerySchema, orderUpdateSchema, type OrderInput } from '../../data/validators'
-import { createStages, logEvent, openReadyStages, serializeOrder, stageViews } from '../../lib/engine'
+import { createStages, logEvent, progressStages, serializeOrder, stageViews } from '../../lib/engine'
+import { recordAdvanceFromStage } from '../../../dermat_accounts/lib/service'
+import { linkPiToOrder } from '../../../dermat_accounts/lib/documents'
 import { isFinished, orderHeadline } from '../../lib/stages'
 import {
   OrderError,
@@ -19,6 +21,7 @@ import {
 } from '../../lib/server'
 import { orderFilter } from '../../lib/orderFilter'
 import { notifyStagesOpened } from '../../lib/notify'
+import { warnShortagesAtBooking } from '../../lib/shortage'
 import { enforceOrderLock, orderErrorResponse, runGuarded } from '../../lib/guard'
 import { withStageOverrides } from '../../lib/stageSettings'
 
@@ -66,6 +69,7 @@ function applyHeader(order: DermatOrder, input: OrderInput) {
   order.orderType = input.orderType
   order.sourceOrderId = input.sourceOrderId ?? null
   order.salesManager = clean(input.salesManager)
+  order.coordinator = clean(input.coordinator)
   order.paymentTerms = clean(input.paymentTerms)
   order.paymentRemarks = clean(input.paymentRemarks)
   order.productRemarks = clean(input.productRemarks)
@@ -98,7 +102,7 @@ async function nextBatchNumbers(ctx: OrderContext, count: number): Promise<strin
 }
 
 function describeChanges(before: { header: Record<string, unknown>; lines: Array<{ productId: string; quantity: number; rate: number | null }> }, input: OrderInput, titles: Map<string, string>): string {
-  const labels: Record<string, string> = { deliveryDate: 'delivery date', customerPoRef: 'customer PO', salesManager: 'sales manager', paymentTerms: 'payment terms', paymentRemarks: 'payment remarks', priority: 'priority', shippingAddress: 'shipping address', billingAddress: 'billing address', productRemarks: 'product remarks', packingRemarks: 'packing remarks', billingRemarks: 'billing remarks' }
+  const labels: Record<string, string> = { deliveryDate: 'delivery date', customerPoRef: 'customer PO', salesManager: 'sales person', coordinator: 'coordinator', paymentTerms: 'payment terms', paymentRemarks: 'payment remarks', priority: 'priority', shippingAddress: 'shipping address', billingAddress: 'billing address', productRemarks: 'product remarks', packingRemarks: 'packing remarks', billingRemarks: 'billing remarks' }
   const changes: string[] = []
   for (const [key, label] of Object.entries(labels)) {
     const was = before.header[key] ?? null
@@ -136,7 +140,8 @@ async function writeLines(ctx: OrderContext, order: DermatOrder, input: OrderInp
         gstPercent: String(line.gstPercent),
         discountPercent: String(line.discountPercent),
         batchNo: clean(line.batchNo) ?? numbers.shift() ?? null,
-        sampleNeeded: line.sampleNeeded,
+        sampleNeeded: line.sameAsProductId ? false : line.sampleNeeded,
+        sameAsProductId: line.sameAsProductId ?? null,
         rdNumber: clean(line.rdNumber),
         specs: cleanSpecs(line.specs),
       }),
@@ -245,13 +250,32 @@ async function POST(req: Request) {
         await writeLines(txCtx, created, input)
         const stages = createStages(txCtx, created, byName)
         logEvent(txCtx, created, 'created', 'order', created.orderType === 'repeat' ? 'Repeat order' : null, byName)
-        for (const opened of openReadyStages(stages)) logEvent(txCtx, created, 'opened', opened, null, null)
+        const advance = stages.find((stage) => stage.stageKey === 'advance')
+        if (input.advanceReceived && advance) {
+          const receivedOn = input.advanceReceived.receivedOn ?? input.orderDate
+          advance.status = 'done'
+          advance.openedAt = new Date()
+          advance.completedAt = new Date()
+          advance.completedByName = byName
+          advance.data = { advance_amount: input.advanceReceived.amount, received_on: receivedOn, payment_ref: clean(input.advanceReceived.reference) ?? undefined, __prepaid: true }
+          logEvent(txCtx, created, 'completed', 'advance', `Advance ₹${input.advanceReceived.amount.toLocaleString('en-IN')} received before booking`, byName)
+          await em.flush()
+          if (await recordAdvanceFromStage(txCtx, created, advance.data ?? {}, byName)) {
+            logEvent(txCtx, created, 'payment', 'advance', `Advance ₹${input.advanceReceived.amount.toLocaleString('en-IN')} recorded in Accounts`, byName)
+          }
+        }
+        if (input.fromPiId) {
+          await linkPiToOrder(txCtx, input.fromPiId, created, byName)
+          logEvent(txCtx, created, 'pi_linked', 'advance', 'Made from a proforma invoice raised before the order', byName)
+        }
+        await progressStages(txCtx, created, stages, byName)
         await em.flush()
         return created
       })
       const openedNow = (await ctx.em.fork().find(DermatOrderStage, { orderId: order.id, status: 'open' })).map((stage) => stage.stageKey)
       await notifyStagesOpened(ctx, order, openedNow)
-      return NextResponse.json({ id: order.id, orderNo: order.orderNo }, { status: 201 })
+      const short = await warnShortagesAtBooking(ctx, order, byName)
+      return NextResponse.json({ id: order.id, orderNo: order.orderNo, short }, { status: 201 })
     })
   } catch (error) {
     return orderErrorResponse(error)
@@ -280,7 +304,7 @@ async function PUT(req: Request) {
         const fresh = await findOrder(txCtx, order.id)
         const oldLines = await em.find(DermatOrderLine, { orderId: fresh.id })
         const before = {
-          header: { deliveryDate: fresh.deliveryDate, customerPoRef: fresh.customerPoRef, salesManager: fresh.salesManager, paymentTerms: fresh.paymentTerms, paymentRemarks: fresh.paymentRemarks, priority: fresh.priority, shippingAddress: fresh.shippingAddress, billingAddress: fresh.billingAddress, productRemarks: fresh.productRemarks, packingRemarks: fresh.packingRemarks, billingRemarks: fresh.billingRemarks },
+          header: { deliveryDate: fresh.deliveryDate, customerPoRef: fresh.customerPoRef, salesManager: fresh.salesManager, coordinator: fresh.coordinator, paymentTerms: fresh.paymentTerms, paymentRemarks: fresh.paymentRemarks, priority: fresh.priority, shippingAddress: fresh.shippingAddress, billingAddress: fresh.billingAddress, productRemarks: fresh.productRemarks, packingRemarks: fresh.packingRemarks, billingRemarks: fresh.billingRemarks },
           lines: oldLines.map((line) => ({ productId: line.productId, quantity: Number(line.quantity), rate: line.rate == null ? null : Number(line.rate) })),
         }
         const titles = new Map([...(await loadProducts(txCtx, [...oldLines.map((line) => line.productId), ...input.lines.map((line) => line.productId)])).entries()].map(([id, product]) => [id, product.title]))

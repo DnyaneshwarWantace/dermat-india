@@ -16,7 +16,8 @@ export const metadata = {
 const ORDER_FIELDS = {
   orderType: { label: 'Order type', max: 20, choices: ['new', 'repeat', 'revision'] },
   customerPoRef: { label: 'Customer PO', max: 120 },
-  salesManager: { label: 'Sales POC', max: 120 },
+  salesManager: { label: 'Sales person', max: 120 },
+  coordinator: { label: 'Coordinator (POC)', max: 120 },
   deliveryDate: { label: 'Delivery date', max: 10, date: true },
   paymentTerms: { label: 'Payment terms', max: 120 },
   paymentRemarks: { label: 'Payment remarks', max: 200 },

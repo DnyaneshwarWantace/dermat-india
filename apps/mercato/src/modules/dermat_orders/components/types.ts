@@ -40,6 +40,7 @@ export type OrderLine = {
   price: { gross: number; discount: number; taxable: number; gst: number; total: number } | null
   batchNo: string | null
   sampleNeeded?: boolean
+  sameAsProductId?: string | null
   rdNumber?: string | null
   specs: Record<string, Record<string, string>>
 }
@@ -115,6 +116,7 @@ export type Order = {
   orderType: 'new' | 'repeat' | 'revision'
   sourceOrderId: string | null
   salesManager: string | null
+  coordinator?: string | null
   paymentTerms: string | null
   paymentRemarks: string | null
   productRemarks: string | null

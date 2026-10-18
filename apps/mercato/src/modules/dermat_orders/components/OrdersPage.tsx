@@ -5,7 +5,7 @@ import { ViewsButton } from '../../dermat_products/components/ViewsPanel'
 import { useGranted } from '../../dermat_departments/components/useGranted'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { AlertTriangle, ArrowRight, CalendarClock, ChevronLeft, ChevronRight, ClipboardList, Clock, Eye, RotateCcw, Columns3, FileSpreadsheet, IndianRupee, LayoutGrid, List, PauseCircle, Plus, Search, Wallet } from 'lucide-react'
+import { AlertTriangle, ArrowRight, CalendarClock, ChevronLeft, ChevronRight, ClipboardList, Clock, Copy, Eye, RotateCcw, Columns3, FileSpreadsheet, IndianRupee, LayoutGrid, List, PauseCircle, Plus, Search, Wallet } from 'lucide-react'
 import { useT } from '@open-mercato/shared/lib/i18n/context'
 import { cn } from '@open-mercato/shared/lib/utils'
 import { Page, PageBody } from '@open-mercato/ui/backend/Page'
@@ -114,8 +114,19 @@ function ActionCell({ order, onOpen, opening }: { order: SheetOrder; onOpen: (or
       <Eye className="h-4 w-4" aria-hidden="true" />
     </Link>
   )
-  if (order.status === 'cancelled') return <span className="flex items-center justify-between gap-1"><StatePill state="skipped" label={t('dermat_orders.status.cancelled', 'Cancelled')} />{view}</span>
-  if (!order.current.length) return <span className="flex items-center justify-between gap-1"><StatePill state="completed" label={t('dermat_orders.book.allDone', 'All stages done')} /><span className="flex items-center gap-1"><ReopenClock order={order} onOpen={onOpen} />{view}</span></span>
+  const copy = (
+    <Link
+      href={`/backend/orders/new?copyFrom=${order.id}`}
+      onClick={(event) => event.stopPropagation()}
+      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      title={t('dermat_orders.book.copyOrder', 'Copy as a repeat order (change prices before saving)')}
+      aria-label={t('dermat_orders.book.copyOrder', 'Copy as a repeat order (change prices before saving)')}
+    >
+      <Copy className="h-4 w-4" aria-hidden="true" />
+    </Link>
+  )
+  if (order.status === 'cancelled') return <span className="flex items-center justify-between gap-1"><StatePill state="skipped" label={t('dermat_orders.status.cancelled', 'Cancelled')} /><span className="flex items-center gap-1">{copy}{view}</span></span>
+  if (!order.current.length) return <span className="flex items-center justify-between gap-1"><StatePill state="completed" label={t('dermat_orders.book.allDone', 'All stages done')} /><span className="flex items-center gap-1"><ReopenClock order={order} onOpen={onOpen} />{copy}{view}</span></span>
   return (
     <span className="flex items-center gap-1">
       <span className="flex min-w-0 flex-1 flex-col gap-0.5">
@@ -144,6 +155,7 @@ function ActionCell({ order, onOpen, opening }: { order: SheetOrder; onOpen: (or
         })}
       </span>
       <ReopenClock order={order} onOpen={onOpen} />
+      {copy}
       {view}
     </span>
   )

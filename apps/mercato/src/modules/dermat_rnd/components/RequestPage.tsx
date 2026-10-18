@@ -11,6 +11,7 @@ import { RequestActionDialog, type RequestActionKind } from './request/RequestAc
 import { RequestFormDialog } from './request/RequestFormDialog'
 import { RequestHeader } from './request/RequestHeader'
 import { RequestOverview } from './request/RequestOverview'
+import { SampleChargesCard } from '../../dermat_accounts/components/SampleChargesCard'
 import { SamplesTab } from './request/SamplesTab'
 import { formFromRequest, type RequestForm } from './request/requestForm'
 import { StabilityTab } from './stability/StabilityTab'
@@ -87,7 +88,12 @@ export function RequestPage({ requestId, backHref = '/backend/rnd/requests' }: {
             <SegmentedControlItem value="samples">{t('dermat_rnd.tab.samples', 'Samples ({count})', { count: request.rounds.length })}</SegmentedControlItem>
             <SegmentedControlItem value="activity">{t('dermat_rnd.tab.activity', 'Activity')}</SegmentedControlItem>
           </SegmentedControl>
-          {tab === 'request' ? <RequestOverview request={request} trials={trials} onOpenTrial={openTrial} /> : null}
+          {tab === 'request' ? (
+            <div className="flex flex-col gap-4">
+              <RequestOverview request={request} trials={trials} onOpenTrial={openTrial} />
+              {request.kind === 'client' || request.customerId ? <SampleChargesCard customerId={request.customerId ?? null} rdRequestId={request.id} rdCode={request.code} /> : null}
+            </div>
+          ) : null}
           {tab === 'trials' ? (
             <TrialsTab
               request={request}

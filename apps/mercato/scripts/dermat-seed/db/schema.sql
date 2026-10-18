@@ -2390,7 +2390,8 @@ CREATE TABLE public.dermat_order_lines (
     gst_percent numeric(6,2) DEFAULT '18'::numeric NOT NULL,
     discount_percent numeric(6,2) DEFAULT '0'::numeric NOT NULL,
     sample_needed boolean DEFAULT false NOT NULL,
-    rd_number text
+    rd_number text,
+    same_as_product_id uuid
 );
 
 
@@ -2477,7 +2478,8 @@ CREATE TABLE public.dermat_orders (
     shipping_address text,
     revised_at timestamp with time zone,
     revised_by_name text,
-    revision_note text
+    revision_note text,
+    coordinator text
 );
 
 
@@ -2651,8 +2653,8 @@ CREATE TABLE public.dermat_proforma_invoices (
     organization_id uuid NOT NULL,
     tenant_id uuid NOT NULL,
     code text NOT NULL,
-    order_id uuid NOT NULL,
-    order_no text NOT NULL,
+    order_id uuid,
+    order_no text,
     customer_id uuid NOT NULL,
     customer_name text NOT NULL,
     customer_gstin text,
@@ -18874,6 +18876,30 @@ CREATE INDEX dermat_packaging_codes_org_tenant_idx ON public.dermat_packaging_co
 
 CREATE UNIQUE INDEX dermat_packaging_codes_code_uq ON public.dermat_packaging_codes USING btree (organization_id, tenant_id, upper(code)) WHERE (deleted_at IS NULL);
 
+
+CREATE TABLE public.dermat_sample_charges (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    organization_id uuid NOT NULL,
+    tenant_id uuid NOT NULL,
+    customer_id uuid NOT NULL,
+    rd_request_id uuid,
+    rd_code text,
+    amount numeric(14,2) NOT NULL,
+    paid_on text NOT NULL,
+    mode text,
+    reference text,
+    note text,
+    by_name text,
+    voided_at timestamp with time zone,
+    void_reason text,
+    created_at timestamp with time zone NOT NULL,
+    updated_at timestamp with time zone NOT NULL
+);
+
+ALTER TABLE ONLY public.dermat_sample_charges
+    ADD CONSTRAINT dermat_sample_charges_pkey PRIMARY KEY (id);
+
+CREATE INDEX dermat_sample_charges_customer_idx ON public.dermat_sample_charges USING btree (organization_id, tenant_id, customer_id);
 
 --
 -- PostgreSQL database dump complete

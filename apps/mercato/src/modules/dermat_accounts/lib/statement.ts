@@ -2,10 +2,11 @@ import { DermatOrder, DermatOrderLine } from '../../dermat_orders/data/entities'
 import { priceOrder } from '../../dermat_orders/lib/pricing'
 import type { OrderContext } from '../../dermat_orders/lib/server'
 import { OrderPayment, TaxInvoice } from '../data/entities'
+import { sampleChargesFor, sampleTotal } from './sampleCharges'
 
 type Entry = {
   date: string
-  kind: 'invoice' | 'credit_note' | 'payment'
+  kind: 'invoice' | 'credit_note' | 'payment' | 'sample'
   ref: string
   id: string
   orderNo: string
@@ -63,6 +64,20 @@ export async function customerStatement(ctx: OrderContext, customerId: string) {
       debit: 0,
       credit: Number(payment.amount),
       order: 2,
+    })
+  }
+  const samples = await sampleChargesFor(ctx, { customerId }, false)
+  for (const charge of samples) {
+    raw.push({
+      date: charge.paidOn,
+      kind: 'sample',
+      ref: charge.rdCode ? `Sample charge – ${charge.rdCode}` : 'Sample charge',
+      id: charge.id,
+      orderNo: '',
+      detail: `Sample charge, paid${charge.mode ? ` · ${charge.mode}` : ''}${charge.reference ? ` · ${charge.reference}` : ''} (not part of any order advance)`,
+      debit: Number(charge.amount),
+      credit: Number(charge.amount),
+      order: 3,
     })
   }
   raw.sort((a, b) => (a.date === b.date ? a.order - b.order : a.date < b.date ? -1 : 1))
@@ -136,7 +151,9 @@ export async function customerStatement(ctx: OrderContext, customerId: string) {
       orderValue,
       invoiced,
       notInvoiced: round(Math.max(0, orderValue - invoiced)),
-      received: paidTotal,
+      received: round(paidTotal + sampleTotal(samples)),
+      receivedForOrders: paidTotal,
+      sampleCharges: sampleTotal(samples),
       balance,
       advanceOnAccount: round(Math.max(0, unmatched)),
       overdue: round(ageing.d1_30 + ageing.d31_60 + ageing.d61_90 + ageing.d90),

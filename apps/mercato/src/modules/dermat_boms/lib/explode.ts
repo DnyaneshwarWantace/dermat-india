@@ -34,7 +34,7 @@ function round(value: number): number {
   return Math.round(value * 10000) / 10000
 }
 
-async function currentBomFor(ctx: BomRequestContext, productId: string, orderId?: string | null): Promise<BomHeader | null> {
+export async function currentBomFor(ctx: BomRequestContext, productId: string, orderId?: string | null): Promise<BomHeader | null> {
   const candidates = await ctx.em.find(
     BomHeader,
     {

@@ -124,6 +124,7 @@ async function GET(req: Request) {
           customerPhone: customer?.phone ?? null,
           customerPoRef: order.customerPoRef ?? null,
           salesManager: order.salesManager ?? null,
+          coordinator: order.coordinator ?? null,
           paymentTerms: order.paymentTerms ?? null,
           paymentRemarks: order.paymentRemarks ?? null,
           productRemarks: order.productRemarks ?? null,

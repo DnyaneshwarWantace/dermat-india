@@ -51,6 +51,7 @@ export type SheetOrder = {
   customerPhone: string | null
   customerPoRef: string | null
   salesManager: string | null
+  coordinator?: string | null
   paymentTerms: string | null
   paymentRemarks: string | null
   productRemarks: string | null
@@ -247,7 +248,8 @@ const BASE_COLUMNS: SheetColumn[] = [
       return <StatePill state={state} label={state === 'completed' ? 'Yes' : state === 'skipped' ? 'Skipped' : WORK_STATE_LABEL[state]} />
     },
   },
-  { edit: orderEdit('salesManager'), key: 'salesPoc', label: 'Sales POC', section: 'Pricing & customer', scope: 'order', render: ({ order }) => dash(order.salesManager) },
+  { edit: orderEdit('salesManager'), key: 'salesPoc', label: 'Sales person', section: 'Pricing & customer', scope: 'order', render: ({ order }) => dash(order.salesManager) },
+  { edit: orderEdit('coordinator'), key: 'coordinator', label: 'Coordinator (POC)', section: 'Pricing & customer', scope: 'order', render: ({ order }) => dash(order.coordinator ?? null) },
   { edit: orderEdit('deliveryDate', 'date'), key: 'delivery', label: 'Delivery', section: 'Pricing & customer', scope: 'order', render: ({ order }) => <span className={cn(order.late && 'font-semibold text-status-error-text')}>{order.deliveryDate ? formatDate(order.deliveryDate) : dash(null)}</span> },
   { edit: stageEdit('sampling', 'rd_number'), key: 'rdNo', label: 'R&D no.', section: 'R&D, QA & artwork', scope: 'order', render: ({ order }) => <span className="font-mono">{dash(field(order, 'sampling', 'rd_number') ?? null)}</span> },
   { edit: stageEdit('sampling', 'client_feedback'), key: 'sampleFeedback', label: 'Sample feedback', section: 'R&D, QA & artwork', scope: 'order', render: ({ order }) => dash(field(order, 'sampling', 'client_feedback')) },

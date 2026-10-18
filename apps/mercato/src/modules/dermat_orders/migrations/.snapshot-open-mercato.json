@@ -465,6 +465,23 @@
           "enumItems": [],
           "mappedType": "text"
         },
+        "same_as_product_id": {
+          "name": "same_as_product_id",
+          "type": "uuid",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": true,
+          "unique": false,
+          "length": null,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "collation": null,
+          "enumItems": [],
+          "mappedType": "uuid"
+        },
         "sample_needed": {
           "name": "sample_needed",
           "type": "boolean",
@@ -921,6 +938,23 @@
         },
         "billing_remarks": {
           "name": "billing_remarks",
+          "type": "text",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": true,
+          "unique": false,
+          "length": null,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "collation": null,
+          "enumItems": [],
+          "mappedType": "text"
+        },
+        "coordinator": {
+          "name": "coordinator",
           "type": "text",
           "unsigned": false,
           "autoincrement": false,

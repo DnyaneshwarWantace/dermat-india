@@ -12,14 +12,14 @@ import { flash } from '@open-mercato/ui/backend/FlashMessages'
 import { rupeeText } from '../../dermat_products/lib/whatsapp'
 import type { CompanyView } from './types'
 
-type Entry = { date: string; kind: 'invoice' | 'credit_note' | 'payment'; ref: string; id: string; orderNo: string; detail: string; debit: number; credit: number; balance: number }
+type Entry = { date: string; kind: 'invoice' | 'credit_note' | 'payment' | 'sample'; ref: string; id: string; orderNo: string; detail: string; debit: number; credit: number; balance: number }
 type OpenInvoice = { id: string; code: string; orderNo: string; invoiceDate: string; dueDate: string | null; amount: number; paid: number; open: number; daysOverdue: number }
 type Statement = {
   asOf: string
   entries: Entry[]
   openInvoices: OpenInvoice[]
   ageing: { current: number; d1_30: number; d31_60: number; d61_90: number; d90: number }
-  summary: { orders: number; orderValue: number; invoiced: number; notInvoiced: number; received: number; balance: number; advanceOnAccount: number; overdue: number }
+  summary: { orders: number; orderValue: number; invoiced: number; notInvoiced: number; received: number; receivedForOrders?: number; sampleCharges?: number; balance: number; advanceOnAccount: number; overdue: number }
 }
 
 function day(value: string | null): string {
@@ -83,7 +83,7 @@ export function CustomerStatement({ customerId, customerName }: { customerId: st
   const tiles = [
     { label: t('dermat_accounts.st.orderValue', 'Order value'), value: rupeeText(s.orderValue) },
     { label: t('dermat_accounts.st.invoiced', 'Invoiced'), value: rupeeText(s.invoiced), hint: s.notInvoiced ? t('dermat_accounts.st.notInvoiced', '{amount} not invoiced yet', { amount: rupeeText(s.notInvoiced) }) : null },
-    { label: t('dermat_accounts.st.received', 'Received'), value: rupeeText(s.received) },
+    { label: t('dermat_accounts.st.received', 'Received'), value: rupeeText(s.received), hint: s.sampleCharges ? t('dermat_accounts.st.sampleHint', 'incl. {amount} sample charges', { amount: rupeeText(s.sampleCharges) }) : null },
     { label: s.balance >= 0 ? t('dermat_accounts.st.receivable', 'Balance receivable') : t('dermat_accounts.st.advanceHeld', 'Advance held'), value: rupeeText(Math.abs(s.balance)), tone: s.overdue > 0 ? 'bad' : null, hint: s.overdue ? t('dermat_accounts.st.overdue', '{amount} overdue', { amount: rupeeText(s.overdue) }) : null },
   ]
   const buckets: Array<[string, number]> = [
@@ -177,7 +177,8 @@ export function CustomerStatement({ customerId, customerName }: { customerId: st
                   <td className="px-3 py-2">
                     <span className="block font-mono text-xs font-semibold">{entry.ref}</span>
                     <span className="block text-xs text-muted-foreground">
-                      {entry.detail} · {entry.orderNo}
+                      {entry.detail}
+                      {entry.orderNo ? ` · ${entry.orderNo}` : ''}
                     </span>
                   </td>
                   <td className="px-3 py-2 text-right tabular-nums">{entry.debit ? rupeeText(entry.debit) : ''}</td>
