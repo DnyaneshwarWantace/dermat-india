@@ -275,6 +275,8 @@ export function OrderView({ orderId }: { orderId: string }) {
   const shortCount = file ? (file.open ? file.summary.short + (file.summary.reserveProblems ?? 0) : 0) : null
   const statusLabel = t(`dermat_orders.status.${order.status}`, order.status)
   const limited = Boolean(order.access && !order.access.full)
+  const viewable = new Set(order.access?.view ?? order.access?.stages ?? [])
+  const seesMaterials = !limited || ['planning', 'formulation', 'manufacturing', 'filling', 'packing'].some((key) => viewable.has(key))
   const attention = orderAttention(order, shortCount, t).filter((item) => !limited || (item.action?.stageKey ? !stagesByKey.get(item.action.stageKey)?.locked : false))
   const goToStage = (key: string) => {
     setTab('work')
@@ -403,7 +405,7 @@ export function OrderView({ orderId }: { orderId: string }) {
               <SegmentedControl value={tab} onValueChange={(value) => setTab(value as OrderTab)} aria-label={t('dermat_orders.view.sections', 'Order sections')}>
                 <SegmentedControlItem value="work">{t('dermat_orders.view.tabWork', 'Stage work')}</SegmentedControlItem>
                 <SegmentedControlItem value="products">{t('dermat_orders.view.tabProducts', 'Products & specs')}</SegmentedControlItem>
-                <SegmentedControlItem value="materials">{t('dermat_orders.view.tabMaterials', 'Materials')}</SegmentedControlItem>
+                {seesMaterials ? <SegmentedControlItem value="materials">{t('dermat_orders.view.tabMaterials', 'Materials')}</SegmentedControlItem> : null}
                 {limited ? null : <SegmentedControlItem value="record">{t('dermat_orders.view.tabRecord', 'Order record')}</SegmentedControlItem>}
                 <SegmentedControlItem value="documents">{t('dermat_orders.view.tabDocuments', 'Documents')}</SegmentedControlItem>
                 {order.canSeeMoney ? <SegmentedControlItem value="money">{t('dermat_orders.view.tabMoney', 'Money')}</SegmentedControlItem> : null}
@@ -479,7 +481,7 @@ export function OrderView({ orderId }: { orderId: string }) {
             </CardContent>
           </Card>
               ) : null}
-              {tab === 'materials' ? <MaterialsAccount file={file} order={order} /> : null}
+              {tab === 'materials' && seesMaterials ? <MaterialsAccount file={file} order={order} /> : null}
               {tab === 'record' && !limited ? <OrderRecord file={file} /> : null}
               {tab === 'documents' ? <DocumentsOverview order={limited ? { ...order, stages: order.stages.filter((stage) => !stage.locked) } : order} onStage={goToStage} /> : null}
               {tab === 'money' && order.canSeeMoney ? <OrderMoneyCard order={order} onChanged={load} /> : null}

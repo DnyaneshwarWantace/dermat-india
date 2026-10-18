@@ -88,7 +88,25 @@ Status words: **Done** (built and tested), **Build** (to build), **Waiting** (ne
 
 ---
 
-## Phase D — Composition sheet and artwork
+## Phase D — Stage work, people and access (added 18 Oct, owner's top priority)
+
+Problem seen on the order page: a user without rights still sees every stage, other departments' fields, specs, materials and history; a stage with several sub-steps only has "Mark done" buttons and one form for the whole stage at the end, so the person doing a sub-step cannot record what they know at that moment, and one stage cannot be split between the people who really do it.
+
+- K1 Every sub-step is a card: own owner, own fields, own documents, own Done (person and time stamped). Stage fields are assigned to one card each (`StageField.step`, `StageDocument.step`). Per-stage map in the plan page.
+- K2 Several people on one stage: each card has an owner department (work right) and responsible person; a user can finish only their cards; admin can finish on behalf (logged).
+- K3 The stage finishes when its last required card is Done, running today's completion checks; the end-of-stage form and "Done — send to …" button go away.
+- K4 Who sees what: None / View / Work per stage and card. None shows only name, state, department. Tabs (specs, materials, documents, history, money) and the order list follow the same rights; the APIs enforce them.
+- K5 Allowance grid in Masters → Team & access (users × stages / cards / pages, None / View / Work; role defaults; Excel import / export; change log). Replaces G1.
+- K6 Default person per card (Masters → Workflow stages), assignment when a card opens, reassign, notification. Replaces G3.
+- K7 My tasks: open cards for me / my department; the card opens in place; phone layout.
+- K8 Department queues list cards, with a sub-step switch.
+- K9 One card component and one save path everywhere; optimistic lock per stage.
+- K10 Masters → Workflow stages edits cards: rename, add, hide, reorder, owner, default person, fields, required files, waits-for.
+- K11 Existing orders: today's ticks become done cards; filled fields show on their card.
+
+Test: one order finished card by card by each department login; a Filling-only user sees only Filling on the page and in the APIs; My tasks and queues finish the same cards; a card added in Masters appears on the next order.
+
+## Phase E — Composition sheet and artwork
 
 | Id | What | Where | Status |
 |---|---|---|---|
@@ -102,7 +120,7 @@ Status words: **Done** (built and tested), **Build** (to build), **Waiting** (ne
 
 ---
 
-## Phase E — Production floor (works on the phone)
+## Phase F — Production floor (works on the phone)
 
 | Id | What | Where | Status |
 |---|---|---|---|
@@ -118,7 +136,7 @@ Status words: **Done** (built and tested), **Build** (to build), **Waiting** (ne
 
 ---
 
-## Phase F — Customers, documents, billing and dispatch
+## Phase G — Customers, documents, billing and dispatch
 
 | Id | What | Where | Status |
 |---|---|---|---|
@@ -131,7 +149,7 @@ Status words: **Done** (built and tested), **Build** (to build), **Waiting** (ne
 
 ---
 
-## Phase G — Who sees what, notifications, order book
+## Phase H — Notifications and order book (G1–G3 moved to Phase D)
 
 | Id | What | Where | Status |
 |---|---|---|---|
@@ -146,7 +164,7 @@ Status words: **Done** (built and tested), **Build** (to build), **Waiting** (ne
 
 ---
 
-## Phase H — Data and go-live
+## Phase I — Data and go-live
 
 | Id | What | Status |
 |---|---|---|

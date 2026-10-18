@@ -1,4 +1,4 @@
-import { stageDef, stepStates } from '../lib/stages'
+import { stageDef, stepRequired, stepStates } from '../lib/stages'
 import type { Order, Stage } from './types'
 
 export type SubStage = {
@@ -54,7 +54,7 @@ export function subStages(order: Order, stage: Stage): SubStage[] {
   const step = (key: string): Omit<SubStage, 'status'> & { done: boolean } => {
     const entry = def.steps.find((candidate) => candidate.key === key)
     const state = states[key]
-    return { key, label: entry?.label ?? key, kind: 'step', optional: Boolean(entry?.optional), by: state?.by ?? null, at: state?.at ?? null, done: Boolean(state?.done), detail: null, links: [] }
+    return { key, label: entry?.label ?? key, kind: 'step', optional: entry ? !stepRequired(def, entry, stage.data) : false, by: state?.by ?? null, at: state?.at ?? null, done: Boolean(state?.done), detail: null, links: [] }
   }
   let items: Array<Omit<SubStage, 'status'> & { done: boolean; na?: boolean; naText?: string }>
   const reusing = stage.key === 'manufacturing' && stage.data?.bulk_source === 'Use bulk already made'

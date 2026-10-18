@@ -11,7 +11,7 @@ import type { StageDocumentStatus } from './types'
 
 const ENTITY = 'dermat_orders:order_stage'
 
-export function StageDocuments({ orderId, stageKey, documents, editable }: { orderId: string; stageKey: string; documents: StageDocumentStatus[]; editable: boolean }) {
+export function StageDocuments({ orderId, stageKey, documents, editable, showOther = true }: { orderId: string; stageKey: string; documents: StageDocumentStatus[]; editable: boolean; showOther?: boolean }) {
   const t = useT()
   const [counts, setCounts] = React.useState<Record<string, number>>(() => Object.fromEntries(documents.map((doc) => [doc.key, doc.count])))
 
@@ -78,6 +78,7 @@ export function StageDocuments({ orderId, stageKey, documents, editable }: { ord
           </div>
         )
       })}
+      {showOther ? (
       <AttachmentsSection
         entityId={ENTITY}
         recordId={`${orderId}:${stageKey}`}
@@ -85,6 +86,7 @@ export function StageDocuments({ orderId, stageKey, documents, editable }: { ord
         description={t('dermat_orders.sheet.documentsHint', 'Attach sheets, photos, COA, approvals or anything else for this stage.')}
         compact
       />
+      ) : null}
     </div>
   )
 }

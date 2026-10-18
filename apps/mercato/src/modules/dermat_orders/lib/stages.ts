@@ -8,9 +8,10 @@ export type StageField = {
   listKey?: string
   required?: boolean
   placeholder?: string
+  step?: string
 }
 
-export type StageStep = { key: string; label: string; optional?: boolean }
+export type StageStep = { key: string; label: string; optional?: boolean; owners?: string[] }
 
 export type StageDef = {
   key: string
@@ -61,7 +62,7 @@ export function stageWorkFeature(stageKey: string): string {
   return STAGE_WORK_FEATURE[stageKey] ?? 'dermat_orders.stages'
 }
 
-export type StageDocument = { key: string; label: string; hint: string; required?: 'always' | 'eway' }
+export type StageDocument = { key: string; label: string; hint: string; required?: 'always' | 'eway'; step?: string }
 
 export const EWAY_BILL_LIMIT = 50000
 
@@ -349,17 +350,7 @@ export type StageOverride = {
 }
 
 export const DEFAULT_SHARED_FIELDS: Record<string, string[]> = {
-  advance: ['received_on'],
-  sampling: ['rd_number', 'sample_name', 'sample_sent_on'],
-  artwork: ['designer_status', 'artwork_approved_on'],
-  formulation: [],
-  planning: ['material_status', 'planned_for', 'planned_vessel'],
-  manufacturing: ['bulk_source', 'batch_no', 'batch_size', 'mfg_date'],
-  filling: ['filled_units', 'filling_date'],
-  packing: ['packed_qty', 'packed_on', 'shippers', 'location'],
-  qc_qa: ['qc_result', 'released_on', 'coa_no'],
-  billing: ['invoice_number', 'invoice_date'],
-  dispatch: ['dispatch_date', 'transporter', 'lr_number', 'delivered_on'],
+  manufacturing: ['batch_no'],
 }
 
 export function sharedFieldKeys(stageKey: string, override?: StageOverride | null): Set<string> {
@@ -501,9 +492,104 @@ export function stepStates(data: Record<string, unknown> | null | undefined): Re
   return raw && typeof raw === 'object' ? (raw as Record<string, StepState>) : {}
 }
 
+const SALES = 'dermat_orders.manage'
+const WORK = {
+  accounts: 'dermat_orders.work.accounts',
+  rnd: 'dermat_orders.work.rnd',
+  artwork: 'dermat_orders.work.artwork',
+  planning: 'dermat_orders.work.planning',
+  production: 'dermat_orders.work.production',
+  qa: 'dermat_orders.work.qa',
+  dispatch: 'dermat_orders.work.dispatch',
+  purchase: 'dermat_orders.work.purchase',
+  store: 'dermat_orders.work.store',
+}
+
+export const OWNER_NAMES: Record<string, string> = {
+  [SALES]: 'Sales',
+  [WORK.accounts]: 'Accounts',
+  [WORK.rnd]: 'R&D',
+  [WORK.artwork]: 'Artwork & PM',
+  [WORK.planning]: 'Planning',
+  [WORK.production]: 'Production',
+  [WORK.qa]: 'QA',
+  [WORK.dispatch]: 'Dispatch',
+  [WORK.purchase]: 'Purchase',
+  [WORK.store]: 'Store',
+}
+
+export const STEP_OWNERS: Record<string, Record<string, string[]>> = {
+  sampling: { sample_sent: [WORK.rnd, SALES], client_ok: [SALES, WORK.rnd] },
+  artwork: { client_approved: [SALES, WORK.artwork], qa_final: [WORK.qa], pm_ordered: [WORK.purchase, WORK.artwork], pm_ok: [WORK.store, WORK.artwork] },
+  planning: { purchase: [WORK.planning, WORK.purchase], received: [WORK.store, WORK.planning] },
+  dispatch: { delivered: [WORK.dispatch, SALES] },
+}
+
+export const FIELD_STEP: Record<string, Record<string, string>> = {
+  advance: { pi_number: 'pi_sent', advance_percent: 'advance_received', advance_amount: 'advance_received', received_on: 'advance_received', payment_ref: 'advance_received' },
+  sampling: { rd_number: 'request', sample_name: 'sample_made', sample_sent_on: 'sample_sent', client_feedback: 'client_ok', remarks: 'client_ok' },
+  artwork: { designer_status: 'design', status_note: 'design', artwork_approved_on: 'client_approved', remarks: 'pm_ok' },
+  planning: { material_status: 'checked', planned_for: 'reserved', planned_vessel: 'reserved', remarks: 'reserved' },
+  qc_qa: { qc_result: 'released', released_on: 'released', coa_no: 'released', retention_qty: 'retention', retention_location: 'retention' },
+  billing: { invoice_number: 'invoice', invoice_date: 'invoice', balance_payment: 'balance', remarks: 'balance' },
+  dispatch: { delivered_on: 'delivered' },
+}
+
+export const DOCUMENT_STEP: Record<string, Record<string, string>> = {
+  advance: { payment_proof: 'advance_received' },
+  sampling: { client_approval: 'client_ok', sample_photo: 'client_ok' },
+  artwork: { approved_artwork: 'client_approved' },
+  dispatch: { lr_copy: 'dispatched', eway_bill: 'dispatched' },
+}
+
+const STEP_NEEDED_WHEN: Record<string, Record<string, (data: Record<string, unknown>) => boolean>> = {
+  planning: {
+    purchase: (data) => typeof data.material_status === 'string' && data.material_status !== '' && data.material_status !== 'All available',
+    received: (data) => typeof data.material_status === 'string' && data.material_status !== '' && data.material_status !== 'All available',
+  },
+}
+
+export function stepOwners(stageKey: string, step: Pick<StageStep, 'key' | 'owners'>): string[] {
+  if (step.owners?.length) return step.owners
+  return STEP_OWNERS[stageKey]?.[step.key] ?? [stageWorkFeature(stageKey)]
+}
+
+export const MAIN_CARD = '__main'
+
+export function cardKeys(def: StageDef): string[] {
+  return def.steps.length ? def.steps.map((step) => step.key) : [MAIN_CARD]
+}
+
+export function fieldCard(def: StageDef, fieldKey: string): string {
+  if (!def.steps.length) return MAIN_CARD
+  const field = def.fields.find((entry) => entry.key === fieldKey)
+  const wanted = field?.step ?? FIELD_STEP[def.key]?.[fieldKey]
+  if (wanted && def.steps.some((step) => step.key === wanted)) return wanted
+  const required = def.steps.filter((step) => !step.optional)
+  return (required[required.length - 1] ?? def.steps[def.steps.length - 1]).key
+}
+
+export function cardFieldKeys(def: StageDef, cardKey: string): string[] {
+  return def.fields.filter((field) => fieldCard(def, field.key) === cardKey).map((field) => field.key)
+}
+
+export function documentCard(def: StageDef, document: StageDocument): string {
+  if (!def.steps.length) return MAIN_CARD
+  const wanted = document.step ?? DOCUMENT_STEP[def.key]?.[document.key]
+  if (wanted && def.steps.some((step) => step.key === wanted)) return wanted
+  const required = def.steps.filter((step) => !step.optional)
+  return (required[required.length - 1] ?? def.steps[def.steps.length - 1]).key
+}
+
+export function stepRequired(def: StageDef, step: StageStep, data: Record<string, unknown> | null | undefined): boolean {
+  if (!step.optional) return true
+  const rule = STEP_NEEDED_WHEN[def.key]?.[step.key]
+  return rule ? rule(data ?? {}) : false
+}
+
 export function missingSteps(def: StageDef, data: Record<string, unknown> | null | undefined): string[] {
   const states = stepStates(data)
-  return def.steps.filter((step) => !step.optional && !states[step.key]?.done).map((step) => step.label)
+  return def.steps.filter((step) => stepRequired(def, step, data) && !states[step.key]?.done).map((step) => step.label)
 }
 
 export type WorkState = 'coming' | 'pending' | 'in_progress' | 'on_hold' | 'completed' | 'skipped'

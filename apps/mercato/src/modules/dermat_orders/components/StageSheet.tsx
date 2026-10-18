@@ -4,7 +4,7 @@ import * as React from 'react'
 import { ListSelectItems } from '../../dermat_lists/components/ListSelectItems'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Check, CheckCircle2, CirclePause, CirclePlay, FileStack, Hourglass, Lock, PackagePlus, Play, RotateCcw, SkipForward, Wallet } from 'lucide-react'
+import { Check, CirclePause, CirclePlay, FileStack, Hourglass, Lock, PackagePlus, Play, RotateCcw, SkipForward, Wallet } from 'lucide-react'
 import { useT } from '@open-mercato/shared/lib/i18n/context'
 import { Button } from '@open-mercato/ui/primitives/button'
 import { Input } from '@open-mercato/ui/primitives/input'
@@ -16,7 +16,7 @@ import { StatusBadge } from '@open-mercato/ui/primitives/status-badge'
 import { apiCall } from '@open-mercato/ui/backend/utils/apiCall'
 import { flash } from '@open-mercato/ui/backend/FlashMessages'
 import { isMoneyStageField } from '../lib/moneyFields'
-import { HOLD_PARTIES, reopenBlock, reopenUntilText, stageList, WORK_STATE_LABEL, stageDef, stageWorkFeature, workState, type StageField, type WorkState } from '../lib/stages'
+import { HOLD_PARTIES, reopenBlock, reopenUntilText, stageList, WORK_STATE_LABEL, stageDef, stageWorkFeature, stepOwners, workState, type StageField, type WorkState } from '../lib/stages'
 import { useGranted } from '../../dermat_departments/components/useGranted'
 import { StageDocuments } from './StageDocuments'
 import { StageHistory } from './OrderHistory'
@@ -24,7 +24,7 @@ import { SuggestInput } from '../../dermat_lists/components/SuggestInput'
 import { cn } from '@open-mercato/shared/lib/utils'
 import { STAGE_VARIANT, formatDate, formatDateTime, formatQty } from './format'
 import { ProductionPanel } from './ProductionPanel'
-import { SubStageTracker } from './SubStageTracker'
+import { StepCards } from './StepCards'
 import { PackItemsPanel, SampleRoundsPanel } from './ArtworkPanels'
 import { ProductionRoundsPanel, QaArtworkChecklist, QaReleaseReview } from './QualityPanels'
 import type { Order, Stage } from './types'
@@ -113,13 +113,6 @@ function StageStrip({ order, current, onPick }: { order: Order; current: string;
 
 type Mode = 'form' | 'hold' | 'revert' | 'skip'
 
-function display(field: StageField, value: unknown): string {
-  if (value === undefined || value === null || value === '') return '—'
-  if (field.type === 'date') return formatDate(String(value))
-  if (field.type === 'number') return formatQty(Number(value), 2)
-  return String(value)
-}
-
 export function StageWorkArea({ order, stage, people, canWork: canWorkProp, busy, shortCount, onAction, variant = 'sheet' }: StageWorkAreaProps) {
   const granted = useGranted()
   const canWork = canWorkProp && Boolean(stage) && granted.has(stageWorkFeature(stage?.key ?? ''))
@@ -156,6 +149,14 @@ export function StageWorkArea({ order, stage, people, canWork: canWorkProp, busy
   const state = workState(stage.status, stage.data)
 
   const editable = canWork && (stage.status === 'open' || stage.status === 'on_hold') && order.status !== 'cancelled'
+  const cardsEditable = canWorkProp && (stage.status === 'open' || stage.status === 'on_hold') && order.status !== 'cancelled'
+  const ownsCard = def.steps.some((step) => stepOwners(def.key, step).some((feature) => granted.has(feature)))
+  const ownsStep = (key: string) => {
+    const step = def.steps.find((entry) => entry.key === key)
+    return Boolean(step) && stepOwners(def.key, step as NonNullable<typeof step>).some((feature) => granted.has(feature))
+  }
+  const canQa = ownsStep('qa_final')
+  const canPmStatus = ownsStep('pm_ok') || ownsStep('pm_ordered')
   const nextLabels = stageList().filter((entry) => entry.after.includes(stage.key)).map((entry) => entry.label)
   const onOrderCopy = async (productId: string) => {
     const call = await apiCall<{ id?: string; error?: string }>('/api/dermat_boms/boms/order-copy', {
@@ -180,14 +181,16 @@ export function StageWorkArea({ order, stage, people, canWork: canWorkProp, busy
     return order.stages.filter((entry) => later.has(entry.key) && (entry.status === 'open' || entry.status === 'on_hold')).map((entry) => entry.label)
   })()
   const formFields = def.fields.filter((field) => order.canSeeMoney !== false || !isMoneyStageField(stage.key, field.key))
-  const dataPayload = () => {
+  const payloadFor = (keys?: string[]) => {
     const data: Record<string, string | number | null> = {}
     for (const field of formFields) {
+      if (keys && !keys.includes(field.key)) continue
       const raw = values[field.key] ?? ''
       data[field.key] = field.type === 'number' ? (raw.trim() === '' ? null : Number(raw)) : raw
     }
     return data
   }
+  const dataPayload = () => payloadFor()
 
   const run = async (request: StageActionRequest) => {
     const ok = await onAction(stage, request)
@@ -198,7 +201,6 @@ export function StageWorkArea({ order, stage, people, canWork: canWorkProp, busy
   const renderInput = (field: StageField) => {
     const value = values[field.key] ?? ''
     const set = (next: string) => setValues((prev) => ({ ...prev, [field.key]: next }))
-    if (!editable) return <p className="text-sm">{display(field, stage.data?.[field.key])}</p>
     if (field.type === 'select') {
       return (
         <Select value={value || '__none'} onValueChange={(next) => set(next === '__none' ? '' : next)}>
@@ -229,12 +231,7 @@ export function StageWorkArea({ order, stage, people, canWork: canWorkProp, busy
     <>
       <div
         className={cn('space-y-5 p-4', variant === 'sheet' && 'flex-1 overflow-auto')}
-        onKeyDown={(event) => {
-          if (event.key === 'Enter' && (event.metaKey || event.ctrlKey) && editable && mode === 'form') {
-            event.preventDefault()
-            run({ action: 'complete', data: dataPayload() })
-          }
-        }}
+
       >
         <div className="grid grid-cols-2 gap-3 rounded-lg border bg-muted/20 p-3 text-xs">
           <div>
@@ -510,31 +507,16 @@ export function StageWorkArea({ order, stage, people, canWork: canWorkProp, busy
           </div>
         ) : null}
 
-        <SubStageTracker order={order} stage={stage} editable={editable} busy={busy} onStep={(stepKey, done) => run({ action: 'step', stepKey, done })} />
 
-        {stage.key === 'artwork' && order.packItems?.length ? (
-          <PackItemsPanel order={order} stage={stage} editable={editable} busy={busy} onStatus={(productId, pmStatus) => run({ action: 'pm_status', productId, pmStatus })} />
-        ) : null}
 
         {['manufacturing', 'filling', 'packing'].includes(stage.key) ? (
           <ProductionRoundsPanel order={order} stage={stage} editable={editable} busy={busy} onRework={(action, text) => run({ action, note: text })} />
         ) : null}
 
-        {stage.key === 'artwork' ? <QaArtworkChecklist stage={stage} editable={editable} busy={busy} onToggle={(key, done) => run({ action: 'checklist', stepKey: key, done })} /> : null}
 
         {stage.key === 'qc_qa' ? <QaReleaseReview order={order} /> : null}
 
-        {stage.key === 'sampling' ? <SampleRoundsPanel orderId={order.id} stage={stage} editable={editable} busy={busy} onNewRound={(text) => run({ action: 'new_round', note: text })} /> : null}
 
-        {mode === 'form' && (stage.key === 'manufacturing' || stage.key === 'filling') ? (
-          <ProductionPanel
-            orderId={order.id}
-            stageKey={stage.key}
-            values={values}
-            editable={editable}
-            onChange={(key, value) => setValues((prev) => ({ ...prev, [key]: value }))}
-          />
-        ) : null}
 
         {stage.key === 'dispatch' && stage.status === 'done' && (granted.has('dermat_orders.work.dispatch') || granted.has('dermat_orders.manage')) ? (
           <DeliveredBox
@@ -543,7 +525,7 @@ export function StageWorkArea({ order, stage, people, canWork: canWorkProp, busy
             onMark={(date, receivedNote) => run({ action: 'delivered', data: { delivered_on: date }, note: receivedNote || undefined })}
           />
         ) : null}
-        {!canWork && granted.ready && canWorkProp && (stage.status === 'open' || stage.status === 'on_hold') ? (
+        {!canWork && !ownsCard && granted.ready && canWorkProp && (stage.status === 'open' || stage.status === 'on_hold') ? (
           <p className="rounded-md border border-status-info-border bg-status-info-bg px-3 py-2 text-xs text-status-info-text">
             {t('dermat_orders.sheet.viewOnly', 'View only: {department} works on this stage. Your role can see it but not change it.', { department: def.department })}
           </p>
@@ -551,17 +533,42 @@ export function StageWorkArea({ order, stage, people, canWork: canWorkProp, busy
         {mode === 'form' ? <StageHistory events={order.events} stageKey={stage.key} /> : null}
         {mode === 'form' ? (
           <div className="space-y-4">
-            {formFields.map((field) => (
-              <div key={field.key} className="space-y-1.5">
-                <Label className="text-xs text-muted-foreground">
-                  {field.label}
-                  {field.required && editable ? ' *' : ''}
-                </Label>
-                {renderInput(field)}
-              </div>
-            ))}
+            <StepCards
+              order={order}
+              stage={stage}
+              def={def}
+              editable={cardsEditable}
+              busy={busy}
+              fields={formFields}
+              renderInput={renderInput}
+              payloadFor={payloadFor}
+              onStep={(stepKey, done, data) => run({ action: 'step', stepKey, done, data })}
+              onSave={(stepKey, data) => run({ action: 'save', stepKey, data })}
+              onCompleteMain={(data) => run({ action: 'complete', data })}
+              extras={{
+                ...(stage.key === 'artwork' && order.packItems?.length
+                  ? { pm_ok: <PackItemsPanel order={order} stage={stage} editable={cardsEditable && canPmStatus} busy={busy} onStatus={(productId, pmStatus) => run({ action: 'pm_status', productId, pmStatus })} /> }
+                  : {}),
+                ...(stage.key === 'artwork' ? { qa_final: <QaArtworkChecklist stage={stage} editable={cardsEditable && canQa} busy={busy} onToggle={(key, done) => run({ action: 'checklist', stepKey: key, done })} /> } : {}),
+                ...(stage.key === 'sampling' ? { client_ok: <SampleRoundsPanel orderId={order.id} stage={stage} editable={editable} busy={busy} onNewRound={(text) => run({ action: 'new_round', note: text })} /> } : {}),
+                ...(stage.key === 'manufacturing' || stage.key === 'filling'
+                  ? {
+                      [stage.key === 'manufacturing' ? 'manufactured' : 'filled']: (
+                        <ProductionPanel orderId={order.id} stageKey={stage.key} values={values} editable={editable} onChange={(key, value) => setValues((prev) => ({ ...prev, [key]: value }))} />
+                      ),
+                    }
+                  : {}),
+              }}
+              completeLabel={
+                stage.key === 'advance'
+                  ? t('dermat_orders.sheet.verifySend', 'Verified — send to {next}', { next: nextLabels.join(' + ') })
+                  : nextLabels.length
+                    ? t('dermat_orders.sheet.completeSend', 'Done — send to {next}', { next: nextLabels.join(' + ') })
+                    : t('dermat_orders.sheet.completeLast', 'Done — close the order')
+              }
+            />
             {stage.status !== 'waiting' ? (
-              <StageDocuments orderId={order.id} stageKey={stage.key} documents={order.documents?.[stage.key] ?? []} editable={editable} />
+              <StageDocuments orderId={order.id} stageKey={stage.key} documents={[]} editable={editable} />
             ) : null}
           </div>
         ) : (
@@ -668,23 +675,6 @@ export function StageWorkArea({ order, stage, people, canWork: canWorkProp, busy
               <Button type="button" variant="outline" size="sm" onClick={() => setMode('hold')} disabled={busy}>
                 <CirclePause className="mr-1.5 h-4 w-4" />
                 {t('dermat_orders.sheet.hold', 'Put on hold')}
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => run({ action: 'save', data: dataPayload() })}
-                disabled={busy}
-              >
-                {t('dermat_orders.sheet.save', 'Save')}
-              </Button>
-              <Button type="button" size="sm" onClick={() => run({ action: 'complete', data: dataPayload() })} disabled={busy}>
-                <CheckCircle2 className="mr-1.5 h-4 w-4" />
-                {stage.key === 'advance'
-                  ? t('dermat_orders.sheet.verifySend', 'Verified — send to {next}', { next: nextLabels.join(' + ') })
-                  : nextLabels.length
-                  ? t('dermat_orders.sheet.completeSend', 'Done — send to {next}', { next: nextLabels.join(' + ') })
-                  : t('dermat_orders.sheet.completeLast', 'Done — close the order')}
               </Button>
             </>
           ) : null}

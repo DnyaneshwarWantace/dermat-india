@@ -52,6 +52,8 @@ export const ACCESS_AREAS: AccessArea[] = [
       { feature: 'dermat_orders.work.qa', label: 'QA release', short: 'QA' },
       { feature: 'attachments.manage', label: 'Upload stage documents and photos', short: 'Uploads' },
       { feature: 'dermat_orders.work.dispatch', label: 'Dispatch', short: 'Dispatch' },
+      { feature: 'dermat_orders.work.purchase', label: 'Purchase cards (PM ordered, purchase raised)', short: 'Purchase' },
+      { feature: 'dermat_orders.work.store', label: 'Store cards (PM received, material received)', short: 'Store' },
     ],
   },
   {

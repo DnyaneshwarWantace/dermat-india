@@ -147,7 +147,7 @@ export type Order = {
   packingCodeIssues?: Array<{ lineId: string; product: string; code: string | null }>
   pricesIncludeGst: boolean
   canSeeMoney: boolean
-  access?: { full: boolean; stages: string[] }
+  access?: { full: boolean; stages: string[]; view?: string[]; cards?: string[] }
   totals: { gross: number; discount: number; taxable: number; gst: number; total: number } | null
   payments: { received: number; due: number; items: OrderPayment[] } | null
   events: OrderEvent[]
