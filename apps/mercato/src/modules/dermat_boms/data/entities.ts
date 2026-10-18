@@ -125,3 +125,55 @@ export class BomItem {
   @Property({ name: 'updated_at', type: Date, onCreate: () => new Date(), onUpdate: () => new Date() })
   updatedAt: Date = new Date()
 }
+
+export type PackagingKind = 'tube' | 'jar' | 'bottle' | 'other'
+
+export type PackagingComponent = { productId: string; qty: number }
+
+@Entity({ tableName: 'dermat_packaging_codes' })
+@Index({ name: 'dermat_packaging_codes_org_tenant_idx', properties: ['organizationId', 'tenantId'] })
+export class PackagingCode {
+  [OptionalProps]?: 'size' | 'specs' | 'notes' | 'components' | 'printedItems' | 'createdAt' | 'updatedAt' | 'deletedAt'
+
+  @PrimaryKey({ type: 'uuid', defaultRaw: 'gen_random_uuid()' })
+  id!: string
+
+  @Property({ name: 'organization_id', type: 'uuid' })
+  organizationId!: string
+
+  @Property({ name: 'tenant_id', type: 'uuid' })
+  tenantId!: string
+
+  @Property({ type: 'text' })
+  code!: string
+
+  @Property({ type: 'text' })
+  name!: string
+
+  @Property({ type: 'text' })
+  kind!: PackagingKind
+
+  @Property({ type: 'text', nullable: true })
+  size?: string | null
+
+  @Property({ type: 'text', nullable: true })
+  specs?: string | null
+
+  @Property({ type: 'json', default: '[]' })
+  components: PackagingComponent[] = []
+
+  @Property({ name: 'printed_items', type: 'json', default: '[]' })
+  printedItems: string[] = []
+
+  @Property({ type: 'text', nullable: true })
+  notes?: string | null
+
+  @Property({ name: 'created_at', type: Date, onCreate: () => new Date() })
+  createdAt: Date = new Date()
+
+  @Property({ name: 'updated_at', type: Date, onCreate: () => new Date(), onUpdate: () => new Date() })
+  updatedAt: Date = new Date()
+
+  @Property({ name: 'deleted_at', type: Date, nullable: true })
+  deletedAt?: Date | null
+}

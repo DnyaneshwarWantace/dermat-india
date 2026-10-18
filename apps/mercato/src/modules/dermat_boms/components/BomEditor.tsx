@@ -53,7 +53,8 @@ import { FillPlan } from './FillPlan'
 import { openPrintSheet } from './printSheet'
 import { AvailabilityBadge } from './bom/AvailabilityBadge'
 import { BomDetailsCard } from './bom/BomDetailsCard'
-import type { BomView, ComponentOption } from './types'
+import type { BomView, ComponentOption, PackagingCodeView } from './types'
+import { PackagingCodePicker } from './packaging/PackagingCodePicker'
 import { ExportButton } from '../../dermat_products/components/ExportButton'
 import { downloadCsv } from '../../dermat_products/lib/csvExport'
 import { BackLink } from '../../dermat_departments/components/BackLink'
@@ -335,6 +336,52 @@ export function BomEditor({ bomId, productId }: { bomId?: string; productId?: st
     }))
     setState((prev) => (prev ? { ...prev, rows: [...prev.rows, ...rows] } : prev))
     setDirty(true)
+  }
+
+  const addPackagingSet = async (code: PackagingCodeView) => {
+    if (!state || !state.product.id) return
+    const present = new Set(state.rows.map((row) => row.componentProductId))
+    const partRows = code.components
+      .filter((part) => !present.has(part.productId))
+      .map((part) => ({
+        ...rowFromOption({ id: part.productId, title: part.name, code: part.code, sku: null, kind: part.kind ?? 'packing_material', unit: part.unit, onHand: part.onHand }, state.kind, null),
+        value: String(part.qty),
+      }))
+    let printedRows: Row[] = []
+    if (code.printedItems.length) {
+      const body = { productId: state.product.id, types: code.printedItems }
+      const call = await runMutation({
+        context: { packagingSet: code.code, productId: state.product.id },
+        mutationPayload: body,
+        operation: () =>
+          apiCall<{ items?: Array<{ id: string; title: string; type: string; sku: string | null; unit: string | null }>; error?: string }>('/api/dermat_products/packing', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify(body),
+          }),
+      })
+      if (!call.ok) {
+        flash(call.result?.error ?? t('dermat_boms.packaging.printedError', 'Could not create the printed items for this product.'), 'error')
+      } else {
+        const wanted = new Set(code.printedItems.map((item) => item.toLowerCase()))
+        const items = (call.result?.items ?? []).filter((item) => wanted.has(item.type.toLowerCase()) && !present.has(item.id))
+        const stock = items.length
+          ? await apiCall<{ items?: Record<string, { onHand: number }> }>(`/api/dermat_products/stock?productIds=${items.map((item) => item.id).join(',')}`, undefined, { fallback: { items: {} } })
+          : null
+        printedRows = items.map((item) => ({
+          ...rowFromOption({ id: item.id, title: item.title, code: null, sku: item.sku, kind: 'packing_material', unit: item.unit, onHand: stock?.result?.items?.[item.id]?.onHand ?? 0 }, state.kind, null),
+          value: '1',
+        }))
+      }
+    }
+    const added = [...partRows, ...printedRows]
+    if (!added.length) {
+      flash(t('dermat_boms.packaging.allThere', 'Everything in {code} is already in this BOM.', { code: code.code }), 'info')
+      return
+    }
+    setState((prev) => (prev ? { ...prev, rows: [...prev.rows, ...added] } : prev))
+    setDirty(true)
+    flash(t('dermat_boms.packaging.added', '{count} lines added from {code}', { count: added.length, code: code.code }), 'success')
   }
 
   const selectProduct = async (option: ComponentOption) => {
@@ -1056,6 +1103,9 @@ export function BomEditor({ bomId, productId }: { bomId?: string; productId?: st
                         onSelect={addRow}
                         label={t('dermat_boms.table.add', 'Add material')}
                       />
+                      {state.kind === 'pack' && hasProduct ? (
+                        <PackagingCodePicker variant="button" label={t('dermat_boms.packaging.addSet', 'Add packaging set (code)')} onSelect={(code) => void addPackagingSet(code)} />
+                      ) : null}
                       {state.kind === 'pack' && hasProduct ? (
                         <Button type="button" variant="outline" size="sm" onClick={addOwnPacking}>
                           <Package className="mr-1.5 h-4 w-4" />

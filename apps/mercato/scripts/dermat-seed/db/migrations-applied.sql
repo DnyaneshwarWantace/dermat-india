@@ -313,6 +313,7 @@ COPY public.mikro_orm_migrations_dermat_boms (id, name, executed_at) FROM stdin;
 2	Migration20260925171116_dermat_boms	2026-09-25 17:11:31.218905+00
 3	Migration20260926072935_dermat_boms	2026-09-26 07:29:58.406076+00
 4	Migration20261014120000_dermat_boms	2026-10-14 12:00:00+00
+5	Migration20261018120000_dermat_boms	2026-10-18 12:00:00+00
 \.
 
 
@@ -1053,7 +1054,7 @@ SELECT pg_catalog.setval('public.mikro_orm_migrations_dermat_bom_id_seq', 8, tru
 -- Name: mikro_orm_migrations_dermat_boms_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
-SELECT pg_catalog.setval('public.mikro_orm_migrations_dermat_boms_id_seq', 4, true);
+SELECT pg_catalog.setval('public.mikro_orm_migrations_dermat_boms_id_seq', 5, true);
 
 
 --

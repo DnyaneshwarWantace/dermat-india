@@ -23,6 +23,8 @@ import { useGuardedMutation } from '@open-mercato/ui/backend/injection/useGuarde
 import { flash } from '@open-mercato/ui/backend/FlashMessages'
 import { ErrorMessage, LoadingMessage } from '@open-mercato/ui/backend/detail'
 import { LINE_SPEC_SECTIONS, PARTY_SIDE } from '../lib/specs'
+import { SuggestInput } from '../../dermat_lists/components/SuggestInput'
+import { PackingCodeField } from './order/PackingCodeField'
 import { priceOrder } from '../lib/pricing'
 import { SearchPicker, type PickerOption } from './SearchPicker'
 import { formatDate, formatQty, todayIso } from './format'
@@ -332,7 +334,7 @@ export function OrderForm({ orderId, copyFrom, customerId }: { orderId?: string;
       prev.map((line) => {
         if (line.key !== key) return line
         const current = { ...(line.specs[section] ?? {}) }
-        for (const field of def.fields) if (!field.options && !current[field.key]?.trim()) current[field.key] = PARTY_SIDE
+        for (const field of def.fields) if (!current[field.key]?.trim()) current[field.key] = PARTY_SIDE
         return { ...line, specs: { ...line.specs, [section]: current } }
       }),
     )
@@ -931,16 +933,24 @@ export function OrderForm({ orderId, copyFrom, customerId }: { orderId?: string;
                                 {field.label}
                               </Label>
                               <div className="col-span-3">
-                                {field.options ? (
-                                  <Select value={value || '__none'} onValueChange={(next) => setSpec(line.key, section.key, field.key, next === '__none' ? '' : next)}>
-                                    <SelectTrigger className="h-8">
-                                      <SelectValue />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      <SelectItem value="__none">—</SelectItem>
-                                      <ListSelectItems listKey={field.listKey} fallback={field.options} current={value} extra={[PARTY_SIDE]} />
-                                    </SelectContent>
-                                  </Select>
+                                {section.key === 'primary' && field.key === 'packing_code' ? (
+                                  <PackingCodeField
+                                    value={value}
+                                    onPick={(code) => {
+                                      setSpec(line.key, section.key, field.key, code.code)
+                                      if (!line.specs.primary?.name) setSpec(line.key, section.key, 'name', code.name)
+                                    }}
+                                    onClear={() => setSpec(line.key, section.key, field.key, '')}
+                                  />
+                                ) : field.listKey ? (
+                                  <SuggestInput
+                                    listKey={field.listKey}
+                                    id={`spec-${line.key}-${section.key}-${field.key}`}
+                                    className="h-8"
+                                    value={value}
+                                    placeholder={field.options?.join(' / ')}
+                                    onChange={(event) => setSpec(line.key, section.key, field.key, event.target.value)}
+                                  />
                                 ) : (
                                   <Input className="h-8" value={value} onChange={(event) => setSpec(line.key, section.key, field.key, event.target.value)} />
                                 )}

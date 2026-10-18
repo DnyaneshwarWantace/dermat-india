@@ -349,7 +349,7 @@ const SPEC_COLUMNS: SheetColumn[] = LINE_SPEC_SECTIONS.flatMap((section) =>
     label: entry.label,
     section: section.title.charAt(0).toUpperCase() + section.title.slice(1),
     scope: 'line' as const,
-    edit: specEdit(section.key, entry.key, entry.options, entry.listKey),
+    edit: specEdit(section.key, entry.key, undefined, entry.listKey),
     render: ({ line }: CellInput) => <span className="block max-w-60 truncate">{dash(line?.specs?.[section.key]?.[entry.key])}</span>,
   })),
 )

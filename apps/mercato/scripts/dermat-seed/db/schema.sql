@@ -18850,6 +18850,31 @@ ALTER TABLE ONLY public.wms_stock_valuations
     ADD CONSTRAINT wms_stock_valuations_warehouse_id_foreign FOREIGN KEY (warehouse_id) REFERENCES public.wms_warehouses(id);
 
 
+CREATE TABLE public.dermat_packaging_codes (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    organization_id uuid NOT NULL,
+    tenant_id uuid NOT NULL,
+    code text NOT NULL,
+    name text NOT NULL,
+    kind text NOT NULL,
+    size text,
+    specs text,
+    components jsonb DEFAULT '[]'::jsonb NOT NULL,
+    printed_items jsonb DEFAULT '[]'::jsonb NOT NULL,
+    notes text,
+    created_at timestamp with time zone NOT NULL,
+    updated_at timestamp with time zone NOT NULL,
+    deleted_at timestamp with time zone
+);
+
+ALTER TABLE ONLY public.dermat_packaging_codes
+    ADD CONSTRAINT dermat_packaging_codes_pkey PRIMARY KEY (id);
+
+CREATE INDEX dermat_packaging_codes_org_tenant_idx ON public.dermat_packaging_codes USING btree (organization_id, tenant_id);
+
+CREATE UNIQUE INDEX dermat_packaging_codes_code_uq ON public.dermat_packaging_codes USING btree (organization_id, tenant_id, upper(code)) WHERE (deleted_at IS NULL);
+
+
 --
 -- PostgreSQL database dump complete
 --
