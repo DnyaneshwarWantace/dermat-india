@@ -8,6 +8,7 @@ import { CodeLink } from '../shared/CodeLink'
 import { KeyValueList } from '../shared/KeyValueList'
 import { Section } from '../shared/Section'
 import { STABILITY_STATUS, TRIAL_STATUS, dayText } from '../labels'
+import { LabResultsView } from '../trial/LabResultsView'
 import type { RdRequest, Trial } from '../types'
 
 type RequestOverviewProps = { request: RdRequest; trials: Trial[]; onOpenTrial: (trialId: string) => void }
@@ -16,6 +17,7 @@ export function RequestOverview({ request, trials, onOpenTrial }: RequestOvervie
   const t = useT()
   const approved = trials.find((trial) => trial.id === request.approvedTrialId) ?? null
   const latest = trials[trials.length - 1] ?? null
+  const tested = approved?.observations ? approved : [...trials].reverse().find((trial) => trial.observations) ?? null
 
   return (
     <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
@@ -29,7 +31,6 @@ export function RequestOverview({ request, trials, onOpenTrial }: RequestOvervie
               { label: t('dermat_rnd.texture', 'Texture'), value: request.texture },
               { label: t('dermat_rnd.fragrance', 'Fragrance'), value: request.fragrance },
               { label: t('dermat_rnd.colour', 'Colour'), value: request.colour },
-              { label: t('dermat_rnd.targetPh', 'Target pH'), value: request.targetPh },
               { label: t('dermat_rnd.claims', 'Claims'), value: request.claims },
               { label: t('dermat_rnd.sampleQty', 'Sample quantity'), value: request.sampleQty },
               { label: t('dermat_rnd.dueDate', 'Sample needed by'), value: request.dueDate ? dayText(request.dueDate) : null },
@@ -72,6 +73,9 @@ export function RequestOverview({ request, trials, onOpenTrial }: RequestOvervie
           ) : (
             <p className="text-sm text-muted-foreground">{t('dermat_rnd.overview.noFormula', 'No approved formula yet.')}</p>
           )}
+        </Section>
+        <Section title={tested ? t('dermat_rnd.overview.results', 'Lab results of {code}', { code: tested.code }) : t('dermat_rnd.overview.resultsNone', 'Lab results')}>
+          <LabResultsView observations={tested?.observations ?? null} />
         </Section>
         <Section title={t('dermat_rnd.overview.progress', 'Progress')}>
           <dl className="grid grid-cols-2 gap-3 text-sm">

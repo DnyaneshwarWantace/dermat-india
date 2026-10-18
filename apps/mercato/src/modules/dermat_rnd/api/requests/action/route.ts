@@ -5,6 +5,7 @@ import { enforceCommandOptimisticLock } from '@open-mercato/shared/lib/crud/opti
 import { hasFeatures, resolveOrderContext } from '../../../../dermat_orders/lib/server'
 import { rdActionSchema } from '../../../data/validators'
 import { actOnRequest, findRequest, requestView } from '../../../lib/service'
+import { followUpFeedback } from '../../../lib/trials'
 import { rdErrorResponse, runRdGuarded } from '../../../lib/server'
 
 export const metadata = {
@@ -23,6 +24,7 @@ async function POST(req: Request) {
     enforceCommandOptimisticLock({ resourceKind: 'dermat_rnd.request', resourceId: request.id, current: request.updatedAt, request: req })
     const result = await runRdGuarded(ctx, req, request.id, 'update', parsed.data as Record<string, unknown>, async () => {
       await actOnRequest(ctx, request, parsed.data)
+      if (parsed.data.action === 'feedback') await followUpFeedback(ctx, request, parsed.data)
       return requestView(request)
     })
     if (result instanceof Response) return result

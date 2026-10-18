@@ -31,6 +31,7 @@ export function RequestPage({ requestId, backHref = '/backend/rnd/requests' }: {
   const [stabilityStart, setStabilityStart] = React.useState<string | null>(null)
   const [form, setForm] = React.useState<RequestForm | null>(null)
   const [action, setAction] = React.useState<RequestActionKind | null>(null)
+  const [sendTrialId, setSendTrialId] = React.useState<string | null>(null)
   const canManage = granted.has('dermat_rnd.manage')
   const canRequest = granted.has('dermat_rnd.request')
 
@@ -101,6 +102,7 @@ export function RequestPage({ requestId, backHref = '/backend/rnd/requests' }: {
               selectedId={trialId}
               canManage={canManage}
               canMakeBom={granted.has('dermat_boms.manage')}
+              canRequest={canRequest}
               busy={busy}
               onSelect={setTrialId}
               onNewTrial={() => void newTrial()}
@@ -108,6 +110,10 @@ export function RequestPage({ requestId, backHref = '/backend/rnd/requests' }: {
               onOpenStability={(id) => {
                 setStabilityStart(id)
                 setTab('stability')
+              }}
+              onSendSample={(id) => {
+                setSendTrialId(id)
+                setAction('sample_sent')
               }}
             />
           ) : null}
@@ -129,9 +135,14 @@ export function RequestPage({ requestId, backHref = '/backend/rnd/requests' }: {
           request={request}
           action={action}
           trials={trials}
-          onClose={() => setAction(null)}
+          presetTrialId={sendTrialId}
+          onClose={() => {
+            setAction(null)
+            setSendTrialId(null)
+          }}
           onDone={() => {
             setAction(null)
+            setSendTrialId(null)
             void refresh()
           }}
         />

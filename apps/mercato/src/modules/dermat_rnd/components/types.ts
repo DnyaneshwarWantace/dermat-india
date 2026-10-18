@@ -12,10 +12,15 @@ export type Round = {
   sentVia: string | null
   feedback: string | null
   feedbackOn: string | null
-  result: 'approved' | 'changes' | null
+  result: 'approved' | 'changes' | 'rejected' | null
   by: string | null
   trialId?: string | null
   trialCode?: string | null
+  nextStep?: 'same' | 'new' | null
+  nextTrialCode?: string | null
+  feedbackBy?: string | null
+  addActives?: string[] | null
+  removeActives?: string[] | null
 }
 
 export type IngredientRef = { productId: string; code: string | null; name: string }
@@ -26,6 +31,7 @@ export type RdRequest = {
   kind: 'client' | 'npd'
   status: RequestStatus
   customerId: string | null
+  urgency?: 'normal' | 'urgent'
   customerName: string | null
   orderId: string | null
   orderNo: string | null
@@ -72,7 +78,8 @@ export type FormulaLine = {
 
 export type Observations = { values: Record<string, string>; result: PassFail | null; remarks: string | null; by: string | null; at: string | null }
 export type Reading = { condition: string; day: number; date: string; values: Record<string, string>; result: PassFail; remarks: string | null; by: string | null; at: string }
-export type Stability = { startDate: string | null; conditions: string[]; checkpoints: number[]; readings: Reading[]; conclusion: string | null }
+export type Stability = { startDate: string | null; conditions: string[]; checkpoints: number[]; readings: Reading[]; conclusion: string | null; endDate?: string | null }
+export type Micro = { required: boolean; testingDate: string | null; values: Record<string, string>; releasedDate: string | null; result: PassFail | null; remarks: string | null; by: string | null; at: string | null }
 
 export type Trial = {
   id: string
@@ -91,9 +98,13 @@ export type Trial = {
   observations: Observations | null
   stability: Stability | null
   stabilityStatus: StabilityStatus
+  productCode: string | null
+  sampleReceivedBy: string | null
+  micro: Micro | null
+  approvalProofs: number
   history: HistoryEntry[]
   createdAt: string
   updatedAt: string
 }
 
-export type TrialAction = 'submit' | 'record_result' | 'start_stability' | 'record_reading' | 'finish_stability' | 'approve' | 'reject' | 'reopen' | 'make_bom'
+export type TrialAction = 'submit' | 'record_result' | 'start_stability' | 'record_reading' | 'finish_stability' | 'approve' | 'reject' | 'reopen' | 'make_bom' | 'record_micro' | 'set_details'

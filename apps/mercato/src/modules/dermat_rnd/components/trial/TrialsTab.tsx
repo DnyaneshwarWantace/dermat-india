@@ -15,14 +15,16 @@ type TrialsTabProps = {
   selectedId: string | null
   canManage: boolean
   canMakeBom: boolean
+  canRequest: boolean
   busy: boolean
   onSelect: (id: string) => void
   onNewTrial: () => void
   onChanged: (select?: string) => Promise<void>
   onOpenStability: (trialId: string) => void
+  onSendSample: (trialId: string) => void
 }
 
-export function TrialsTab({ request, trials, selectedId, canManage, canMakeBom, busy, onSelect, onNewTrial, onChanged, onOpenStability }: TrialsTabProps) {
+export function TrialsTab({ request, trials, selectedId, canManage, canMakeBom, canRequest, busy, onSelect, onNewTrial, onChanged, onOpenStability, onSendSample }: TrialsTabProps) {
   const t = useT()
   const selected = trials.find((trial) => trial.id === selectedId) ?? trials[trials.length - 1] ?? null
   if (!selected) {
@@ -41,7 +43,7 @@ export function TrialsTab({ request, trials, selectedId, canManage, canMakeBom, 
         <TrialList trials={trials} selectedId={selected.id} approvedId={request.approvedTrialId} onSelect={onSelect} />
       </aside>
       <div className="lg:col-span-9">
-        <TrialPanel key={selected.id} request={request} trial={selected} canManage={canManage} canMakeBom={canMakeBom} onChanged={onChanged} onOpenStability={() => onOpenStability(selected.id)} />
+        <TrialPanel key={selected.id} request={request} trial={selected} canManage={canManage} canMakeBom={canMakeBom} canRequest={canRequest} onChanged={onChanged} onOpenStability={() => onOpenStability(selected.id)} onSendSample={onSendSample} />
       </div>
     </div>
   )

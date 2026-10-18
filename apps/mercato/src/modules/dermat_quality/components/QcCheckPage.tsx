@@ -363,8 +363,8 @@ export function QcCheckPage({ checkId }: { checkId: string }) {
           {parts
             .filter((part) => part.required)
             .map((part) => {
-              const rows = check.results.filter((row) => row.test === part.key)
               const editable = part.status === 'pending' && canPart(part.key)
+              const rows = check.results.filter((row) => row.test === part.key && (editable || row.observation.trim()))
               return (
                 <Card key={part.key} className="overflow-hidden">
                   <CardHeader className="flex flex-col gap-2 border-b bg-muted/20 pb-3 sm:flex-row sm:items-center sm:justify-between">
@@ -375,7 +375,7 @@ export function QcCheckPage({ checkId }: { checkId: string }) {
                       </CardTitle>
                       <CardDescription className="text-xs">
                         {editable
-                          ? t('dermat_quality.fillHint', 'Enter the observation for every parameter, then pass or fail this test.')
+                          ? t('dermat_quality.fillHint', 'Fill the parameters you tested; empty ones are left off the report. Then pass or fail this test.')
                           : `${PART_LABEL[part.status]}${part.by ? ` · ${part.by} · ${when(part.at)}` : ''}`}
                       </CardDescription>
                     </div>

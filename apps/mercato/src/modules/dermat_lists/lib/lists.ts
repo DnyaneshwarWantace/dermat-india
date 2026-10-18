@@ -239,7 +239,14 @@ export const LIST_DEFS: ListDef[] = [
     label: 'R&D lab test parameters',
     department: 'R&D',
     usedIn: 'R&D trial lab results',
-    defaults: ['Description', 'Appearance', 'Colour', 'Odour', 'Texture', 'pH', 'Viscosity (cps)', 'Specific gravity', 'Spreadability'],
+    defaults: ['Description', 'Appearance', 'Colour', 'Odour', 'Texture', 'pH', 'Viscosity (cps)', 'Density @25°C (g/ml)', 'Centrifuge (3000 RPM, 30 min)', 'Specific gravity', 'Spreadability'],
+  },
+  {
+    key: 'rnd_micro_parameters',
+    label: 'Microbiology tests',
+    department: 'R&D',
+    usedIn: 'R&D trial microbiology results',
+    defaults: ['TAMC', 'TYMC', 'S. aureus', 'P. aeruginosa', 'E. coli', 'Salmonella'],
   },
   {
     key: 'rnd_stability_conditions',

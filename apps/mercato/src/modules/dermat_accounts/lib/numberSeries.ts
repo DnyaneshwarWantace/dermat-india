@@ -19,7 +19,7 @@ export const SERIES_DEFS: SeriesDef[] = [
   { key: 'QC', label: 'Quality check', department: 'QC', table: 'dermat_quality_checks', column: 'code', prefix: 'DER/QC/{FY}/', suffix: '', pad: 4, startAt: 1 },
   { key: 'QR', label: 'Quality rule', department: 'QC', table: 'dermat_quality_rules', column: 'code', prefix: 'DER/QR/{FY}/', suffix: '', pad: 3, startAt: 1 },
   { key: 'PL', label: 'Material plan', department: 'Planning', table: 'dermat_planning_plans', column: 'code', prefix: 'DER/PL/{FY}/', suffix: '', pad: 3, startAt: 1 },
-  { key: 'RD', label: 'R&D request', department: 'R&D', table: 'dermat_rnd_requests', column: 'code', prefix: 'DER/RD/{FY}/', suffix: '', pad: 4, startAt: 1 },
+  { key: 'RD', label: 'R&D request (samples get -01, -02 …)', department: 'R&D', table: 'dermat_rnd_requests', column: 'code', prefix: 'RD', suffix: '', pad: 4, startAt: 1 },
   { key: 'SKU', label: 'Product SKU', department: 'Masters', table: 'catalog_products', column: 'sku', prefix: 'SKU', suffix: '', pad: 1, startAt: 1 },
 ]
 

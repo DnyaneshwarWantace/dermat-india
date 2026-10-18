@@ -185,7 +185,7 @@ class Driver:
         vessel = ['Vessel V-1 (100 kg)', 'Vessel V-2 (200 kg)', 'Vessel V-3 (500 kg)'][idx % 3]
         return {
             'advance': {'pi_number': f'PI/2627/{60 + idx:03d}', 'advance_percent': 40, 'advance_amount': o['advance'], 'received_on': o['d'](2), 'payment_ref': f'UTR HDFC{520260 + idx * 13}'},
-            'sampling': {'rd_number': f'RD/2627/{130 + idx}', 'sample_name': o['title'], 'sample_sent_on': o['d'](5), 'client_feedback': 'Approved', 'remarks': 'Approved by client on mail.'},
+            'sampling': {'rd_number': f'RD{130 + idx:04d}-01', 'sample_name': o['title'], 'sample_sent_on': o['d'](5), 'client_feedback': 'Approved', 'remarks': 'Approved by client on mail.'},
             'formulation': {'remarks': 'Standard formula approved, no order-specific change.'},
             'planning': {'material_status': 'All available', 'planned_for': o['d'](12), 'planned_vessel': vessel, 'remarks': 'All RM and PM reserved.'},
             'artwork': {'designer_status': 'PM OK', 'status_note': 'All packing material in store', 'artwork_approved_on': o['d'](8), 'remarks': 'Label and carton approved by client.'},

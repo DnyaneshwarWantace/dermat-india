@@ -33,7 +33,7 @@ export function RequestFormDialog({ form, editing, onChange, onClose, onSaved }:
   const save = async () => {
     if (!form) return
     if (!form.productName.trim()) return flash(t('dermat_rnd.nameNeeded', 'Name the product'), 'error')
-    if (form.kind === 'client' && !form.customer && !form.orderId) return flash(t('dermat_rnd.clientNeeded', 'Pick the client, or choose New product'), 'error')
+    if (form.kind === 'client' && !form.customer && !form.orderId && !form.newClientName.trim()) return flash(t('dermat_rnd.clientNeeded', 'Pick the client or type a new client name, or choose New product'), 'error')
     const saved = await send<RdRequest>('/api/dermat_rnd/requests', editing ? 'PUT' : 'POST', bodyFromForm(form, editing?.id), {
       version: editing?.updatedAt ?? null,
       success: editing ? t('dermat_rnd.saved', '{code} saved', { code: editing.code }) : t('dermat_rnd.createdShort', 'R&D request raised'),
@@ -65,9 +65,14 @@ export function RequestFormDialog({ form, editing, onChange, onClose, onSaved }:
             <SegmentedControlItem value="npd">{t('dermat_rnd.forNpd', 'New product of our own (NPD)')}</SegmentedControlItem>
           </SegmentedControl>
           {form.kind === 'client' && !form.orderId ? (
-            <Field id="rd-client" label={t('dermat_rnd.client', 'Client *')}>
-              <SearchPicker value={form.customer} placeholder={t('dermat_rnd.pickClient', 'Pick the client')} searchPlaceholder={t('dermat_rnd.searchClient', 'Search clients')} load={searchCustomers} onSelect={(option) => onChange({ ...form, customer: option })} />
-            </Field>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <Field id="rd-client" label={t('dermat_rnd.client', 'Client *')}>
+                <SearchPicker value={form.customer} placeholder={t('dermat_rnd.pickClient', 'Pick the client')} searchPlaceholder={t('dermat_rnd.searchClient', 'Search clients')} load={searchCustomers} onSelect={(option) => onChange({ ...form, customer: option, newClientName: '' })} />
+              </Field>
+              <Field id="rd-newclient" label={t('dermat_rnd.newClient', 'or a new client (not in the system yet)')}>
+                <Input id="rd-newclient" value={form.newClientName} disabled={Boolean(form.customer)} placeholder={t('dermat_rnd.newClientHint', 'Client name')} onChange={(event) => onChange({ ...form, newClientName: event.target.value })} />
+              </Field>
+            </div>
           ) : null}
           {form.orderId ? <p className="text-sm text-muted-foreground">{t('dermat_rnd.fromOrder', 'Linked to the order you came from.')}</p> : null}
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
@@ -81,6 +86,12 @@ export function RequestFormDialog({ form, editing, onChange, onClose, onSaved }:
             <Field id="rd-due" label={t('dermat_rnd.dueDate', 'Sample needed by')}>
               <Input id="rd-due" type="date" value={form.dueDate} onChange={(event) => onChange({ ...form, dueDate: event.target.value })} />
             </Field>
+            <Field id="rd-urgency" label={t('dermat_rnd.urgency', 'Urgency')}>
+              <SegmentedControl value={form.urgency} onValueChange={(value) => onChange({ ...form, urgency: value === 'urgent' ? 'urgent' : 'normal' })} aria-label={t('dermat_rnd.urgency', 'Urgency')}>
+                <SegmentedControlItem value="normal">{t('dermat_rnd.urgencyNormal', 'Normal')}</SegmentedControlItem>
+                <SegmentedControlItem value="urgent">{t('dermat_rnd.urgencyUrgent', 'Urgent')}</SegmentedControlItem>
+              </SegmentedControl>
+            </Field>
           </div>
           <Field id="rd-ingredients-pick" label={t('dermat_rnd.ingredientsWanted', 'Ingredients the client wants')} hint={t('dermat_rnd.ingredientsHint', 'Pick from the raw material list. Write anything not in the list below.')}>
             <IngredientPicker value={form.ingredientRefs} onChange={(ingredientRefs) => onChange({ ...form, ingredientRefs })} />
@@ -91,7 +102,6 @@ export function RequestFormDialog({ form, editing, onChange, onClose, onSaved }:
             {text('texture', t('dermat_rnd.texture', 'Texture'))}
             {text('fragrance', t('dermat_rnd.fragrance', 'Fragrance'))}
             {text('colour', t('dermat_rnd.colour', 'Colour'))}
-            {text('targetPh', t('dermat_rnd.targetPh', 'Target pH'), '5.0 – 5.5')}
             {text('claims', t('dermat_rnd.claims', 'Claims'), t('dermat_rnd.claimsHint', 'Paraben free, vegan…'))}
           </div>
           <Field id="rd-instruction" label={t('dermat_rnd.clientInstruction', "Client's instruction")}>
@@ -100,6 +110,11 @@ export function RequestFormDialog({ form, editing, onChange, onClose, onSaved }:
           <Field id="rd-notes" label={t('dermat_rnd.notes', 'Notes')}>
             <Textarea id="rd-notes" rows={2} value={form.notes} onChange={(event) => onChange({ ...form, notes: event.target.value })} />
           </Field>
+          <p className="text-xs text-muted-foreground">
+            {editing?.requestedByName
+              ? t('dermat_rnd.requestedBy', 'Requested by {name}', { name: editing.requestedByName })
+              : t('dermat_rnd.requestedByAuto', 'Your name and today’s date are added by themselves.')}
+          </p>
         </>
       ) : null}
     </FormDialog>

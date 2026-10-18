@@ -162,6 +162,7 @@ export function buildCoaHtml(order: Order, checks: CoaCheck[], company?: DocComp
     .map((check) => {
       const title = check.operation === 'bulk' ? 'Bulk (semi-finished)' : check.operation === 'packing' ? 'Finished good' : check.operation === 'filling' ? 'After filling' : check.operation
       const rows = check.results
+        .filter((row) => row.observation && row.observation.trim())
         .map((row) => `<tr><td>${esc(row.name)}</td><td>${esc(row.class)}</td><td>${esc(row.spec || '—')}</td><td><strong>${esc(row.observation || '—')}</strong></td><td>${row.test === 'micro' ? 'Micro' : 'Chemical'}</td><td>${esc(row.remark || '')}</td></tr>`)
         .join('')
       const sign = [

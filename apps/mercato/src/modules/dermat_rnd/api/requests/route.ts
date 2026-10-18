@@ -5,21 +5,13 @@ import { enforceCommandOptimisticLock } from '@open-mercato/shared/lib/crud/opti
 import { resolveOrderContext } from '../../../dermat_orders/lib/server'
 import { RdRequest } from '../../data/entities'
 import { rdInputSchema, rdListSchema, rdUpdateSchema } from '../../data/validators'
-import { createRequest, findRequest, requestView, updateRequest } from '../../lib/service'
+import { createRequest, findRequest, requestFilter, requestView, updateRequest } from '../../lib/service'
 import { rdErrorResponse, runRdGuarded } from '../../lib/server'
 
 export const metadata = {
   GET: { requireAuth: true, requireFeatures: ['dermat_rnd.view'] },
   POST: { requireAuth: true, requireFeatures: ['dermat_rnd.request'] },
   PUT: { requireAuth: true, requireFeatures: ['dermat_rnd.request'] },
-}
-
-const VIEW_STATUS: Record<string, string[] | null> = {
-  open: ['requested', 'in_progress', 'changes'],
-  samples: ['sample_sent'],
-  approved: ['approved'],
-  closed: ['dropped'],
-  all: null,
 }
 
 async function GET(req: Request) {
@@ -29,15 +21,7 @@ async function GET(req: Request) {
   if (!parsed.success) return NextResponse.json({ error: 'Invalid query' }, { status: 400 })
   try {
     if (parsed.data.id) return NextResponse.json(requestView(await findRequest(ctx, parsed.data.id)))
-    const where: Record<string, unknown> = { tenantId: ctx.tenantId, organizationId: ctx.organizationId, deletedAt: null }
-    const statuses = VIEW_STATUS[parsed.data.view]
-    if (statuses) where.status = { $in: statuses }
-    if (parsed.data.kind) where.kind = parsed.data.kind
-    if (parsed.data.customerId) where.customerId = parsed.data.customerId
-    if (parsed.data.search) {
-      const term = `%${parsed.data.search.replace(/[%_]/g, '')}%`
-      where.$or = [{ code: { $ilike: term } }, { productName: { $ilike: term } }, { customerName: { $ilike: term } }, { brand: { $ilike: term } }, { orderNo: { $ilike: term } }]
-    }
+    const where = requestFilter(ctx, parsed.data)
     const items = await ctx.em.find(RdRequest, where, { orderBy: { updatedAt: 'desc' }, limit: 300 })
     const counts = await ctx.em.getConnection().execute<Array<{ status: string; total: string }>>('select status, count(*) as total from dermat_rnd_requests where tenant_id = ? and organization_id = ? and deleted_at is null group by status', [ctx.tenantId, ctx.organizationId])
     const ids = items.map((item) => item.id)
