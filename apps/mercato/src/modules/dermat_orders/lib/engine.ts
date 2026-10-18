@@ -14,6 +14,7 @@ import { priceLine, priceOrder } from './pricing'
 import { paymentTermDays, paymentTermLabel } from '../../dermat_lists/lib/paymentTerms'
 import { canSeeMoney, isMoneyEvent, isMoneyStageField, withoutMoneyFields } from './money'
 import { documentCounts, documentStatus, missingDocuments } from './stageDocuments'
+import { packingCodeIssues, packingCodeMessage } from './packingCodes'
 
 function pricedLine(line: DermatOrderLine) {
   return { quantity: Number(line.quantity), rate: line.rate == null ? null : Number(line.rate), gstPercent: Number(line.gstPercent ?? 18), discountPercent: Number(line.discountPercent ?? 0) }
@@ -412,6 +413,10 @@ export async function applyStageAction(ctx: OrderContext, order: DermatOrder, in
       mergeData()
       const missing = missingRequired(def, stage.data ?? {})
       if (missing.length) throw new OrderError(`Fill in: ${missing.join(', ')}`, 400, { missing })
+      if (def.key === 'artwork') {
+        const codeIssues = await packingCodeIssues(ctx, order.id)
+        if (codeIssues.length) throw new OrderError(packingCodeMessage(codeIssues), 400, { packingCodes: codeIssues.map((issue) => issue.lineId) })
+      }
       const orderValue = priceOrder((await ctx.em.find(DermatOrderLine, { orderId: order.id })).map(pricedLine), order.pricesIncludeGst).total
       const missingDocs = await missingDocuments(ctx, order.id, def.key, orderValue, overrides.get(def.key))
       if (missingDocs.length) throw new OrderError(`Upload: ${missingDocs.map((doc) => doc.label).join(', ')}`, 400, { documents: missingDocs.map((doc) => doc.key) })
@@ -698,6 +703,7 @@ export async function serializeOrder(ctx: OrderContext, order: DermatOrder) {
     store,
     reservations,
     packItems: await packItems(ctx, order.id),
+    packingCodeIssues: await packingCodeIssues(ctx, order.id),
     events: events.map((event) => ({
       id: event.id,
       stageKey: event.stageKey ?? null,

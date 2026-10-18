@@ -144,6 +144,14 @@ export const ACCESS_AREAS: AccessArea[] = [
     ],
   },
   {
+    key: 'products',
+    label: 'Products',
+    department: 'Purchase',
+    pages: 'Raw and packing material lists, product pages, exports',
+    independent: true,
+    abilities: [{ feature: 'dermat_products.supplier', label: 'See supplier names on materials', short: 'Suppliers' }],
+  },
+  {
     key: 'masters',
     label: 'Masters',
     department: 'Admin',

@@ -75,7 +75,7 @@ type Row = {
   specificGravity: number | null
 }
 
-type ProductInfo = { id: string; title: string; kind: string | null; unit: string | null; code: string | null; packSize: string | null }
+type ProductInfo = { id: string; title: string; kind: string | null; unit: string | null; code: string | null; packSize: string | null; packagingCode?: string | null }
 
 type EditorState = {
   bom: BomView | null
@@ -193,6 +193,7 @@ async function readProduct(productId: string): Promise<ProductInfo | null> {
     unit: (item.default_unit as string | null) ?? null,
     code: code || null,
     packSize: ((item.cf_pack_size ?? custom.pack_size ?? null) as string | null) || null,
+    packagingCode: ((item.cf_packaging_code ?? custom.packaging_code ?? null) as string | null) || null,
   }
 }
 
@@ -383,6 +384,19 @@ export function BomEditor({ bomId, productId }: { bomId?: string; productId?: st
     setDirty(true)
     flash(t('dermat_boms.packaging.added', '{count} lines added from {code}', { count: added.length, code: code.code }), 'success')
   }
+
+  const autoFilled = React.useRef<string | null>(null)
+  React.useEffect(() => {
+    if (!state || state.bom || state.kind !== 'pack' || !state.product.id || !state.product.packagingCode || state.rows.length) return
+    if (autoFilled.current === state.product.id) return
+    autoFilled.current = state.product.id
+    const wanted = state.product.packagingCode
+    void apiCall<{ items?: PackagingCodeView[] }>(`/api/dermat_boms/packaging-codes?code=${encodeURIComponent(wanted)}&pageSize=1`, undefined, { fallback: { items: [] } }).then((call) => {
+      const code = call.result?.items?.[0]
+      if (code) void addPackagingSet(code)
+      else flash(t('dermat_boms.packaging.codeMissing', 'This product\'s packaging code {code} is not in Masters → Packaging codes yet.', { code: wanted }), 'info')
+    })
+  })
 
   const selectProduct = async (option: ComponentOption) => {
     const product = (await readProduct(option.id)) ?? { ...NO_PRODUCT, id: option.id, title: option.title, kind: option.kind, unit: option.unit, code: option.code }

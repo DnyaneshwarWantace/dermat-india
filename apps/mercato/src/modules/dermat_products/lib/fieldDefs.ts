@@ -38,7 +38,7 @@ export function isNumericField(def: ProductFieldDef): boolean {
 export async function loadProductFieldDefs(): Promise<ProductFieldDef[]> {
   const call = await apiCall<{ items?: RawDef[] }>(
     `/api/entities/definitions?entityId=${encodeURIComponent(PRODUCT_ENTITY_ID)}`,
-    undefined,
+    { headers: { 'x-om-forbidden-redirect': '0' } },
     { fallback: { items: [] } },
   )
   return (call.result?.items ?? [])

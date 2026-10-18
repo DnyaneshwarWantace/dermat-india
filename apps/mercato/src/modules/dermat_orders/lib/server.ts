@@ -38,6 +38,8 @@ export type ProductSummary = {
   packSize: string | null
   brandName: string | null
   mrp: number | null
+  packagingCode: string | null
+  batchCode: string | null
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -173,7 +175,7 @@ export async function loadProducts(ctx: OrderContext, ids: string[]): Promise<Ma
             coalesce(v.value_float::numeric, v.value_int::numeric)::text as value_num
        from catalog_products p
        left join custom_field_values v on v.record_id = p.id::text and v.entity_id = 'catalog:catalog_product'
-        and v.deleted_at is null and v.field_key in ('item_code', 'pack_size', 'brand_name', 'mrp')
+        and v.deleted_at is null and v.field_key in ('item_code', 'pack_size', 'brand_name', 'mrp', 'packaging_code', 'batch_code')
       where p.id = any(?::uuid[]) and p.tenant_id = ? and p.organization_id = ?`,
     [`{${unique.join(',')}}`, ctx.tenantId, ctx.organizationId],
   )
@@ -188,7 +190,11 @@ export async function loadProducts(ctx: OrderContext, ids: string[]): Promise<Ma
       packSize: null,
       brandName: null,
       mrp: null,
+      packagingCode: null,
+      batchCode: null,
     }
+    if (row.field_key === 'packaging_code' && row.value_text) current.packagingCode = row.value_text
+    if (row.field_key === 'batch_code' && row.value_text) current.batchCode = row.value_text.trim()
     if (row.field_key === 'item_code' && row.value_text) current.code = row.value_text
     if (row.field_key === 'pack_size' && row.value_text) current.packSize = row.value_text
     if (row.field_key === 'brand_name' && row.value_text) current.brandName = row.value_text

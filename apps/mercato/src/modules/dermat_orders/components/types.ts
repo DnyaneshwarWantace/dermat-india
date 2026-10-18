@@ -20,6 +20,8 @@ export type ProductInfo = {
   packSize: string | null
   brandName: string | null
   mrp: number | null
+  packagingCode?: string | null
+  batchCode?: string | null
 }
 
 export type BomRef = { id: string; version: number; status: string; orderId?: string | null } | null
@@ -142,6 +144,7 @@ export type Order = {
   store: Record<string, OrderStoreRequest[]>
   reservations: Array<{ productId: string; title: string; unit: string | null; quantity: number; since: string }>
   packItems: Array<{ productId: string; title: string; code: string | null; unit: string; quantity: number }>
+  packingCodeIssues?: Array<{ lineId: string; product: string; code: string | null }>
   pricesIncludeGst: boolean
   canSeeMoney: boolean
   access?: { full: boolean; stages: string[] }

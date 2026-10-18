@@ -2,7 +2,7 @@
 
 import * as React from 'react'
 import type { LegacyColumnDef as ColumnDef } from '@tanstack/react-table/legacy'
-import { Plus } from 'lucide-react'
+import { Plus, Ruler } from 'lucide-react'
 import { useT } from '@open-mercato/shared/lib/i18n/context'
 import { Page, PageBody } from '@open-mercato/ui/backend/Page'
 import { DataTable } from '@open-mercato/ui/backend/DataTable'
@@ -16,6 +16,7 @@ import { useGranted } from '../../../dermat_departments/components/useGranted'
 import type { PackagingCodeView } from '../types'
 import { PACKAGING_KIND_LABEL } from './labels'
 import { PackagingCodeDialog, type PackagingDraft } from './PackagingCodeDialog'
+import { SizeCodeDialog } from './SizeCodeDialog'
 
 type ListResponse = { items?: PackagingCodeView[]; total?: number; totalPages?: number }
 
@@ -36,6 +37,7 @@ export function PackagingCodesPage() {
   const [reload, setReload] = React.useState(0)
   const [dialog, setDialog] = React.useState<{ open: boolean; editing: PackagingCodeView | null }>({ open: false, editing: null })
   const [busy, setBusy] = React.useState(false)
+  const [sizeFrom, setSizeFrom] = React.useState<PackagingCodeView | null>(null)
 
   React.useEffect(() => {
     let cancelled = false
@@ -154,8 +156,30 @@ export function PackagingCodesPage() {
         cell: ({ row }) => <span className="text-xs">{row.original.printedItems.join(', ') || '—'}</span>,
       },
       { id: 'specs', header: t('dermat_boms.packaging.specs', 'Standard specs'), cell: ({ row }) => <span className="text-xs text-muted-foreground">{row.original.specs ?? '—'}</span> },
+      ...(canManage
+        ? [
+            {
+              id: 'sizeFrom',
+              header: '',
+              cell: ({ row }: { row: { original: PackagingCodeView } }) => (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    setSizeFrom(row.original)
+                  }}
+                >
+                  <Ruler className="mr-1.5 size-4" aria-hidden="true" />
+                  {t('dermat_boms.sizeCode.open', 'New size')}
+                </Button>
+              ),
+            } as ColumnDef<PackagingCodeView>,
+          ]
+        : []),
     ],
-    [t],
+    [t, canManage],
   )
 
   return (
@@ -191,6 +215,14 @@ export function PackagingCodesPage() {
           onClose={() => setDialog({ open: false, editing: null })}
           onSave={(draft) => void save(draft)}
           onDelete={() => void remove()}
+        />
+        <SizeCodeDialog
+          source={sizeFrom}
+          onClose={() => setSizeFrom(null)}
+          onSaved={() => {
+            setSizeFrom(null)
+            setReload((value) => value + 1)
+          }}
         />
         {ConfirmDialogElement}
       </PageBody>

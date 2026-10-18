@@ -3,7 +3,7 @@
 import * as React from 'react'
 import { useGranted } from '../../dermat_departments/components/useGranted'
 import Link from 'next/link'
-import { Boxes, ClipboardList, FileStack, History, Layers, Pencil, Plus, Users, Warehouse } from 'lucide-react'
+import { Boxes, ClipboardList, FileStack, History, Layers, Pencil, Plus, Ruler, Users, Warehouse } from 'lucide-react'
 import { useT } from '@open-mercato/shared/lib/i18n/context'
 import { cn } from '@open-mercato/shared/lib/utils'
 import { Page, PageBody } from '@open-mercato/ui/backend/Page'
@@ -16,6 +16,7 @@ import { KIND_CONFIG } from '../lib/kindConfig'
 import type { ProductKind } from '../lib/kinds'
 import { COMMON_FIELD_KEYS, fieldsForKind, loadProductFieldDefs, type ProductFieldDef } from '../lib/fieldDefs'
 import { BackLink } from '../../dermat_departments/components/BackLink'
+import { SizeVariantDialog } from './SizeVariantDialog'
 
 type Row = Record<string, unknown> & { id: string }
 type StockDetail = {
@@ -66,6 +67,7 @@ type StoreRequestRow = {
   product: { required: number; issued: number; received: number; used: number; returned: number; unit: string } | null
 }
 
+type ReceivedRow = { grnId: string; code: string; date: string; vendorName: string | null; poCode: string | null; invoiceNo: string | null; quantity: number; unit: string | null; lotNumber: string | null; rate: number | null; files: number }
 type PurchaseRow = { id: string; code: string; vendorName: string; poDate: string; expectedDate: string | null; status: string; product: { quantity: number; received: number; rate: number; unit: string } | null }
 const PO_VARIANT: Record<string, StatusBadgeVariant> = { draft: 'neutral', pending_approval: 'warning', approved: 'info', partly_received: 'info', received: 'success', cancelled: 'error' }
 const PO_LABEL: Record<string, string> = { draft: 'Draft', pending_approval: 'Waiting approval', approved: 'Approved', partly_received: 'Partly received', received: 'Received', cancelled: 'Cancelled' }
@@ -148,7 +150,9 @@ export function ProductDetail({ productId }: { productId: string }) {
   const [packing, setPacking] = React.useState<Packing[]>([])
   const [requests, setRequests] = React.useState<StoreRequestRow[] | null>(null)
   const [purchases, setPurchases] = React.useState<PurchaseRow[] | null>(null)
+  const [received, setReceived] = React.useState<ReceivedRow[] | null>(null)
   const [parent, setParent] = React.useState<{ id: string; title: string } | null>(null)
+  const [sizeOpen, setSizeOpen] = React.useState(false)
 
   const kind = (text(read(product, 'custom_fieldset_code')) as ProductKind) || null
   const config = kind && KIND_CONFIG[kind] ? KIND_CONFIG[kind] : null
@@ -185,6 +189,9 @@ export function ProductDetail({ productId }: { productId: string }) {
             if (!cancelled) setRequests(call.result?.items ?? [])
           })
         } else setRequests([])
+        apiCall<{ items?: ReceivedRow[] }>(`/api/dermat_purchase/grns/received?productId=${encodeURIComponent(productId)}`, undefined, { fallback: { items: [] } }).then((call) => {
+          if (!cancelled) setReceived(call.result?.items ?? [])
+        })
         if (may('dermat_purchase.view')) {
           apiCall<{ items?: PurchaseRow[] }>(`/api/dermat_purchase/orders?productId=${encodeURIComponent(productId)}&pageSize=20`, undefined, { fallback: { items: [] } }).then((call) => {
             if (!cancelled) setPurchases(call.result?.items ?? [])
@@ -283,7 +290,7 @@ export function ProductDetail({ productId }: { productId: string }) {
   const hasBom = kind === 'bulk' || kind === 'rnd' || kind === 'finished_goods'
 
   const liquid = ['l', 'ml'].includes(unit.toLowerCase())
-  const showField = (key: string) => !COMMON_FIELD_KEYS.has(key) && (key !== 'specific_gravity' || kind !== 'raw_material' || liquid)
+  const showField = (key: string) => !COMMON_FIELD_KEYS.has(key) && (key !== 'specific_gravity' || kind !== 'raw_material' || liquid) && (key !== 'supplier' || granted.has('dermat_products.supplier'))
   const details: Array<[string, string]> = [
     [config.codeLabel, code],
     [t('dermat_products.form.unit', 'Unit'), unit],
@@ -299,6 +306,7 @@ export function ProductDetail({ productId }: { productId: string }) {
     <Page>
       <PageBody>
         <div className="mx-auto max-w-7xl space-y-5 pb-16">
+          <SizeVariantDialog open={sizeOpen} productId={productId} title={text(product.title)} code={code !== '—' ? code : null} onClose={() => setSizeOpen(false)} />
           <div className="flex flex-col gap-4 border-b pb-4 lg:flex-row lg:items-start lg:justify-between">
             <div className="min-w-0 space-y-1">
               <BackLink href={`/backend/products?tab=${config.slug}`} label={config.title} />
@@ -336,6 +344,12 @@ export function ProductDetail({ productId }: { productId: string }) {
                     <FileStack className="mr-1.5 h-4 w-4" />
                     {bom ? t('dermat_products.detail.openBom', 'Open BOM') : t('dermat_products.detail.makeBom', 'Make BOM')}
                   </Link>
+                </Button>
+              ) : null}
+              {kind === 'packing_material' && !parent && granted.has('catalog.products.manage') ? (
+                <Button type="button" variant="outline" size="sm" onClick={() => setSizeOpen(true)}>
+                  <Ruler className="mr-1.5 h-4 w-4" />
+                  {t('dermat_products.size.add', 'Add size')}
                 </Button>
               ) : null}
               <Button asChild size="sm">
@@ -522,6 +536,53 @@ export function ProductDetail({ productId }: { productId: string }) {
                     </ul>
                   ) : (
                     <Empty>{t('dermat_products.detail.noPurchases', 'Never ordered from a vendor yet.')}</Empty>
+                  )}
+                </Section>
+              ) : null}
+
+              {received ? (
+                <Section
+                  icon={History}
+                  title={t('dermat_products.detail.received', 'Received (where it came from)')}
+                  description={t('dermat_products.detail.receivedHint', 'Every delivery: date, vendor, PO, invoice, lot and photos')}
+                  flush
+                >
+                  {received.length ? (
+                    <ul className="divide-y text-sm">
+                      {received.map((row, index) => {
+                        const content = (
+                          <>
+                            <span className="min-w-0">
+                              <span className="block font-mono text-xs font-semibold">
+                                {row.code} · {date(row.date)}
+                              </span>
+                              <span className="block truncate text-xs text-muted-foreground">
+                                {[row.vendorName, row.poCode, row.invoiceNo ? t('dermat_products.detail.invoiceNo', 'Invoice {no}', { no: row.invoiceNo }) : null, row.lotNumber ? t('dermat_products.detail.lot', 'Lot {lot}', { lot: row.lotNumber }) : null].filter(Boolean).join(' · ')}
+                              </span>
+                            </span>
+                            <span className="shrink-0 text-right text-xs tabular-nums text-muted-foreground">
+                              <span className="block font-mono text-foreground">
+                                {qty(row.quantity)} {row.unit ?? ''}
+                              </span>
+                              {[row.rate != null ? `₹${qty(row.rate, 2)}` : null, row.files ? t('dermat_products.detail.files', '{count} file(s)', { count: row.files }) : t('dermat_products.detail.noFiles', 'no invoice / photo')].filter(Boolean).join(' · ')}
+                            </span>
+                          </>
+                        )
+                        return (
+                          <li key={`${row.grnId}-${index}`}>
+                            {granted.has('dermat_purchase.view') ? (
+                              <Link href={`/backend/purchase/grns/${row.grnId}`} className="flex items-center justify-between gap-3 px-4 py-2.5 hover:bg-muted/40">
+                                {content}
+                              </Link>
+                            ) : (
+                              <div className="flex items-center justify-between gap-3 px-4 py-2.5">{content}</div>
+                            )}
+                          </li>
+                        )
+                      })}
+                    </ul>
+                  ) : (
+                    <Empty>{t('dermat_products.detail.noReceived', 'Nothing received yet.')}</Empty>
                   )}
                 </Section>
               ) : null}

@@ -389,6 +389,7 @@ export function OrderForm({ orderId, copyFrom, customerId, fromPi }: { orderId?:
               packSize: line.packSize || details.packSize || '',
               brandName: line.brandName || details.brandName || '',
               mrp: line.mrp || (details.mrp == null ? '' : String(details.mrp)),
+              specs: details.packagingCode && !line.specs.primary?.packing_code ? { ...line.specs, primary: { ...(line.specs.primary ?? {}), packing_code: details.packagingCode } } : line.specs,
             }
           : line,
       ),

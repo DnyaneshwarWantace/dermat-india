@@ -145,7 +145,7 @@ class Seeder:
         for d in load('product_fields'):
             if d['key'] in existing:
                 continue
-            config = {'label': d['label'], 'fieldsets': d.get('fieldsets') or [], 'formEditable': True, 'listVisible': d.get('listVisible', False), 'filterable': d.get('filterable', False)}
+            config = {'label': d['label'], 'fieldsets': d.get('fieldsets') or [], 'formEditable': d.get('formEditable', True), 'listVisible': d.get('listVisible', False), 'filterable': d.get('filterable', False)}
             if d.get('options'):
                 config['options'] = [o['value'] if isinstance(o, dict) else o for o in d['options']]
             if self.api.ok(f"product field {d['key']}", *self.api.call('POST', '/api/entities/definitions', {'entityId': 'catalog:catalog_product', 'key': d['key'], 'kind': d['kind'], 'configJson': config})):

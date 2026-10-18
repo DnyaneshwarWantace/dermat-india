@@ -83,22 +83,45 @@ function applyHeader(order: DermatOrder, input: OrderInput) {
 
 const FIRST_BATCH_NO = 57001
 
-async function nextBatchNumbers(ctx: OrderContext, count: number): Promise<string[]> {
-  if (count <= 0) return []
+async function topBatchNumber(ctx: OrderContext, pattern: string): Promise<number> {
   const [row] = await ctx.em.getConnection().execute<Array<{ top: string | null }>>(
     `select max(n) as top from (
-       select nullif(regexp_replace(l.batch_no, '[^0-9]', '', 'g'), '')::bigint as n
-         from dermat_order_lines l where l.tenant_id = ? and l.organization_id = ? and l.batch_no ~ '^[0-9]{3,9}$'
+       select l.batch_no::bigint as n
+         from dermat_order_lines l where l.tenant_id = ? and l.organization_id = ? and l.batch_no ~ ?
        union all
-       select nullif(regexp_replace(s.data->>'batch_no', '[^0-9]', '', 'g'), '')::bigint
-         from dermat_order_stages s where s.tenant_id = ? and s.organization_id = ? and s.stage_key = 'manufacturing' and (s.data->>'batch_no') ~ '^[0-9]{3,9}$'
+       select (s.data->>'batch_no')::bigint
+         from dermat_order_stages s where s.tenant_id = ? and s.organization_id = ? and s.stage_key = 'manufacturing' and (s.data->>'batch_no') ~ ?
      ) numbers`,
-    [ctx.tenantId, ctx.organizationId, ctx.tenantId, ctx.organizationId],
+    [ctx.tenantId, ctx.organizationId, pattern, ctx.tenantId, ctx.organizationId, pattern],
     'all',
     ctx.em.getTransactionContext(),
   )
-  const start = Math.max(FIRST_BATCH_NO, Number(row?.top ?? 0) + 1)
-  return Array.from({ length: count }, (_, index) => String(start + index))
+  return Number(row?.top ?? 0)
+}
+
+async function nextBatchNumbers(ctx: OrderContext, productIds: string[]): Promise<Array<string | null>> {
+  if (!productIds.length) return []
+  const products = await loadProducts(ctx, productIds)
+  const next = new Map<string, number>()
+  let global: number | null = null
+  const result: Array<string | null> = []
+  for (const productId of productIds) {
+    const code = products.get(productId)?.batchCode?.replace(/\D/g, '') ?? ''
+    if (code) {
+      if (!next.has(code)) {
+        const top = await topBatchNumber(ctx, `^${code}[0-9]{2,}$`)
+        next.set(code, top ? Number(String(top).slice(code.length)) : 0)
+      }
+      const serial = (next.get(code) ?? 0) + 1
+      next.set(code, serial)
+      result.push(`${code}${String(serial).padStart(2, '0')}`)
+      continue
+    }
+    if (global === null) global = Math.max(FIRST_BATCH_NO - 1, await topBatchNumber(ctx, '^[0-9]{3,9}$'))
+    global += 1
+    result.push(String(global))
+  }
+  return result
 }
 
 function describeChanges(before: { header: Record<string, unknown>; lines: Array<{ productId: string; quantity: number; rate: number | null }> }, input: OrderInput, titles: Map<string, string>): string {
@@ -123,7 +146,7 @@ function describeChanges(before: { header: Record<string, unknown>; lines: Array
 }
 
 async function writeLines(ctx: OrderContext, order: DermatOrder, input: OrderInput) {
-  const numbers = await nextBatchNumbers(ctx, input.lines.filter((line) => !clean(line.batchNo)).length)
+  const numbers = await nextBatchNumbers(ctx, input.lines.filter((line) => !clean(line.batchNo)).map((line) => line.productId))
   input.lines.forEach((line, index) => {
     ctx.em.persist(
       ctx.em.create(DermatOrderLine, {

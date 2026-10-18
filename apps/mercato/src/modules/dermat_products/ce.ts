@@ -14,6 +14,7 @@ const systemEntities: CustomEntitySpec[] = [
       cf.currency('cost_price', { label: 'Cost Price' }),
 
       cf.text('inci_name', { label: 'INCI Name', fieldset: 'raw_material', listVisible: true }),
+      cf.select('rm_category', ['Actives', 'Excipients', 'Emollients', 'Emulsifiers', 'Humectants', 'Thickeners', 'Preservatives', 'Fragrances', 'Colours', 'Extracts', 'Surfactants', 'pH adjusters'], { label: 'Category', fieldset: 'raw_material', listVisible: true, filterable: true }),
       cf.text('benefit', { label: 'Benefit', fieldset: 'raw_material' }),
       cf.text('alternative', { label: 'Alternative', fieldset: 'raw_material' }),
 
@@ -29,6 +30,8 @@ const systemEntities: CustomEntitySpec[] = [
       cf.text('brand_name', { label: 'Brand Name', fieldsets: ['finished_goods', 'rnd'] }),
       cf.text('pack_size', { label: 'Pack Size', fieldset: 'finished_goods' }),
       cf.currency('mrp', { label: 'MRP', fieldset: 'finished_goods' }),
+      cf.text('packaging_code', { label: 'Packaging code', fieldset: 'finished_goods', listVisible: true, filterable: true, formEditable: false }),
+      cf.text('batch_code', { label: 'Batch code (3 digits)', fieldset: 'finished_goods' }),
 
       cf.text('rd_number', { label: 'R&D No.', fieldsets: ['bulk', 'rnd'] }),
       cf.float('specific_gravity', { label: 'Specific Gravity (g/ml)', fieldsets: ['bulk', 'rnd', 'raw_material'] }),

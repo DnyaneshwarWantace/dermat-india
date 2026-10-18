@@ -18,6 +18,7 @@ import { buildOptimisticLockHeader } from '@open-mercato/ui/backend/utils/optimi
 import { useGuardedMutation } from '@open-mercato/ui/backend/injection/useGuardedMutation'
 import { flash } from '@open-mercato/ui/backend/FlashMessages'
 import { ErrorMessage, LoadingMessage } from '@open-mercato/ui/backend/detail'
+import { AttachmentsSection } from '@open-mercato/ui/backend/detail/AttachmentsSection'
 import { GRN_STATUS, HISTORY_LABEL, LINE_QC, day, qty, when, type GrnLineView, type GrnView } from './shared'
 import { BackLink } from '../../dermat_departments/components/BackLink'
 
@@ -195,6 +196,15 @@ export function GrnPage({ grnId }: { grnId: string }) {
                   <dd className="text-right">{grn.receivedByName ?? '—'}</dd>
                 </dl>
                 {grn.notes ? <p className="mt-4 rounded-md bg-muted/50 p-3 text-sm">{grn.notes}</p> : null}
+              </section>
+              <section className="rounded-xl border border-border bg-card p-5 shadow-sm">
+                <AttachmentsSection
+                  entityId="dermat_purchase:grn"
+                  recordId={grn.id}
+                  title={t('dermat_purchase.grnDetail.files', 'Invoice and photos')}
+                  description={t('dermat_purchase.grnDetail.filesHint', 'Vendor invoice and a photo of what arrived, so the store can order the same again.')}
+                  compact
+                />
               </section>
               <section className="rounded-xl border border-border bg-card p-5 shadow-sm">
                 <h2 className="text-sm font-semibold">{t('dermat_purchase.detail.history', 'History')}</h2>

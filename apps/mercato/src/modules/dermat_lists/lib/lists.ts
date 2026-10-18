@@ -242,6 +242,14 @@ export const LIST_DEFS: ListDef[] = [
     defaults: ['Description', 'Appearance', 'Colour', 'Odour', 'Texture', 'pH', 'Viscosity (cps)', 'Density @25°C (g/ml)', 'Centrifuge (3000 RPM, 30 min)', 'Specific gravity', 'Spreadability'],
   },
   {
+    key: 'rm_categories',
+    label: 'Raw material categories',
+    department: 'Purchase',
+    usedIn: 'Raw material form and list',
+    defaults: ['Actives', 'Excipients', 'Emollients', 'Emulsifiers', 'Humectants', 'Thickeners', 'Preservatives', 'Fragrances', 'Colours', 'Extracts', 'Surfactants', 'pH adjusters'],
+    customField: { entityId: 'catalog:catalog_product', key: 'rm_category' },
+  },
+  {
     key: 'rnd_micro_parameters',
     label: 'Microbiology tests',
     department: 'R&D',
