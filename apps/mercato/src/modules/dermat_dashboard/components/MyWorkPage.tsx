@@ -13,6 +13,8 @@ import { SegmentedControl, SegmentedControlItem } from '@open-mercato/ui/primiti
 import { apiCall } from '@open-mercato/ui/backend/utils/apiCall'
 import { ExportButton } from '../../dermat_products/components/ExportButton'
 import { downloadCsv } from '../../dermat_products/lib/csvExport'
+import { TaskSheet } from '../../dermat_orders/components/TaskSheet'
+import type { TaskItem } from '../../dermat_orders/lib/tasks'
 
 type WorkItem = {
   orderId: string
@@ -85,17 +87,67 @@ function Row({ item, showPerson }: { item: WorkItem; showPerson: boolean }) {
   )
 }
 
+function TaskRow({ item, onOpen }: { item: TaskItem; onOpen: (item: TaskItem) => void }) {
+  const t = useT()
+  const stuck = item.status === 'on_hold' || item.days >= 3
+  return (
+    <li>
+      <button type="button" onClick={() => onOpen(item)} className="group grid w-full grid-cols-1 items-center gap-3 px-5 py-4 text-left transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring md:grid-cols-12">
+        <div className="flex min-w-0 items-center gap-3 md:col-span-4">
+          <span className={cn('h-10 w-1 shrink-0 rounded-full', item.status === 'on_hold' ? 'bg-status-error-icon' : item.overdue || stuck ? 'bg-status-warning-icon' : 'bg-accent-indigo')} aria-hidden="true" />
+          <div className="min-w-0">
+            <p className="font-mono text-sm font-semibold">{item.orderNo}</p>
+            <p className="truncate text-xs text-muted-foreground">{item.customerName}</p>
+          </div>
+        </div>
+        <div className="min-w-0 md:col-span-5">
+          <p className="truncate text-sm font-medium">{item.cardLabel}</p>
+          <p className="truncate text-xs text-muted-foreground">
+            {item.stageLabel} · {item.ownerNames.join(' / ')}
+            {item.personName ? ` · ${item.personName}` : ''}
+          </p>
+          {item.status === 'on_hold' ? (
+            <p className="mt-0.5 flex items-center gap-1 truncate text-xs text-status-error-text">
+              <PauseCircle className="h-3 w-3 shrink-0" aria-hidden="true" />
+              {item.holdReason ?? ''}
+            </p>
+          ) : null}
+        </div>
+        <div className="flex items-center justify-between gap-3 md:col-span-3 md:justify-end">
+          {item.deliveryDate ? (
+            <span className={cn('inline-flex items-center gap-1 text-xs', item.overdue ? 'font-semibold text-status-error-text' : 'text-muted-foreground')}>
+              <CalendarClock className="h-3 w-3" aria-hidden="true" />
+              {item.overdue ? t('dermat_dashboard.wasDue', 'was due {date}', { date: shortDate(item.deliveryDate) }) : t('dermat_dashboard.dueShort', 'due {date}', { date: shortDate(item.deliveryDate) })}
+            </span>
+          ) : null}
+          <span className={cn('rounded-sm px-2 py-0.5 text-xs font-semibold tabular-nums', stuck ? 'bg-status-warning-bg text-status-warning-text' : 'bg-muted text-muted-foreground')}>
+            {item.days === 0 ? t('dermat_dashboard.today', 'today') : t('dermat_dashboard.daysWaiting', '{days} d waiting', { days: item.days })}
+          </span>
+          <ArrowRight className="h-4 w-4 text-muted-foreground transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
+        </div>
+      </button>
+    </li>
+  )
+}
+
 export function MyWorkPage() {
   const t = useT()
-  const [scope, setScope] = React.useState<'mine' | 'everyone'>('mine')
+  const [scope, setScope] = React.useState<'mine' | 'department' | 'everyone'>('department')
   const granted = useGranted()
   const canSeeEveryone = granted.has('dermat_dashboard.everyone')
   const [items, setItems] = React.useState<WorkItem[] | null>(null)
+  const [tasks, setTasks] = React.useState<TaskItem[] | null>(null)
+  const [openTask, setOpenTask] = React.useState<TaskItem | null>(null)
+  const [reload, setReload] = React.useState(0)
 
   React.useEffect(() => {
-    setItems(null)
-    apiCall<{ items: WorkItem[] }>(scope === 'mine' ? '/api/dermat_dashboard/my-work' : '/api/dermat_dashboard/team-work', undefined, { fallback: { items: [] } }).then((call) => setItems(call.result?.items ?? []))
-  }, [scope])
+    if (scope === 'everyone') {
+      setItems(null)
+      apiCall<{ items: WorkItem[] }>('/api/dermat_dashboard/team-work', undefined, { fallback: { items: [] } }).then((call) => setItems(call.result?.items ?? []))
+      return
+    }
+    apiCall<{ items: TaskItem[] }>(`/api/dermat_orders/tasks?scope=${scope}`, undefined, { fallback: { items: [] } }).then((call) => setTasks(call.result?.items ?? []))
+  }, [scope, reload])
 
   const urgent = (items ?? []).filter((item) => item.overdue || item.stuck)
   const rest = (items ?? []).filter((item) => !item.overdue && !item.stuck)
@@ -109,22 +161,24 @@ export function MyWorkPage() {
               <p className="text-overline font-semibold uppercase tracking-widest text-muted-foreground">
                 {new Date().toLocaleDateString('en-IN', { weekday: 'long', day: '2-digit', month: 'long' })}
               </p>
-              <h1 className="text-2xl font-bold tracking-tight">{scope === 'mine' ? t('dermat_dashboard.my.title', 'My pending work') : t('dermat_dashboard.team.title', "Everyone's pending work")}</h1>
+              <h1 className="text-2xl font-bold tracking-tight">{scope === 'everyone' ? t('dermat_dashboard.team.title', "Everyone's pending work") : t('dermat_dashboard.my.tasksTitle', 'My tasks')}</h1>
               <p className="text-sm text-muted-foreground">
-                {t('dermat_dashboard.my.lede', 'The order steps you are responsible for. The same list is emailed every morning.')}
+                {scope === 'everyone'
+                  ? t('dermat_dashboard.my.everyoneLede', 'Every open stage, with who has it.')
+                  : t('dermat_dashboard.my.tasksLede', 'The steps waiting for you or your department. Open one, fill it in, press Done.')}
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              {canSeeEveryone ? (
-                <SegmentedControl value={scope} onValueChange={(value) => setScope(value as typeof scope)} aria-label={t('dermat_dashboard.my.scope', 'Whose work')}>
-                  <SegmentedControlItem value="mine">{t('dermat_dashboard.my.mine', 'Mine')}</SegmentedControlItem>
-                  <SegmentedControlItem value="everyone">{t('dermat_dashboard.my.everyone', 'Everyone')}</SegmentedControlItem>
-                </SegmentedControl>
-              ) : null}
+              <SegmentedControl value={scope} onValueChange={(value) => setScope(value as typeof scope)} aria-label={t('dermat_dashboard.my.scope', 'Whose work')}>
+                <SegmentedControlItem value="department">{t('dermat_dashboard.my.department', 'My department')}</SegmentedControlItem>
+                <SegmentedControlItem value="mine">{t('dermat_dashboard.my.mine', 'Assigned to me')}</SegmentedControlItem>
+                {canSeeEveryone ? <SegmentedControlItem value="everyone">{t('dermat_dashboard.my.everyone', 'Everyone')}</SegmentedControlItem> : null}
+              </SegmentedControl>
+              {scope === 'everyone' ? (
               <ExportButton
                 disabled={!items?.length}
                 onExport={() =>
-                  downloadCsv(scope === 'mine' ? 'my-pending-work' : 'team-pending-work', [
+                  downloadCsv('team-pending-work', [
                     { header: 'Order', value: (item) => item.orderNo },
                     { header: 'Customer', value: (item) => item.customerName },
                     { header: 'Stage', value: (item) => item.stageLabel },
@@ -140,8 +194,37 @@ export function MyWorkPage() {
                   ], items ?? [])
                 }
               />
+              ) : null}
             </div>
           </header>
+
+          {scope !== 'everyone' ? (
+            !tasks ? (
+              <div className="flex justify-center py-20">
+                <Spinner />
+              </div>
+            ) : !tasks.length ? (
+              <EmptyState
+                className="py-20"
+                icon={<CheckCircle2 className="h-5 w-5" aria-hidden="true" />}
+                title={t('dermat_dashboard.my.empty', 'Nothing pending')}
+                description={scope === 'mine' ? t('dermat_dashboard.my.emptyMine', 'No open step is assigned to you.') : t('dermat_dashboard.my.emptyDept', 'No open step is waiting for your department.')}
+              />
+            ) : (
+              <section className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
+                <header className="border-b border-border px-5 py-3">
+                  <h2 className="text-sm font-semibold">{t('dermat_dashboard.my.openSteps', 'Open steps · {count}', { count: tasks.length })}</h2>
+                </header>
+                <ul className="divide-y divide-border">
+                  {tasks.map((item) => (
+                    <TaskRow key={`${item.orderId}-${item.stageKey}-${item.cardKey}`} item={item} onOpen={setOpenTask} />
+                  ))}
+                </ul>
+              </section>
+            )
+          ) : null}
+          {scope === 'everyone' ? (
+          <>
 
           {!items ? (
             <div className="flex justify-center py-20">
@@ -165,7 +248,7 @@ export function MyWorkPage() {
                   </header>
                   <ul className="divide-y divide-border">
                     {urgent.map((item) => (
-                      <Row key={`${item.orderId}-${item.stageKey}`} item={item} showPerson={scope === 'everyone'} />
+                      <Row key={`${item.orderId}-${item.stageKey}`} item={item} showPerson />
                     ))}
                   </ul>
                 </section>
@@ -177,13 +260,16 @@ export function MyWorkPage() {
                   </header>
                   <ul className="divide-y divide-border">
                     {rest.map((item) => (
-                      <Row key={`${item.orderId}-${item.stageKey}`} item={item} showPerson={scope === 'everyone'} />
+                      <Row key={`${item.orderId}-${item.stageKey}`} item={item} showPerson />
                     ))}
                   </ul>
                 </section>
               ) : null}
             </>
           )}
+          </>
+          ) : null}
+          <TaskSheet orderId={openTask?.orderId ?? null} stageKey={openTask?.stageKey ?? null} onClose={() => setOpenTask(null)} onChanged={() => setReload((value) => value + 1)} />
         </div>
       </PageBody>
     </Page>

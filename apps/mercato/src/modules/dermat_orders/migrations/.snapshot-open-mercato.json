@@ -1738,6 +1738,16 @@
           "collation": null,
           "enumItems": [],
           "mappedType": "json"
+        },
+        "card_settings": {
+          "name": "card_settings",
+          "type": "jsonb",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": true,
+          "length": null,
+          "mappedType": "json"
         }
       },
       "indexes": [

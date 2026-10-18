@@ -3,7 +3,7 @@ import { RdRequest } from '../../dermat_rnd/data/entities'
 import { DermatOrder, DermatOrderEvent, DermatOrderLine, DermatOrderStage, type FieldChange } from '../data/entities'
 import type { StageActionInput } from '../data/validators'
 import { activeOptions } from '../../dermat_lists/lib/service'
-import { orderHeadline, QA_ARTWORK_CHECKS, STAGES, STOCK_STAGES, applyReopenHours, applyStageOverride, cardFieldKeys, documentCard, isFinished, missingRequired, missingSteps, reopenBlock, stageDef, stageReopenHours, stepRequired, stepStates, type ReopenInfo } from './stages'
+import { orderHeadline, QA_ARTWORK_CHECKS, STAGES, STOCK_STAGES, applyReopenHours, applyStageOverride, cardFieldKeys, documentCard, isFinished, missingRequired, missingSteps, reopenBlock, stageDef, stageReopenHours, stepRequired, stepStates, type ReopenInfo, type StageDef } from './stages'
 import { effectiveStageDef, loadStageOverrides, type StageOverrides } from './stageSettings'
 import { blockingChecks, checksForOrder, closeFailedChecks, ensureChecksForStage, retireStageChecks, type StageQcSummary } from '../../dermat_quality/lib/service'
 import { requestsForOrder, storeBlocking } from '../../dermat_store/lib/service'
@@ -15,6 +15,7 @@ import { paymentTermDays, paymentTermLabel } from '../../dermat_lists/lib/paymen
 import { canSeeMoney, isMoneyEvent, isMoneyStageField, withoutMoneyFields } from './money'
 import { documentCounts, documentStatus, missingDocuments } from './stageDocuments'
 import { packingCodeIssues, packingCodeMessage } from './packingCodes'
+import { cardPeople, openCards } from './tasks'
 
 function pricedLine(line: DermatOrderLine) {
   return { quantity: Number(line.quantity), rate: line.rate == null ? null : Number(line.rate), gstPercent: Number(line.gstPercent ?? 18), discountPercent: Number(line.discountPercent ?? 0) }
@@ -162,10 +163,27 @@ async function autoPassStages(ctx: OrderContext, order: DermatOrder, stages: Der
   return changed
 }
 
+export function assignDefaultCard(def: StageDef, stage: DermatOrderStage, overrides: StageOverrides): void {
+  if (stage.status !== 'open' && stage.status !== 'on_hold') return
+  const card = openCards(def, stage.data)[0]
+  if (!card) return
+  const people = cardPeople(stage.data)
+  if (people[card.key]) return
+  const person = overrides.get(def.key)?.cardSettings?.people?.[card.key]
+  if (!person) return
+  stage.data = { ...(stage.data ?? {}), __people: { ...people, [card.key]: person } }
+}
+
 export async function progressStages(ctx: OrderContext, order: DermatOrder, stages: DermatOrderStage[], byName: string | null): Promise<void> {
+  const overrides = await loadStageOverrides(ctx)
   for (let round = 0; round < 6; round += 1) {
     const opened = openReadyStages(stages)
     if (!opened.length) return
+    for (const key of opened) {
+      const def = effectiveStageDef(key, overrides)
+      const stage = stages.find((entry) => entry.stageKey === key)
+      if (def && stage) assignDefaultCard(def, stage, overrides)
+    }
     await afterOpened(ctx, order, opened, byName)
     if (!(await autoPassStages(ctx, order, stages, opened))) return
   }
@@ -384,8 +402,19 @@ export async function applyStageAction(ctx: OrderContext, order: DermatOrder, in
     }
     case 'assign': {
       const userId = input.responsibleUserId ?? null
+      const name = userId ? ((await userNames(ctx, [userId])).get(userId) ?? null) : null
+      if (input.stepKey) {
+        const step = def.steps.find((entry) => entry.key === input.stepKey)
+        if (!step) throw new OrderError('Unknown step')
+        const people = { ...cardPeople(stage.data) }
+        if (userId) people[step.key] = { userId, name }
+        else delete people[step.key]
+        stage.data = { ...(stage.data ?? {}), __people: people }
+        logEvent(ctx, order, 'assigned', def.key, `${step.label}: ${name ?? 'Nobody'}`, byName)
+        break
+      }
       stage.responsibleUserId = userId
-      stage.responsibleName = userId ? ((await userNames(ctx, [userId])).get(userId) ?? null) : null
+      stage.responsibleName = name
       logEvent(ctx, order, 'assigned', def.key, stage.responsibleName ?? 'Nobody', byName)
       break
     }
@@ -426,6 +455,7 @@ export async function applyStageAction(ctx: OrderContext, order: DermatOrder, in
       stage.data = { ...(stage.data ?? {}), __steps: states }
       logEvent(ctx, order, done ? 'step_done' : 'step_undone', def.key, note ? `${step.label} · ${note}` : step.label, byName, done ? changed : [])
       if (done && stage.status === 'open' && !missingSteps(def, stage.data).length) await completeStage(false)
+      else assignDefaultCard(def, stage, overrides)
       break
     }
     case 'pm_status': {

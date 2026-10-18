@@ -12,6 +12,8 @@ import { cn } from '@open-mercato/shared/lib/utils'
 import { Page, PageBody } from '@open-mercato/ui/backend/Page'
 import { DataTable } from '@open-mercato/ui/backend/DataTable'
 import { Tabs, TabsList, TabsTrigger } from '@open-mercato/ui/primitives/tabs'
+import { Label } from '@open-mercato/ui/primitives/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@open-mercato/ui/primitives/select'
 import { apiCall } from '@open-mercato/ui/backend/utils/apiCall'
 import { flash } from '@open-mercato/ui/backend/FlashMessages'
 import { ExportButton } from '../../dermat_products/components/ExportButton'
@@ -36,6 +38,7 @@ export function StageQueue({ stageKey }: { stageKey: string }) {
   useStageSettings()
   const def = stageDef(stageKey)
   const [tab, setTab] = React.useState<QueueTab>('active')
+  const [cardFilter, setCardFilter] = React.useState<string>('all')
   const [rows, setRows] = React.useState<SheetOrder[]>([])
   const [search, setSearch] = React.useState('')
   const [page, setPage] = React.useState(1)
@@ -102,10 +105,10 @@ export function StageQueue({ stageKey }: { stageKey: string }) {
     const result = await runner.run(order, stage, request)
     if (result.order) {
       setOrder(result.order)
-      if (request.action === 'complete' || request.action === 'skip') {
-        setOrder(null)
-        setReload((value) => value + 1)
-      }
+      const finishedNow = result.order.stages.find((entry) => entry.key === stage.key)?.status === 'done' && stage.status !== 'done'
+      if (request.action === 'complete' || request.action === 'skip' || finishedNow) setOrder(null)
+      silent.current = true
+      setReload((value) => value + 1)
       return true
     }
     if (result.conflict) await openOrder(order.id)
@@ -172,6 +175,12 @@ export function StageQueue({ stageKey }: { stageKey: string }) {
               <StatePill state={state} />
               {stage?.stepsTotal ? <span className="tabular-nums text-muted-foreground">{t('dermat_orders.queue.steps', '{done}/{total} steps', { done: stage.stepsDone, total: stage.stepsTotal })}</span> : null}
             </span>
+            {stage?.currentCard ? (
+              <span className="font-medium text-foreground">
+                {t('dermat_orders.queue.now', 'Now: {card}', { card: stage.currentCard.label })}
+                <span className="font-normal text-muted-foreground"> · {stage.currentCard.owners.join(' / ')}</span>
+              </span>
+            ) : null}
             <span className="text-muted-foreground">
               {[
                 current?.status === 'on_hold' ? current.holdParty : null,
@@ -268,6 +277,26 @@ export function StageQueue({ stageKey }: { stageKey: string }) {
               <TabsTrigger value="done">{t('dermat_orders.queue.tab.done', 'Done')}</TabsTrigger>
             </TabsList>
           </Tabs>
+          {tab === 'active' && def.steps.length > 1 ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <Label htmlFor="queue-card" className="text-xs text-muted-foreground">
+                {t('dermat_orders.queue.stepFilter', 'Waiting at step')}
+              </Label>
+              <Select value={cardFilter} onValueChange={setCardFilter}>
+                <SelectTrigger id="queue-card" className="h-8 w-auto min-w-56">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">{t('dermat_orders.queue.allSteps', 'Every step')}</SelectItem>
+                  {def.steps.map((step) => (
+                    <SelectItem key={step.key} value={step.key}>
+                      {step.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          ) : null}
         </div>
         <DataTable
           perspective={{ tableId: `dermat_orders.work.${stageKey}` }}
@@ -279,7 +308,7 @@ export function StageQueue({ stageKey }: { stageKey: string }) {
                 : t('dermat_orders.queue.titleDone', '{count} orders done here', { count: total })
           }
           columns={columns}
-          data={rows}
+          data={tab === 'active' && cardFilter !== 'all' ? rows.filter((row) => row.stages[stageKey]?.currentCard?.key === cardFilter) : rows}
           onRowClick={(row) => (table.editing ? undefined : router.push(`/backend/orders/${row.id}/stages/${stageKey}`))}
           searchValue={search}
           onSearchChange={(value) => {

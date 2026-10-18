@@ -544,6 +544,9 @@ export function StageWorkArea({ order, stage, people, canWork: canWorkProp, busy
               payloadFor={payloadFor}
               onStep={(stepKey, done, data) => run({ action: 'step', stepKey, done, data })}
               onSave={(stepKey, data) => run({ action: 'save', stepKey, data })}
+              people={people}
+              canAssign={canWork || granted.has('dermat_orders.manage')}
+              onAssign={(stepKey, userId) => run({ action: 'assign', stepKey, responsibleUserId: userId })}
               onCompleteMain={(data) => run({ action: 'complete', data })}
               extras={{
                 ...(stage.key === 'artwork' && order.packItems?.length

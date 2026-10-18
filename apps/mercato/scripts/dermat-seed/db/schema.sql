@@ -18904,6 +18904,8 @@ CREATE INDEX dermat_sample_charges_customer_idx ON public.dermat_sample_charges 
 ALTER TABLE public.dermat_rnd_requests ADD COLUMN IF NOT EXISTS urgency text DEFAULT 'normal'::text NOT NULL;
 ALTER TABLE public.dermat_rnd_trials ADD COLUMN IF NOT EXISTS product_code text, ADD COLUMN IF NOT EXISTS sample_received_by text, ADD COLUMN IF NOT EXISTS micro jsonb;
 
+ALTER TABLE public.dermat_stage_settings ADD COLUMN IF NOT EXISTS card_settings jsonb;
+
 --
 -- PostgreSQL database dump complete
 --

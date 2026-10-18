@@ -107,7 +107,13 @@ function StageCard({ order, stage, onOpen }: { order: Order; stage: Stage; onOpe
           ? t('dermat_orders.rail.waiting', 'Coming')
           : stage.status === 'skipped'
             ? t('dermat_orders.rail.skipped', 'Skipped')
-            : stage.responsibleName ?? (stage.status === 'done' ? stage.completedByName : null) ?? t('dermat_orders.rail.unassigned', 'Not assigned')}
+            : stage.locked
+              ? stage.status === 'done'
+                ? t('dermat_orders.rail.done', 'Done')
+                : stage.status === 'on_hold'
+                  ? t('dermat_orders.rail.onHold', 'On hold')
+                  : null
+              : stage.responsibleName ?? (stage.status === 'done' ? stage.completedByName : null) ?? t('dermat_orders.rail.unassigned', 'Not assigned')}
       </div>
       {progress.total && !stage.locked && stage.status !== 'waiting' && stage.status !== 'skipped' ? (
         <div className="mt-1.5 space-y-1">

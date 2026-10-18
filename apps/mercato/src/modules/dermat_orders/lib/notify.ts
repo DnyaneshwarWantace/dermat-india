@@ -97,6 +97,29 @@ export async function notifyAssigned(ctx: Scope, order: DermatOrder, stageKey: s
   }
 }
 
+export async function notifyCardAssigned(ctx: Scope, order: DermatOrder, stageKey: string, cardLabel: string, userId: string, byName: string | null): Promise<void> {
+  const def = stageDef(stageKey)
+  if (!def) return
+  try {
+    await service(ctx).create(
+      {
+        type: 'dermat_orders.stage.assigned',
+        recipientUserId: userId,
+        title: `${order.orderNo}: "${cardLabel}" is waiting for you`,
+        body: [def.label, await customerName(ctx, order), byName ? `From ${byName}` : null].filter(Boolean).join(' · '),
+        severity: 'info',
+        sourceModule: 'dermat_orders',
+        sourceEntityType: 'dermat_orders:order',
+        sourceEntityId: order.id,
+        linkHref: `/backend/orders/${order.id}/stages/${stageKey}`,
+      },
+      { tenantId: ctx.tenantId, organizationId: ctx.organizationId },
+    )
+  } catch (error) {
+    logger.error('Failed to send card assignment notification', { err: error })
+  }
+}
+
 const lastSweep = new Map<string, number>()
 const SWEEP_EVERY_MS = 10 * 60 * 1000
 

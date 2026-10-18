@@ -1,5 +1,5 @@
 import { hasFeatures, type OrderContext } from './server'
-import { STAGE_WORK_FEATURE, sharedFieldKeys, stageList, stepOwners } from './stages'
+import { STAGE_SEE_FEATURE, STAGE_WORK_FEATURE, sharedFieldKeys, stageList, stepOwners } from './stages'
 import type { StageOverrides } from './stageSettings'
 
 export type OrderAccess = {
@@ -13,7 +13,7 @@ export type OrderAccess = {
 
 export async function resolveOrderAccess(ctx: OrderContext): Promise<OrderAccess> {
   const defs = stageList()
-  const ownerFeatures = new Set<string>(Object.values(STAGE_WORK_FEATURE))
+  const ownerFeatures = new Set<string>([...Object.values(STAGE_WORK_FEATURE), ...Object.values(STAGE_SEE_FEATURE)])
   for (const def of defs) for (const step of def.steps) for (const feature of stepOwners(def.key, step)) ownerFeatures.add(feature)
   const granted = new Set<string>()
   for (const feature of ownerFeatures) if (await hasFeatures(ctx, [feature])) granted.add(feature)
@@ -25,6 +25,7 @@ export async function resolveOrderAccess(ctx: OrderContext): Promise<OrderAccess
   }
   const stages = new Set(Object.entries(STAGE_WORK_FEATURE).filter(([, feature]) => granted.has(feature)).map(([key]) => key))
   const view = new Set(stages)
+  for (const [key, feature] of Object.entries(STAGE_SEE_FEATURE)) if (granted.has(feature)) view.add(key)
   for (const card of cards) view.add(card.split('.')[0])
   return { full: false, stages, view, cards, accounts: granted.has('dermat_orders.work.accounts'), dispatch: granted.has('dermat_orders.work.dispatch') }
 }

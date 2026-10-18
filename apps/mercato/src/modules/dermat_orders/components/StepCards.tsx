@@ -7,6 +7,7 @@ import { useT } from '@open-mercato/shared/lib/i18n/context'
 import { cn } from '@open-mercato/shared/lib/utils'
 import { Button } from '@open-mercato/ui/primitives/button'
 import { Label } from '@open-mercato/ui/primitives/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@open-mercato/ui/primitives/select'
 import { MAIN_CARD, OWNER_NAMES, cardFieldKeys, documentCard, stageWorkFeature, stepOwners, type StageDef, type StageField } from '../lib/stages'
 import { useGranted } from '../../dermat_departments/components/useGranted'
 import { StageDocuments } from './StageDocuments'
@@ -28,6 +29,9 @@ type StepCardsProps = {
   onCompleteMain: (data: Record<string, string | number | null>) => Promise<boolean>
   completeLabel: string
   extras?: Record<string, React.ReactNode>
+  people?: Array<{ id: string; name: string }>
+  canAssign?: boolean
+  onAssign?: (stepKey: string, userId: string | null) => Promise<boolean>
 }
 
 function shown(field: StageField, value: unknown): string | null {
@@ -37,7 +41,7 @@ function shown(field: StageField, value: unknown): string | null {
   return String(value)
 }
 
-export function StepCards({ order, stage, def, editable, busy, fields, renderInput, payloadFor, onStep, onSave, onCompleteMain, completeLabel, extras = {} }: StepCardsProps) {
+export function StepCards({ order, stage, def, editable, busy, fields, renderInput, payloadFor, onStep, onSave, onCompleteMain, completeLabel, extras = {}, people = [], canAssign = false, onAssign }: StepCardsProps) {
   const t = useT()
   const granted = useGranted()
   const allDocs = order.documents?.[stage.key] ?? []
@@ -87,6 +91,8 @@ export function StepCards({ order, stage, def, editable, busy, fields, renderInp
     )
   }
 
+  const cardPeople = (stage.data?.__people as Record<string, { userId: string; name: string | null }> | undefined) ?? {}
+  const personOf = (key: string) => cardPeople[key]?.name ?? stage.responsibleName ?? null
   const items = subStages(order, stage)
   const lastDone = [...items].reverse().find((item) => item.kind === 'step' && item.status === 'done')
   const counted = items.filter((item) => item.status !== 'na' && !item.optional)
@@ -114,7 +120,28 @@ export function StepCards({ order, stage, def, editable, busy, fields, renderInp
               optional={item.optional}
               state={item.status === 'done' ? 'done' : item.status === 'na' ? 'na' : active ? 'current' : 'pending'}
               stamp={item.status === 'done' ? [item.by, item.at ? formatDateTime(item.at) : null].filter(Boolean).join(' · ') : null}
-              waiting={active && !mine ? t('dermat_orders.cards.withOwner', 'With {owner}{person}', { owner: ownerText(item.key), person: stage.responsibleName ? ` · ${stage.responsibleName}` : '' }) : null}
+              waiting={active && !mine ? t('dermat_orders.cards.withOwner', 'With {owner}{person}', { owner: ownerText(item.key), person: personOf(item.key) ? ` · ${personOf(item.key)}` : '' }) : null}
+              person={
+                active || item.status === 'pending' ? (
+                  canAssign && onAssign && working ? (
+                    <Select value={cardPeople[item.key]?.userId ?? '__none'} onValueChange={(value) => void onAssign(item.key, value === '__none' ? null : value)}>
+                      <SelectTrigger className="h-7 w-auto min-w-36 text-xs" aria-label={t('dermat_orders.cards.person', 'Person for {card}', { card: item.label })}>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__none">{stage.responsibleName ? t('dermat_orders.cards.stagePerson', 'Stage person ({name})', { name: stage.responsibleName }) : t('dermat_orders.sheet.nobody', 'Not assigned')}</SelectItem>
+                        {people.map((person) => (
+                          <SelectItem key={person.id} value={person.id}>
+                            {person.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  ) : personOf(item.key) && !(active && !mine) ? (
+                    <span className="text-xs text-muted-foreground">{personOf(item.key)}</span>
+                  ) : null
+                ) : null
+              }
               action={
                 item.status === 'done' && mine && lastDone?.key === item.key && stage.status !== 'done' ? (
                   <Button type="button" variant="ghost" size="sm" className="h-7" disabled={busy} onClick={() => void onStep(item.key, false)}>
@@ -151,7 +178,7 @@ export function StepCards({ order, stage, def, editable, busy, fields, renderInp
 
 type CardState = 'done' | 'current' | 'pending' | 'na'
 
-function Card({ index, title, owner, optional, state, stamp, waiting, action, children }: { index: number; title: string; owner: string; optional?: boolean; state: CardState; stamp: string | null; waiting?: string | null; action?: React.ReactNode; children?: React.ReactNode }) {
+function Card({ index, title, owner, optional, state, stamp, waiting, action, person, children }: { index: number; title: string; owner: string; optional?: boolean; state: CardState; stamp: string | null; waiting?: string | null; action?: React.ReactNode; person?: React.ReactNode; children?: React.ReactNode }) {
   const t = useT()
   const icon =
     state === 'done' ? (
@@ -179,7 +206,10 @@ function Card({ index, title, owner, optional, state, stamp, waiting, action, ch
               {title}
               {optional ? <span className="ml-1 text-xs font-normal text-muted-foreground">{t('dermat_orders.sheet.optional', '(if needed)')}</span> : null}
             </p>
-            {action}
+            <span className="flex items-center gap-2">
+              {person}
+              {action}
+            </span>
           </div>
           <p className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
             <span className="inline-flex items-center gap-1">

@@ -17,6 +17,7 @@ export function overrideOf(row: DermatStageSetting): StageOverride {
     documents: row.documents ?? {},
     extraDocuments: row.extraDocuments ?? [],
     sharedFields: row.sharedFields ?? null,
+    cardSettings: row.cardSettings ?? null,
   }
 }
 

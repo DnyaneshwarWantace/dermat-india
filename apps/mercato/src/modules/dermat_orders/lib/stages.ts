@@ -58,6 +58,21 @@ export const STAGE_WORK_FEATURE: Record<string, string> = {
   dispatch: 'dermat_orders.work.dispatch',
 }
 
+export const STAGE_SEE_FEATURE: Record<string, string> = {
+  order: 'dermat_orders.see.sales',
+  advance: 'dermat_orders.see.accounts',
+  sampling: 'dermat_orders.see.rnd',
+  artwork: 'dermat_orders.see.artwork',
+  formulation: 'dermat_orders.see.rnd',
+  planning: 'dermat_orders.see.planning',
+  manufacturing: 'dermat_orders.see.production',
+  filling: 'dermat_orders.see.production',
+  packing: 'dermat_orders.see.production',
+  qc_qa: 'dermat_orders.see.qa',
+  billing: 'dermat_orders.see.accounts',
+  dispatch: 'dermat_orders.see.dispatch',
+}
+
 export function stageWorkFeature(stageKey: string): string {
   return STAGE_WORK_FEATURE[stageKey] ?? 'dermat_orders.stages'
 }
@@ -347,6 +362,14 @@ export type StageOverride = {
   documents?: Record<string, 'always' | 'optional'> | null
   extraDocuments?: Array<{ key: string; label: string; required: boolean }> | null
   sharedFields?: string[] | null
+  cardSettings?: {
+    owners?: Record<string, string[]>
+    people?: Record<string, { userId: string; name: string | null }>
+    fields?: Record<string, string>
+    documents?: Record<string, string>
+    labels?: Record<string, string>
+    extraSteps?: Array<{ key: string; label: string; after: string | null; optional?: boolean }>
+  } | null
 }
 
 export const DEFAULT_SHARED_FIELDS: Record<string, string[]> = {
@@ -367,6 +390,18 @@ export const LOCKED_STEPS: Record<string, string[]> = {
 
 export const EXTRA_FIELD_TYPES: StageFieldType[] = ['text', 'number', 'date', 'textarea', 'select']
 
+function withExtraSteps(steps: StageStep[], extra: Array<{ key: string; label: string; after: string | null; optional?: boolean }>): StageStep[] {
+  const result = [...steps]
+  for (const step of extra) {
+    if (result.some((entry) => entry.key === step.key)) continue
+    const at = step.after ? result.findIndex((entry) => entry.key === step.after) : -1
+    const added: StageStep = { key: step.key, label: step.label, optional: Boolean(step.optional) }
+    if (at >= 0) result.splice(at + 1, 0, added)
+    else result.push(added)
+  }
+  return result
+}
+
 export function applyStageOverride(def: StageDef, override?: StageOverride | null): StageDef {
   if (!override) return def
   const locked = LOCKED_STEPS[def.key] ?? []
@@ -374,11 +409,14 @@ export function applyStageOverride(def: StageDef, override?: StageOverride | nul
   const required = new Set(override.requiredFields ?? [])
   const baseKeys = new Set(def.fields.map((field) => field.key))
   const extras = (override.extraFields ?? []).filter((field) => !baseKeys.has(field.key))
+  const cards = override.cardSettings ?? {}
   return {
     ...def,
     label: override.label?.trim() || def.label,
-    steps: def.steps.filter((step) => !hidden.has(step.key)),
-    fields: [...def.fields.map((field) => (required.has(field.key) && !field.required ? { ...field, required: true } : field)), ...extras],
+    steps: withExtraSteps(def.steps, cards.extraSteps ?? [])
+      .filter((step) => !hidden.has(step.key))
+      .map((step) => ({ ...step, label: cards.labels?.[step.key]?.trim() || step.label, ...(cards.owners?.[step.key]?.length ? { owners: cards.owners[step.key] } : {}) })),
+    fields: [...def.fields.map((field) => (required.has(field.key) && !field.required ? { ...field, required: true } : field)), ...extras].map((field) => (cards.fields?.[field.key] ? { ...field, step: cards.fields[field.key] } : field)),
   }
 }
 
@@ -386,16 +424,17 @@ export function applyDocumentOverride(stageKey: string, override?: StageOverride
   const base = STAGE_DOCUMENTS[stageKey] ?? []
   if (!override) return base
   const modes = override.documents ?? {}
+  const placed = (doc: StageDocument): StageDocument => (override.cardSettings?.documents?.[doc.key] ? { ...doc, step: override.cardSettings.documents[doc.key] } : doc)
   const own = base.map((doc) => {
-    if (doc.required === 'eway') return doc
+    if (doc.required === 'eway') return placed(doc)
     const mode = modes[doc.key]
-    if (mode === 'always') return { ...doc, required: 'always' as const }
-    if (mode === 'optional') return { key: doc.key, label: doc.label, hint: doc.hint }
-    return doc
+    if (mode === 'always') return placed({ ...doc, required: 'always' as const })
+    if (mode === 'optional') return placed({ key: doc.key, label: doc.label, hint: doc.hint })
+    return placed(doc)
   })
   const extra = (override.extraDocuments ?? [])
     .filter((doc) => !base.some((entry) => entry.key === doc.key))
-    .map((doc) => ({ key: doc.key, label: doc.label, hint: '', ...(doc.required ? { required: 'always' as const } : {}) }))
+    .map((doc) => placed({ key: doc.key, label: doc.label, hint: '', ...(doc.required ? { required: 'always' as const } : {}) }))
   return [...own, ...extra]
 }
 
@@ -582,6 +621,11 @@ export function documentCard(def: StageDef, document: StageDocument): string {
 }
 
 export function stepRequired(def: StageDef, step: StageStep, data: Record<string, unknown> | null | undefined): boolean {
+  if (step.key.startsWith('x_')) {
+    const states = stepStates(data)
+    const index = def.steps.findIndex((entry) => entry.key === step.key)
+    if (!states[step.key]?.done && def.steps.slice(index + 1).some((entry) => states[entry.key]?.done)) return false
+  }
   if (!step.optional) return true
   const rule = STEP_NEEDED_WHEN[def.key]?.[step.key]
   return rule ? rule(data ?? {}) : false

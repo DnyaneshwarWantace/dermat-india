@@ -5,10 +5,10 @@ import { enforceCommandOptimisticLock } from '@open-mercato/shared/lib/crud/opti
 import { runRouteMutationGuards } from '@open-mercato/shared/lib/crud/route-mutation-guard'
 import { CrudHttpError } from '@open-mercato/shared/lib/crud/errors'
 import { DermatStageSetting } from '../../data/entities'
-import { stageSettingSchema } from '../../data/validators'
+import { stageSettingSchema, type StageSettingInput } from '../../data/validators'
 import { currentUserName, resolveOrderContext, type OrderContext } from '../../lib/server'
 import { overrideOf } from '../../lib/stageSettings'
-import { DEFAULT_REOPEN_HOURS, DEFAULT_SHARED_FIELDS, EXTRA_FIELD_TYPES, LOCKED_STEPS, STAGES, STAGE_DAY_LIMIT, STAGE_DOCUMENTS } from '../../lib/stages'
+import { DEFAULT_REOPEN_HOURS, DEFAULT_SHARED_FIELDS, EXTRA_FIELD_TYPES, LOCKED_STEPS, OWNER_NAMES, STAGES, STAGE_DAY_LIMIT, STAGE_DOCUMENTS, documentCard, fieldCard, stepOwners } from '../../lib/stages'
 
 export const metadata = {
   GET: { requireAuth: true },
@@ -20,6 +20,7 @@ async function payload(ctx: OrderContext) {
   const rows = await ctx.em.find(DermatStageSetting, { tenantId: ctx.tenantId, organizationId: ctx.organizationId })
   return {
     fieldTypes: EXTRA_FIELD_TYPES,
+    owners: Object.entries(OWNER_NAMES).map(([feature, label]) => ({ feature, label })),
     overrides: rows.map((row) => ({ ...overrideOf(row), updatedAt: row.updatedAt.toISOString(), updatedByName: row.updatedByName ?? null })),
     stages: STAGES.filter((stage) => stage.key !== 'order').map((stage) => ({
       key: stage.key,
@@ -28,9 +29,9 @@ async function payload(ctx: OrderContext) {
       hint: stage.hint,
       dayLimit: STAGE_DAY_LIMIT[stage.key] ?? null,
       reopenHours: DEFAULT_REOPEN_HOURS,
-      steps: stage.steps.map((step) => ({ ...step, locked: (LOCKED_STEPS[stage.key] ?? []).includes(step.key) })),
-      fields: stage.fields.map((field) => ({ key: field.key, label: field.label, type: field.type, required: Boolean(field.required), shared: (DEFAULT_SHARED_FIELDS[stage.key] ?? []).includes(field.key) })),
-      documents: (STAGE_DOCUMENTS[stage.key] ?? []).map((doc) => ({ key: doc.key, label: doc.label, required: doc.required ?? null })),
+      steps: stage.steps.map((step) => ({ ...step, locked: (LOCKED_STEPS[stage.key] ?? []).includes(step.key), owners: stepOwners(stage.key, step) })),
+      fields: stage.fields.map((field) => ({ key: field.key, label: field.label, type: field.type, required: Boolean(field.required), shared: (DEFAULT_SHARED_FIELDS[stage.key] ?? []).includes(field.key), card: fieldCard(stage, field.key) })),
+      documents: (STAGE_DOCUMENTS[stage.key] ?? []).map((doc) => ({ key: doc.key, label: doc.label, required: doc.required ?? null, card: documentCard(stage, doc) })),
     })),
   }
 }
@@ -57,6 +58,23 @@ async function GET(req: Request) {
   const ctx = await resolveOrderContext(req)
   if ('error' in ctx) return NextResponse.json({ error: ctx.error }, { status: ctx.status })
   return NextResponse.json(await payload(ctx))
+}
+
+function cleanCardSettings(input: StageSettingInput['cardSettings'], stepKeys: string[]): DermatStageSetting['cardSettings'] {
+  if (!input) return null
+  const extraSteps = (input.extraSteps ?? []).filter((step, index, all) => !stepKeys.includes(step.key) && all.findIndex((entry) => entry.key === step.key) === index).map((step) => ({ key: step.key, label: step.label.trim(), after: step.after && (stepKeys.includes(step.after) || (input.extraSteps ?? []).some((entry) => entry.key === step.after)) ? step.after : null, optional: Boolean(step.optional) }))
+  const allKeys = [...stepKeys, ...extraSteps.map((step) => step.key)]
+  const known = (key: string) => allKeys.includes(key)
+  const pick = <T,>(record: Record<string, T> | undefined, keyOk: (key: string, value: T) => boolean) => Object.fromEntries(Object.entries(record ?? {}).filter(([key, value]) => keyOk(key, value)))
+  const result = {
+    owners: pick(input.owners, (key, value) => known(key) && value.length > 0),
+    people: pick(input.people, (key) => known(key)),
+    fields: pick(input.fields, (_key, value) => known(value)),
+    documents: pick(input.documents, (_key, value) => known(value)),
+    labels: pick(input.labels, (key, value) => stepKeys.includes(key) && value.trim().length > 0),
+    extraSteps,
+  }
+  return Object.values(result).some((entry) => (Array.isArray(entry) ? entry.length : Object.keys(entry).length)) ? result : null
 }
 
 async function PUT(req: Request) {
@@ -91,6 +109,7 @@ async function PUT(req: Request) {
       row.documents = input.documents
       row.sharedFields = sameKeys(input.sharedFields ?? null, DEFAULT_SHARED_FIELDS[base.key] ?? []) ? null : input.sharedFields ?? null
       row.extraDocuments = input.extraDocuments
+      if (input.cardSettings !== undefined) row.cardSettings = cleanCardSettings(input.cardSettings, base.steps.map((step) => step.key))
       row.updatedByName = await currentUserName(ctx)
       row.updatedAt = new Date()
       ctx.em.persist(row)

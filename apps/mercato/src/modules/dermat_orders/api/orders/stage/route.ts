@@ -6,7 +6,8 @@ import { stageActionSchema } from '../../../data/validators'
 import { DermatOrderStage } from '../../../data/entities'
 import { applyStageAction, serializeOrder } from '../../../lib/engine'
 import { currentUserName, findOrder, hasFeatures, resolveOrderContext } from '../../../lib/server'
-import { notifyAssigned, notifyStagesOpened, notifyStagesPaused } from '../../../lib/notify'
+import { notifyAssigned, notifyCardAssigned, notifyStagesOpened, notifyStagesPaused } from '../../../lib/notify'
+import { cardPeople } from '../../../lib/tasks'
 import { canSeeMoney } from '../../../lib/money'
 import { OWNER_NAMES, STOCK_STAGES, stageDef, stageWorkFeature, stepOwners } from '../../../lib/stages'
 import { effectiveStageDef, loadStageOverrides } from '../../../lib/stageSettings'
@@ -97,6 +98,15 @@ async function POST(req: Request) {
         const after = await freshCtx.em.find(DermatOrderStage, { orderId: order.id })
         const opened = after.filter((stage) => stage.status === 'open' && statusBefore.get(stage.stageKey) !== 'open' && statusBefore.get(stage.stageKey) !== 'on_hold').map((stage) => stage.stageKey)
         await notifyStagesOpened(ctx, freshOrder, opened)
+        const actor = await currentUserName(ctx)
+        for (const stage of after) {
+          const was = cardPeople(before.find((entry) => entry.stageKey === stage.stageKey)?.data as Record<string, unknown> | null)
+          const def = stageDef(stage.stageKey)
+          for (const [cardKey, person] of Object.entries(cardPeople(stage.data as Record<string, unknown> | null))) {
+            if (person.userId === was[cardKey]?.userId || person.userId === ctx.userId) continue
+            await notifyCardAssigned(ctx, freshOrder, stage.stageKey, def?.steps.find((step) => step.key === cardKey)?.label ?? cardKey, person.userId, actor)
+          }
+        }
         if (parsed.data.action === 'revert') await notifyStagesPaused(ctx, freshOrder, parsed.data.stageKey, paused, parsed.data.note ?? '', await currentUserName(ctx))
         if (parsed.data.action === 'assign' && parsed.data.responsibleUserId && parsed.data.responsibleUserId !== ctx.userId) {
           await notifyAssigned(ctx, freshOrder, parsed.data.stageKey, parsed.data.responsibleUserId, await currentUserName(ctx))

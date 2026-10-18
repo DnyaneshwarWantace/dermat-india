@@ -101,6 +101,20 @@ export const stageSettingSchema = z.object({
     .max(20)
     .default([]),
   documents: z.record(z.string(), z.enum(['always', 'optional'])).default({}),
+  cardSettings: z
+    .object({
+      owners: z.record(settingKey, z.array(z.string().regex(/^dermat_orders\.(manage|work\.[a-z]+)$/)).max(6)).optional(),
+      people: z.record(settingKey, z.object({ userId: z.string().uuid(), name: z.string().max(120).nullable() })).optional(),
+      fields: z.record(settingKey, settingKey).optional(),
+      documents: z.record(settingKey, settingKey).optional(),
+      labels: z.record(settingKey, z.string().trim().max(80)).optional(),
+      extraSteps: z
+        .array(z.object({ key: z.string().regex(/^x_[a-z0-9_]{1,40}$/), label: z.string().trim().min(1, 'Every new step needs a name').max(80), after: settingKey.nullable(), optional: z.boolean().optional() }))
+        .max(10)
+        .optional(),
+    })
+    .optional()
+    .nullable(),
   extraDocuments: z
     .array(z.object({ key: z.string().regex(/^x_[a-z0-9_]{1,40}$/), label: z.string().trim().min(1, 'Every extra document needs a name').max(80), required: z.boolean() }))
     .max(10)

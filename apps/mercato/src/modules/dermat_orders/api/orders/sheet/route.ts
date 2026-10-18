@@ -10,9 +10,10 @@ import { stageViews } from '../../../lib/engine'
 import { orderFilter } from '../../../lib/orderFilter'
 import { priceLine, priceOrder } from '../../../lib/pricing'
 import { loadCustomers, loadProducts, resolveOrderContext } from '../../../lib/server'
-import { STAGES, isFinished, stageDef, stepStates } from '../../../lib/stages'
+import { OWNER_NAMES, STAGES, isFinished, stageDef, stepStates } from '../../../lib/stages'
 import { paymentsFor, received } from '../../../../dermat_accounts/lib/service'
 import { withStageOverrides } from '../../../lib/stageSettings'
+import { cardPeople, openCards } from '../../../lib/tasks'
 
 export const metadata = {
   GET: { requireAuth: true, requireFeatures: ['dermat_orders.view'] },
@@ -160,6 +161,11 @@ async function GET(req: Request) {
                   reopen: view.reopen,
                   stepsDone: required.filter((step) => steps[step.key]?.done).length,
                   stepsTotal: required.length,
+                  currentCard: (() => {
+                    if (!def || (view.status !== 'open' && view.status !== 'on_hold')) return null
+                    const card = openCards(def, view.data)[0]
+                    return card ? { key: card.key, label: card.label, owners: card.owners.map((feature) => OWNER_NAMES[feature] ?? feature), personName: cardPeople(view.data)[card.key]?.name ?? null } : null
+                  })(),
                   fields: stageFields(view.key, view.data),
                 },
               ]

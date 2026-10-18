@@ -43,7 +43,16 @@ export function StageBar({ order, current }: { order: Order; current: string }) 
                   {stage.locked ? <Lock className="ml-auto size-3 shrink-0 text-muted-foreground" aria-label={t('dermat_orders.locked.with', 'Details with {department}', { department: stage.department })} /> : null}
                 </span>
                 <span className="truncate text-muted-foreground">
-                  {person ?? (stage.status === 'skipped' ? t('dermat_orders.rail.skipped', 'Skipped') : t('dermat_orders.rail.waiting', 'Coming'))}
+                  {person ??
+                    (stage.status === 'skipped'
+                      ? t('dermat_orders.rail.skipped', 'Skipped')
+                      : stage.status === 'done'
+                        ? t('dermat_orders.rail.done', 'Done')
+                        : stage.status === 'on_hold'
+                          ? t('dermat_orders.rail.onHold', 'On hold')
+                          : stage.status === 'open'
+                            ? stage.department
+                            : t('dermat_orders.rail.waiting', 'Coming'))}
                   {stage.days != null && stage.status !== 'waiting' ? ` · ${formatQty(stage.days, 1)} d` : ''}
                 </span>
               </Link>

@@ -26,15 +26,53 @@ type BaseStage = {
   hint: string
   dayLimit: number | null
   reopenHours: number
-  steps: Array<{ key: string; label: string; optional?: boolean; locked: boolean }>
-  fields: Array<{ key: string; label: string; type: string; required: boolean; shared: boolean }>
-  documents: Array<{ key: string; label: string; required: 'always' | 'eway' | null }>
+  steps: Array<{ key: string; label: string; optional?: boolean; locked: boolean; owners: string[] }>
+  fields: Array<{ key: string; label: string; type: string; required: boolean; shared: boolean; card: string }>
+  documents: Array<{ key: string; label: string; required: 'always' | 'eway' | null; card: string }>
+}
+type ExtraStep = { key: string; label: string; after: string | null; optional?: boolean }
+type CardSettings = { owners?: Record<string, string[]>; people?: Record<string, { userId: string; name: string | null }>; fields?: Record<string, string>; documents?: Record<string, string>; labels?: Record<string, string>; extraSteps?: ExtraStep[] }
+type Cards = { owners: Record<string, string[]>; people: Record<string, { userId: string; name: string | null }>; fields: Record<string, string>; documents: Record<string, string>; labels: Record<string, string>; extraSteps: ExtraStep[] }
+type CardStep = { key: string; label: string; optional?: boolean; locked: boolean; extra: boolean; defaultOwners: string[] }
+
+function cardSteps(stage: BaseStage, cards: Cards, hidden: string[], stageOwner: string[]): CardStep[] {
+  const result: CardStep[] = stage.steps.map((step) => ({ key: step.key, label: step.label, optional: step.optional, locked: step.locked, extra: false, defaultOwners: step.owners }))
+  for (const step of cards.extraSteps) {
+    const at = step.after ? result.findIndex((entry) => entry.key === step.after) : -1
+    const added: CardStep = { key: step.key, label: step.label, optional: step.optional, locked: false, extra: true, defaultOwners: stageOwner }
+    if (at >= 0) result.splice(at + 1, 0, added)
+    else result.push(added)
+  }
+  return result.filter((step) => !hidden.includes(step.key))
 }
 type ExtraField = { key: string; label: string; type: FieldType; options?: string[]; required?: boolean }
 type ExtraDoc = { key: string; label: string; required: boolean }
-type Override = { stageKey: string; label: string | null; dayLimit: number | null; reopenHours: number | null; hiddenSteps: string[]; requiredFields: string[]; sharedFields: string[] | null; extraFields: ExtraField[]; documents: Record<string, 'always' | 'optional'>; extraDocuments: ExtraDoc[]; updatedAt: string; updatedByName: string | null }
-type Payload = { stages: BaseStage[]; overrides: Override[]; fieldTypes: FieldType[] }
-type Draft = { label: string; dayLimit: string; reopenHours: string; hiddenSteps: string[]; requiredFields: string[]; sharedFields: string[]; extraFields: Array<ExtraField & { optionsText: string }>; documents: Record<string, 'always' | 'optional'>; extraDocuments: ExtraDoc[] }
+type Override = { stageKey: string; label: string | null; dayLimit: number | null; reopenHours: number | null; hiddenSteps: string[]; requiredFields: string[]; sharedFields: string[] | null; extraFields: ExtraField[]; documents: Record<string, 'always' | 'optional'>; extraDocuments: ExtraDoc[]; cardSettings?: CardSettings | null; updatedAt: string; updatedByName: string | null }
+type Payload = { stages: BaseStage[]; overrides: Override[]; fieldTypes: FieldType[]; owners: Array<{ feature: string; label: string }> }
+type Draft = { label: string; dayLimit: string; reopenHours: string; hiddenSteps: string[]; requiredFields: string[]; sharedFields: string[]; extraFields: Array<ExtraField & { optionsText: string }>; documents: Record<string, 'always' | 'optional'>; extraDocuments: ExtraDoc[]; cards: Cards }
+
+function cardsFor(stage: BaseStage, saved: CardSettings | null | undefined): Cards {
+  return {
+    owners: Object.fromEntries(stage.steps.map((step) => [step.key, saved?.owners?.[step.key] ?? step.owners])),
+    people: { ...(saved?.people ?? {}) },
+    fields: Object.fromEntries(stage.fields.map((field) => [field.key, saved?.fields?.[field.key] ?? field.card])),
+    documents: Object.fromEntries(stage.documents.map((doc) => [doc.key, saved?.documents?.[doc.key] ?? doc.card])),
+    labels: { ...(saved?.labels ?? {}) },
+    extraSteps: [...(saved?.extraSteps ?? [])],
+  }
+}
+
+function changedCards(stage: BaseStage, cards: Cards): CardSettings {
+  const same = (a: string[], b: string[]) => a.length === b.length && a.every((entry) => b.includes(entry))
+  return {
+    owners: Object.fromEntries(Object.entries(cards.owners).filter(([key, value]) => value.length && (cards.extraSteps.some((step) => step.key === key) || !same(value, stage.steps.find((step) => step.key === key)?.owners ?? [])))),
+    people: cards.people,
+    fields: Object.fromEntries(Object.entries(cards.fields).filter(([key, value]) => value !== stage.fields.find((field) => field.key === key)?.card)),
+    documents: Object.fromEntries(Object.entries(cards.documents).filter(([key, value]) => value !== stage.documents.find((doc) => doc.key === key)?.card)),
+    labels: Object.fromEntries(Object.entries(cards.labels).filter(([key, value]) => value.trim() && value.trim() !== stage.steps.find((step) => step.key === key)?.label)),
+    extraSteps: cards.extraSteps.map((step) => ({ ...step, label: step.label.trim() })),
+  }
+}
 
 const TYPE_LABEL: Record<FieldType, string> = { text: 'Text', number: 'Number', date: 'Date', textarea: 'Long text', select: 'Dropdown' }
 
@@ -53,6 +91,7 @@ function draftFor(stage: BaseStage, override: Override | undefined): Draft {
     extraFields: (override?.extraFields ?? []).map((field) => ({ ...field, optionsText: (field.options ?? []).join(', ') })),
     documents: override?.documents ?? {},
     extraDocuments: override?.extraDocuments ?? [],
+    cards: cardsFor(stage, override?.cardSettings),
   }
 }
 
@@ -64,6 +103,11 @@ export function StageSettingsPage() {
   const [selected, setSelected] = React.useState<string>('advance')
   const [draft, setDraft] = React.useState<Draft | null>(null)
   const [busy, setBusy] = React.useState(false)
+  const [people, setPeople] = React.useState<Array<{ id: string; name: string }>>([])
+
+  React.useEffect(() => {
+    apiCall<{ items?: Array<{ id: string; name: string }> }>('/api/dermat_orders/people', undefined, { fallback: { items: [] } }).then((call) => setPeople(call.result?.items ?? []))
+  }, [])
 
   const apply = React.useCallback((payload: Payload, key: string) => {
     setData(payload)
@@ -89,6 +133,7 @@ export function StageSettingsPage() {
   const stage = data.stages.find((entry) => entry.key === selected)!
   const override = data.overrides.find((entry) => entry.stageKey === selected)
   const patch = (value: Partial<Draft>) => setDraft((prev) => (prev ? { ...prev, ...value } : prev))
+  const stageOwner = stage.steps[0]?.owners.slice(0, 1) ?? []
 
   const choose = (key: string) => {
     const next = data.stages.find((entry) => entry.key === key)!
@@ -110,6 +155,7 @@ export function StageSettingsPage() {
         extraFields: draft.extraFields.map((field) => ({ key: field.key, label: field.label.trim(), type: field.type, required: Boolean(field.required), ...(field.type === 'select' ? { options: field.optionsText.split(',').map((option) => option.trim()).filter(Boolean) } : {}) })),
         documents: draft.documents,
         extraDocuments: draft.extraDocuments.map((doc) => ({ ...doc, label: doc.label.trim() })),
+        cardSettings: stage.steps.length ? changedCards(stage, draft.cards) : null,
       }
       const url = method === 'PUT' ? '/api/dermat_orders/stage-settings' : `/api/dermat_orders/stage-settings?stageKey=${stage.key}`
       const request = () => apiCall<Payload & { error?: string }>(url, { method, headers: { 'content-type': 'application/json' }, body: method === 'PUT' ? JSON.stringify(body) : undefined })
@@ -184,6 +230,115 @@ export function StageSettingsPage() {
                         <span className="flex-1">{step.label}{step.optional ? <span className="text-xs text-muted-foreground"> ({t('dermat_orders.stageSettings.optional', 'optional')})</span> : null}</span>
                         {step.locked ? <Lock className="h-3.5 w-3.5" aria-label={t('dermat_orders.stageSettings.locked', 'Always on')} /> : null}
                       </label>
+                    ))}
+                  </div>
+                </section>
+              ) : null}
+
+              {stage.steps.length ? (
+                <section className="rounded-lg border bg-card p-4">
+                  <h2 className="text-sm font-semibold">{t('dermat_orders.stageSettings.cards', 'Who does each step')}</h2>
+                  <p className="mb-3 text-xs text-muted-foreground">{t('dermat_orders.stageSettings.cardsHint', 'Each step is a card with its own person. Only the ticked departments can finish it; the default person gets it as soon as it opens.')}</p>
+                  <div className="space-y-3">
+                    {cardSteps(stage, draft.cards, draft.hiddenSteps, stageOwner).map((step, index) => {
+                      const owners = draft.cards.owners[step.key] ?? step.defaultOwners
+                      const person = draft.cards.people[step.key]
+                      const setCards = (value: Partial<Cards>) => patch({ cards: { ...draft.cards, ...value } })
+                      return (
+                        <div key={step.key} className="space-y-2 rounded-md border p-3">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <span className="flex min-w-0 flex-1 items-center gap-2">
+                              <span className="text-sm font-medium tabular-nums">{index + 1}.</span>
+                              <Input
+                                aria-label={t('dermat_orders.stageSettings.stepName', 'Step name')}
+                                className="h-8 max-w-sm"
+                                value={step.extra ? step.label : draft.cards.labels[step.key] ?? step.label}
+                                onChange={(event) =>
+                                  step.extra
+                                    ? setCards({ extraSteps: draft.cards.extraSteps.map((entry) => (entry.key === step.key ? { ...entry, label: event.target.value } : entry)) })
+                                    : setCards({ labels: { ...draft.cards.labels, [step.key]: event.target.value } })
+                                }
+                              />
+                              {step.extra ? (
+                                <Button type="button" variant="ghost" size="sm" aria-label={t('dermat_orders.stageSettings.removeStep', 'Remove this step')} onClick={() => setCards({ extraSteps: draft.cards.extraSteps.filter((entry) => entry.key !== step.key && entry.after !== step.key) })}>
+                                  <Trash2 className="h-4 w-4" aria-hidden="true" />
+                                </Button>
+                              ) : null}
+                            </span>
+                            <Select
+                              value={person?.userId ?? '__none'}
+                              onValueChange={(value) =>
+                                setCards({
+                                  people:
+                                    value === '__none'
+                                      ? Object.fromEntries(Object.entries(draft.cards.people).filter(([key]) => key !== step.key))
+                                      : { ...draft.cards.people, [step.key]: { userId: value, name: people.find((entry) => entry.id === value)?.name ?? null } },
+                                })
+                              }
+                            >
+                              <SelectTrigger className="h-8 w-auto min-w-48 text-xs" aria-label={t('dermat_orders.stageSettings.defaultPerson', 'Default person for {step}', { step: step.label })}>
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="__none">{t('dermat_orders.stageSettings.anyone', 'Anyone in the department')}</SelectItem>
+                                {people.map((entry) => (
+                                  <SelectItem key={entry.id} value={entry.id}>
+                                    {entry.name}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="flex flex-wrap gap-x-4 gap-y-1">
+                            {data.owners.map((owner) => (
+                              <label key={owner.feature} htmlFor={`own-${step.key}-${owner.feature}`} className="flex items-center gap-1.5 text-xs">
+                                <Checkbox
+                                  id={`own-${step.key}-${owner.feature}`}
+                                  checked={owners.includes(owner.feature)}
+                                  onCheckedChange={(checked) => setCards({ owners: { ...draft.cards.owners, [step.key]: checked === true ? [...owners, owner.feature] : owners.filter((entry) => entry !== owner.feature) } })}
+                                />
+                                {owner.label}
+                              </label>
+                            ))}
+                          </div>
+                          {!owners.length ? <p className="text-xs text-status-warning-text">{t('dermat_orders.stageSettings.noOwner', 'Tick at least one department, or the stage department keeps it.')}</p> : null}
+                        </div>
+                      )
+                    })}
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="mt-3"
+                    onClick={() => {
+                      const visible = cardSteps(stage, draft.cards, draft.hiddenSteps, stageOwner)
+                      let n = draft.cards.extraSteps.length + 1
+                      while (draft.cards.extraSteps.some((entry) => entry.key === `x_step_${n}`)) n += 1
+                      patch({ cards: { ...draft.cards, extraSteps: [...draft.cards.extraSteps, { key: `x_step_${n}`, label: '', after: visible[visible.length - 1]?.key ?? null }] } })
+                    }}
+                  >
+                    <Plus className="mr-1 h-4 w-4" aria-hidden="true" />
+                    {t('dermat_orders.stageSettings.addStep', 'Add a step')}
+                  </Button>
+                  <div className="mt-4 grid grid-cols-1 gap-2 border-t pt-3 sm:grid-cols-2">
+                    <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground sm:col-span-2">{t('dermat_orders.stageSettings.whichCard', 'Which step asks each field and file')}</h3>
+                    {[...stage.fields.map((field) => ({ kind: 'fields' as const, key: field.key, label: field.label })), ...stage.documents.map((doc) => ({ kind: 'documents' as const, key: doc.key, label: `${doc.label} (${t('dermat_orders.stageSettings.file', 'file')})` }))].map((entry) => (
+                      <div key={`${entry.kind}-${entry.key}`} className="flex items-center justify-between gap-2 text-sm">
+                        <span className="min-w-0 truncate">{entry.label}</span>
+                        <Select value={draft.cards[entry.kind][entry.key]} onValueChange={(value) => patch({ cards: { ...draft.cards, [entry.kind]: { ...draft.cards[entry.kind], [entry.key]: value } } })}>
+                          <SelectTrigger className="h-8 w-48 shrink-0 text-xs" aria-label={t('dermat_orders.stageSettings.cardFor', 'Step for {name}', { name: entry.label })}>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {cardSteps(stage, draft.cards, draft.hiddenSteps, stageOwner).map((step) => (
+                              <SelectItem key={step.key} value={step.key}>
+                                {step.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
                     ))}
                   </div>
                 </section>

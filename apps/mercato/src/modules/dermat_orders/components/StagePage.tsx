@@ -60,7 +60,8 @@ export function StagePage({ orderId, stageKey }: { orderId: string; stageKey: st
     const result = await runner.run(order, target, request)
     if (result.order) {
       setOrder(result.order)
-      if (request.action === 'complete' || request.action === 'skip') {
+      const finishedNow = result.order.stages.find((entry) => entry.key === target.key)?.status === 'done' && target.status !== 'done'
+      if (request.action === 'complete' || request.action === 'skip' || finishedNow) {
         const nextOpen = result.order.stages.find((entry) => !entry.locked && entry.status === 'open' && order.stages.find((before) => before.key === entry.key)?.status === 'waiting')
         if (nextOpen) router.push(`/backend/orders/${order.id}/stages/${nextOpen.key}`)
       }

@@ -7,6 +7,7 @@ import { buildOptimisticLockHeader } from '@open-mercato/ui/backend/utils/optimi
 import { useGuardedMutation } from '@open-mercato/ui/backend/injection/useGuardedMutation'
 import { flash } from '@open-mercato/ui/backend/FlashMessages'
 import type { StageActionRequest } from './StageSheet'
+import { stageDef } from '../lib/stages'
 import type { Order, Stage } from './types'
 
 export function useStageAction(contextId: string) {
@@ -41,7 +42,8 @@ export function useStageAction(contextId: string) {
           return { order: null, conflict: call.status === 409 }
         }
         const next = call.result
-        if (request.action === 'complete' || request.action === 'skip') {
+        const finishedNow = next.stages.find((entry) => entry.key === stage.key)?.status === 'done' && stage.status !== 'done'
+        if (request.action === 'complete' || request.action === 'skip' || finishedNow) {
           const opened = next.stages.filter((entry) => entry.status === 'open' && order.stages.find((before) => before.key === entry.key)?.status === 'waiting')
           flash(
             opened.length
@@ -49,6 +51,9 @@ export function useStageAction(contextId: string) {
               : t('dermat_orders.flash.done', '{stage} done', { stage: stage.label }),
             'success',
           )
+        } else if (request.action === 'step' && request.done !== false) {
+          const step = stageDef(stage.key)?.steps.find((entry) => entry.key === request.stepKey)
+          flash(t('dermat_orders.flash.stepDone', '{step} done', { step: step?.label ?? '' }), 'success')
         } else if (request.action !== 'step') {
           const messages: Record<string, string> = {
             save: t('dermat_orders.flash.stageSaved', 'Saved'),
