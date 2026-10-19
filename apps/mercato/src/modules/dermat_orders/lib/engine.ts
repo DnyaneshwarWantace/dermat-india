@@ -3,7 +3,7 @@ import { RdRequest } from '../../dermat_rnd/data/entities'
 import { DermatOrder, DermatOrderEvent, DermatOrderLine, DermatOrderStage, type FieldChange } from '../data/entities'
 import type { StageActionInput } from '../data/validators'
 import { activeOptions } from '../../dermat_lists/lib/service'
-import { orderHeadline, QA_ARTWORK_CHECKS, STAGES, STOCK_STAGES, applyReopenHours, applyStageOverride, cardFieldKeys, documentCard, isFinished, missingRequired, missingSteps, reopenBlock, stageDef, stageReopenHours, stepRequired, stepStates, type ReopenInfo, type StageDef } from './stages'
+import { documentRecordId, orderHeadline, qaChecksFrom, STAGES, STOCK_STAGES, applyReopenHours, applyStageOverride, cardFieldKeys, documentCard, isFinished, missingRequired, missingSteps, reopenBlock, stageDef, stageReopenHours, stepRequired, stepStates, type ReopenInfo, type StageDef } from './stages'
 import { effectiveStageDef, loadStageOverrides, type StageOverrides } from './stageSettings'
 import { blockingChecks, checksForOrder, closeFailedChecks, ensureChecksForStage, retireStageChecks, type StageQcSummary } from '../../dermat_quality/lib/service'
 import { requestsForOrder, storeBlocking } from '../../dermat_store/lib/service'
@@ -14,7 +14,7 @@ import { priceLine, priceOrder } from './pricing'
 import { paymentTermDays, paymentTermLabel } from '../../dermat_lists/lib/paymentTerms'
 import { canSeeMoney, isMoneyEvent, isMoneyStageField, withoutMoneyFields } from './money'
 import { documentCounts, documentStatus, missingDocuments } from './stageDocuments'
-import { packingCodeIssues, packingCodeMessage } from './packingCodes'
+import { packingCodeIssues, packingCodeMessage, packingSets } from './packingCodes'
 import { cardPeople, openCards } from './tasks'
 
 function pricedLine(line: DermatOrderLine) {
@@ -183,6 +183,14 @@ export async function progressStages(ctx: OrderContext, order: DermatOrder, stag
       const def = effectiveStageDef(key, overrides)
       const stage = stages.find((entry) => entry.stageKey === key)
       if (def && stage) assignDefaultCard(def, stage, overrides)
+      if (key === 'artwork' && stage && order.sourceOrderId && !stage.data?.composition_text) {
+        const source = await ctx.em.findOne(DermatOrderStage, { orderId: order.sourceOrderId, stageKey: 'artwork' })
+        const text = typeof source?.data?.composition_text === 'string' ? source.data.composition_text : ''
+        if (text.trim()) {
+          stage.data = { ...(stage.data ?? {}), composition_text: text }
+          logEvent(ctx, order, 'saved', 'artwork', 'Composition copied from the earlier order; QA to confirm', null)
+        }
+      }
     }
     await afterOpened(ctx, order, opened, byName)
     if (!(await autoPassStages(ctx, order, stages, opened))) return
@@ -445,9 +453,14 @@ export async function applyStageAction(ctx: OrderContext, order: DermatOrder, in
         const docs = (await missingDocuments(ctx, order.id, def.key, orderValue, overrides.get(def.key))).filter((doc) => documentCard(def, doc) === step.key)
         if (docs.length) throw new OrderError(`Upload: ${docs.map((doc) => doc.label).join(', ')}`, 400, { documents: docs.map((doc) => doc.key) })
       }
+      if (done && def.key === 'artwork' && step.key === 'composition') {
+        const typed = String(stage.data?.composition_text ?? '').trim()
+        const files = (await documentCounts(ctx, order.id)).get(documentRecordId(order.id, 'artwork', 'composition_file')) ?? 0
+        if (!typed && !files) throw new OrderError('Type the composition or upload the composition sheet first', 400, { missing: ['composition_text'] })
+      }
       if (done && def.key === 'artwork' && step.key === 'qa_final') {
         const ticked = ((stage.data?.__qa_art as Record<string, { done?: boolean }> | undefined) ?? {})
-        const open = QA_ARTWORK_CHECKS.filter((check) => !ticked[check.key]?.done)
+        const open = qaChecksFrom(await activeOptions(ctx, 'qa_artwork_checks')).filter((check) => !ticked[check.key]?.done)
         if (open.length) throw new OrderError(`QA artwork checklist first: ${open.map((check) => check.label).join('; ')}`, 400)
       }
       if (done) await assertSubStageOrder(ctx, order.id, def.key, step.key, stage.data ?? {})
@@ -473,7 +486,7 @@ export async function applyStageAction(ctx: OrderContext, order: DermatOrder, in
     case 'checklist': {
       if (def.key !== 'artwork') throw new OrderError('The QA artwork checklist belongs to Artwork & packaging')
       if (stage.status !== 'open' && stage.status !== 'on_hold') throw new OrderError(`${def.label} is not in progress`, 409)
-      const check = QA_ARTWORK_CHECKS.find((entry) => entry.key === input.stepKey)
+      const check = qaChecksFrom(await activeOptions(ctx, 'qa_artwork_checks')).find((entry) => entry.key === input.stepKey)
       if (!check) throw new OrderError('Unknown checklist item')
       if (stepStates(stage.data).qa_final?.done) throw new OrderError('QA already finalised the artwork. Untick it first.', 409)
       markStarted()
@@ -754,6 +767,7 @@ export async function serializeOrder(ctx: OrderContext, order: DermatOrder) {
     reservations,
     packItems: await packItems(ctx, order.id),
     packingCodeIssues: await packingCodeIssues(ctx, order.id),
+    packingSets: await packingSets(ctx, order.id),
     events: events.map((event) => ({
       id: event.id,
       stageKey: event.stageKey ?? null,

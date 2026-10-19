@@ -88,7 +88,11 @@ export const STAGE_DOCUMENTS: Record<string, StageDocument[]> = {
     { key: 'client_approval', label: 'Client approval of the sample', hint: 'Email or WhatsApp screenshot where the client approves the sample.', required: 'always' },
     { key: 'sample_photo', label: 'Sample photo', hint: 'Photo of the approved sample.' },
   ],
-  artwork: [{ key: 'approved_artwork', label: 'Artwork approved by the client', hint: 'Final artwork file or the client approval of it.', required: 'always' }],
+  artwork: [
+    { key: 'composition_file', label: 'Composition sheet (Word / PDF)', hint: 'The composition chart that goes on the pack. Type it above or upload it here.' },
+    { key: 'design_file', label: 'Artwork design file', hint: 'The design sent to the client.' },
+    { key: 'approved_artwork', label: 'Artwork approved by the client', hint: 'Final artwork file or the client approval of it.', required: 'always' },
+  ],
   manufacturing: [{ key: 'bmr', label: 'Batch manufacturing record', hint: 'Scan or photo of the filled BMR sheet.' }],
   filling: [{ key: 'filling_photo', label: 'Filling photo', hint: 'Photo of filled units.' }],
   packing: [{ key: 'packed_photo', label: 'Packed goods photo', hint: 'Photo of packed cartons or shippers.' }],
@@ -175,6 +179,7 @@ export const STAGES: StageDef[] = [
     hint: 'Design, client approval, QA finalise, packing material ordered and received. Starts right after the advance and runs side by side with sampling and the formula.',
     after: ['advance'],
     steps: [
+      { key: 'composition', label: 'Composition sheet ready' },
       { key: 'design', label: 'Artwork designed' },
       { key: 'client_approved', label: 'Client approved the artwork' },
       { key: 'qa_final', label: 'QA finalised the artwork' },
@@ -182,6 +187,7 @@ export const STAGES: StageDef[] = [
       { key: 'pm_ok', label: 'Packing material received (PM OK)' },
     ],
     fields: [
+      { key: 'composition_text', label: 'Composition (ingredients, claims, directions, warnings)', type: 'textarea', placeholder: 'Type it here, or upload the Word file below' },
       { key: 'designer_status', label: 'Designer status', type: 'select', options: DESIGNER_STATUSES, listKey: 'designer_statuses', required: true },
       { key: 'status_note', label: 'Status note', type: 'text', placeholder: 'e.g. Artwork under process' },
       { key: 'artwork_approved_on', label: 'Artwork approved on', type: 'date' },
@@ -559,7 +565,7 @@ export const OWNER_NAMES: Record<string, string> = {
 
 export const STEP_OWNERS: Record<string, Record<string, string[]>> = {
   sampling: { sample_sent: [WORK.rnd, SALES], client_ok: [SALES, WORK.rnd] },
-  artwork: { client_approved: [SALES, WORK.artwork], qa_final: [WORK.qa], pm_ordered: [WORK.purchase, WORK.artwork], pm_ok: [WORK.store, WORK.artwork] },
+  artwork: { composition: [WORK.qa, WORK.artwork], client_approved: [SALES, WORK.artwork], qa_final: [WORK.qa], pm_ordered: [WORK.purchase, WORK.artwork], pm_ok: [WORK.store, WORK.artwork] },
   planning: { purchase: [WORK.planning, WORK.purchase], received: [WORK.store, WORK.planning] },
   dispatch: { delivered: [WORK.dispatch, SALES] },
 }
@@ -567,7 +573,7 @@ export const STEP_OWNERS: Record<string, Record<string, string[]>> = {
 export const FIELD_STEP: Record<string, Record<string, string>> = {
   advance: { pi_number: 'pi_sent', advance_percent: 'advance_received', advance_amount: 'advance_received', received_on: 'advance_received', payment_ref: 'advance_received' },
   sampling: { rd_number: 'request', sample_name: 'sample_made', sample_sent_on: 'sample_sent', client_feedback: 'client_ok', remarks: 'client_ok' },
-  artwork: { designer_status: 'design', status_note: 'design', artwork_approved_on: 'client_approved', remarks: 'pm_ok' },
+  artwork: { composition_text: 'composition', designer_status: 'design', status_note: 'design', artwork_approved_on: 'client_approved', remarks: 'pm_ok' },
   planning: { material_status: 'checked', planned_for: 'reserved', planned_vessel: 'reserved', remarks: 'reserved' },
   qc_qa: { qc_result: 'released', released_on: 'released', coa_no: 'released', retention_qty: 'retention', retention_location: 'retention' },
   billing: { invoice_number: 'invoice', invoice_date: 'invoice', balance_payment: 'balance', remarks: 'balance' },
@@ -577,7 +583,7 @@ export const FIELD_STEP: Record<string, Record<string, string>> = {
 export const DOCUMENT_STEP: Record<string, Record<string, string>> = {
   advance: { payment_proof: 'advance_received' },
   sampling: { client_approval: 'client_ok', sample_photo: 'client_ok' },
-  artwork: { approved_artwork: 'client_approved' },
+  artwork: { composition_file: 'composition', design_file: 'design', approved_artwork: 'client_approved' },
   dispatch: { lr_copy: 'dispatched', eway_bill: 'dispatched' },
 }
 
@@ -621,7 +627,7 @@ export function documentCard(def: StageDef, document: StageDocument): string {
 }
 
 export function stepRequired(def: StageDef, step: StageStep, data: Record<string, unknown> | null | undefined): boolean {
-  if (step.key.startsWith('x_')) {
+  {
     const states = stepStates(data)
     const index = def.steps.findIndex((entry) => entry.key === step.key)
     if (!states[step.key]?.done && def.steps.slice(index + 1).some((entry) => states[entry.key]?.done)) return false
@@ -663,6 +669,15 @@ export const QA_ARTWORK_CHECKS = [
   { key: 'legal', label: 'Legal text: manufacturer, licence no., address, customer care' },
   { key: 'barcode', label: 'Barcode readable and correct' },
 ] as const
+
+export type QaCheck = { key: string; label: string }
+
+export function qaChecksFrom(labels: string[]): QaCheck[] {
+  return labels.map((label) => {
+    const known = QA_ARTWORK_CHECKS.find((check) => check.label === label)
+    return { key: known?.key ?? `c_${label.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 40)}`, label }
+  })
+}
 
 export type OrderHeadline = 'booked' | 'confirmed' | 'updated' | 'completed' | 'delivered' | 'cancelled'
 

@@ -145,6 +145,7 @@ export type Order = {
   reservations: Array<{ productId: string; title: string; unit: string | null; quantity: number; since: string }>
   packItems: Array<{ productId: string; title: string; code: string | null; unit: string; quantity: number }>
   packingCodeIssues?: Array<{ lineId: string; product: string; code: string | null }>
+  packingSets?: Array<{ lineId: string; product: string; code: string | null; name: string | null; kind: string | null; size: string | null; specs: string | null; parts: Array<{ name: string; qty: number }>; printed: string[] }>
   pricesIncludeGst: boolean
   canSeeMoney: boolean
   access?: { full: boolean; stages: string[]; view?: string[]; cards?: string[] }

@@ -9,7 +9,9 @@ import { Button } from '@open-mercato/ui/primitives/button'
 import { Label } from '@open-mercato/ui/primitives/label'
 import { Textarea } from '@open-mercato/ui/primitives/textarea'
 import { StatusBadge } from '@open-mercato/ui/primitives/status-badge'
-import { QA_ARTWORK_CHECKS, stageDef } from '../lib/stages'
+import { qaChecksFrom, stageDef } from '../lib/stages'
+import { useListOptions } from '../../dermat_lists/components/useListOptions'
+import { Checkbox } from '@open-mercato/ui/primitives/checkbox'
 import { formatDateTime, formatQty } from './format'
 import type { Order, OrderQcCheck, Stage } from './types'
 
@@ -131,7 +133,8 @@ type Tick = { done?: boolean; at?: string | null; by?: string | null }
 export function QaArtworkChecklist({ stage, editable, busy, onToggle }: { stage: Stage; editable: boolean; busy: boolean; onToggle: (key: string, done: boolean) => void }) {
   const t = useT()
   const ticks = ((stage.data as Record<string, unknown>)?.__qa_art as Record<string, Tick> | undefined) ?? {}
-  const done = QA_ARTWORK_CHECKS.filter((check) => ticks[check.key]?.done).length
+  const checks = qaChecksFrom(useListOptions('qa_artwork_checks'))
+  const done = checks.filter((check) => ticks[check.key]?.done).length
   return (
     <div className="space-y-2 rounded-lg border p-3">
       <div className="flex items-center justify-between gap-2">
@@ -140,22 +143,22 @@ export function QaArtworkChecklist({ stage, editable, busy, onToggle }: { stage:
           {t('dermat_orders.qaArt.title', 'QA artwork check')}
         </p>
         <span className="text-xs tabular-nums text-muted-foreground">
-          {done}/{QA_ARTWORK_CHECKS.length}
+          {done}/{checks.length}
         </span>
       </div>
       <p className="text-xs text-muted-foreground">{t('dermat_orders.qaArt.hint', 'QA ticks each point on the final artwork before "QA finalised the artwork".')}</p>
       <ul className="space-y-1">
-        {QA_ARTWORK_CHECKS.map((check) => {
+        {checks.map((check) => {
           const tick = ticks[check.key]
           return (
             <li key={check.key}>
-              <label className={cn('flex items-start gap-2 rounded-sm px-1 py-1 text-sm', editable ? 'cursor-pointer hover:bg-muted/40' : '')}>
-                <input
-                  type="checkbox"
-                  className="mt-0.5 h-4 w-4 rounded-sm border-input"
+              <label htmlFor={`qa-art-${check.key}`} className={cn('flex items-start gap-2 rounded-sm px-1 py-1 text-sm', editable ? 'cursor-pointer hover:bg-muted/40' : '')}>
+                <Checkbox
+                  id={`qa-art-${check.key}`}
+                  className="mt-0.5"
                   checked={Boolean(tick?.done)}
                   disabled={!editable || busy}
-                  onChange={(event) => onToggle(check.key, event.target.checked)}
+                  onCheckedChange={(checked) => onToggle(check.key, checked === true)}
                 />
                 <span className="min-w-0">
                   <span className="block">{check.label}</span>

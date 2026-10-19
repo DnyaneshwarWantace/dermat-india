@@ -360,3 +360,64 @@ export class DermatStageSetting {
   @Property({ name: 'updated_at', type: Date, onCreate: () => new Date(), onUpdate: () => new Date() })
   updatedAt: Date = new Date()
 }
+
+@Entity({ tableName: 'dermat_artwork_approvals' })
+@Index({ name: 'dermat_artwork_approvals_order_idx', properties: ['organizationId', 'tenantId', 'orderId'] })
+@Unique({ name: 'dermat_artwork_approvals_token_uq', properties: ['tokenHash'] })
+export class DermatArtworkApproval {
+  [OptionalProps]?: 'status' | 'fileIds' | 'clientName' | 'clientDesignation' | 'signature' | 'comments' | 'ip' | 'userAgent' | 'decidedAt' | 'createdByName' | 'createdAt' | 'updatedAt'
+
+  @PrimaryKey({ type: 'uuid', defaultRaw: 'gen_random_uuid()' })
+  id!: string
+
+  @Property({ name: 'organization_id', type: 'uuid' })
+  organizationId!: string
+
+  @Property({ name: 'tenant_id', type: 'uuid' })
+  tenantId!: string
+
+  @Property({ name: 'order_id', type: 'uuid' })
+  orderId!: string
+
+  @Property({ name: 'token_hash', type: 'text' })
+  tokenHash!: string
+
+  @Property({ type: 'text', default: 'open' })
+  status: 'open' | 'approved' | 'changes' | 'closed' = 'open'
+
+  @Property({ name: 'file_ids', type: 'json', nullable: true })
+  fileIds?: string[] | null
+
+  @Property({ name: 'client_name', type: 'text', nullable: true })
+  clientName?: string | null
+
+  @Property({ name: 'client_designation', type: 'text', nullable: true })
+  clientDesignation?: string | null
+
+  @Property({ type: 'text', nullable: true })
+  signature?: string | null
+
+  @Property({ type: 'text', nullable: true })
+  comments?: string | null
+
+  @Property({ type: 'text', nullable: true })
+  ip?: string | null
+
+  @Property({ name: 'user_agent', type: 'text', nullable: true })
+  userAgent?: string | null
+
+  @Property({ name: 'decided_at', type: Date, nullable: true })
+  decidedAt?: Date | null
+
+  @Property({ name: 'expires_at', type: Date })
+  expiresAt!: Date
+
+  @Property({ name: 'created_by_name', type: 'text', nullable: true })
+  createdByName?: string | null
+
+  @Property({ name: 'created_at', type: Date, onCreate: () => new Date() })
+  createdAt: Date = new Date()
+
+  @Property({ name: 'updated_at', type: Date, onCreate: () => new Date(), onUpdate: () => new Date() })
+  updatedAt: Date = new Date()
+}

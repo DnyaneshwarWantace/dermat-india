@@ -18906,6 +18906,9 @@ ALTER TABLE public.dermat_rnd_trials ADD COLUMN IF NOT EXISTS product_code text,
 
 ALTER TABLE public.dermat_stage_settings ADD COLUMN IF NOT EXISTS card_settings jsonb;
 
+CREATE TABLE IF NOT EXISTS public.dermat_artwork_approvals (id uuid DEFAULT gen_random_uuid() NOT NULL, organization_id uuid NOT NULL, tenant_id uuid NOT NULL, order_id uuid NOT NULL, token_hash text NOT NULL, status text DEFAULT 'open'::text NOT NULL, file_ids jsonb, client_name text, client_designation text, signature text, comments text, ip text, user_agent text, decided_at timestamp with time zone, expires_at timestamp with time zone NOT NULL, created_by_name text, created_at timestamp with time zone NOT NULL, updated_at timestamp with time zone NOT NULL, CONSTRAINT dermat_artwork_approvals_pkey PRIMARY KEY (id), CONSTRAINT dermat_artwork_approvals_token_uq UNIQUE (token_hash));
+CREATE INDEX IF NOT EXISTS dermat_artwork_approvals_order_idx ON public.dermat_artwork_approvals USING btree (organization_id, tenant_id, order_id);
+
 --
 -- PostgreSQL database dump complete
 --

@@ -16,7 +16,7 @@ import { StatusBadge } from '@open-mercato/ui/primitives/status-badge'
 import { apiCall } from '@open-mercato/ui/backend/utils/apiCall'
 import { flash } from '@open-mercato/ui/backend/FlashMessages'
 import { isMoneyStageField } from '../lib/moneyFields'
-import { HOLD_PARTIES, reopenBlock, reopenUntilText, stageList, WORK_STATE_LABEL, stageDef, stageWorkFeature, stepOwners, workState, type StageField, type WorkState } from '../lib/stages'
+import { HOLD_PARTIES, reopenBlock, reopenUntilText, stageList, WORK_STATE_LABEL, stageDef, stageWorkFeature, stepOwners, stepStates, workState, type StageField, type WorkState } from '../lib/stages'
 import { useGranted } from '../../dermat_departments/components/useGranted'
 import { StageDocuments } from './StageDocuments'
 import { StageHistory } from './OrderHistory'
@@ -25,6 +25,9 @@ import { cn } from '@open-mercato/shared/lib/utils'
 import { STAGE_VARIANT, formatDate, formatDateTime, formatQty } from './format'
 import { ProductionPanel } from './ProductionPanel'
 import { StepCards } from './StepCards'
+import { PackingSetPanel } from './PackingSetPanel'
+import { PmOrderPanel } from './PmOrderPanel'
+import { ClientApprovalPanel } from './approval/ClientApprovalPanel'
 import { PackItemsPanel, SampleRoundsPanel } from './ArtworkPanels'
 import { ProductionRoundsPanel, QaArtworkChecklist, QaReleaseReview } from './QualityPanels'
 import type { Order, Stage } from './types'
@@ -125,6 +128,7 @@ export function StageWorkArea({ order, stage, people, canWork: canWorkProp, busy
   const [mode, setMode] = React.useState<Mode>('form')
   const [note, setNote] = React.useState('')
   const [party, setParty] = React.useState(HOLD_PARTIES[0])
+  const [holdReason, setHoldReason] = React.useState('')
   const [followUp, setFollowUp] = React.useState('')
 
   React.useEffect(() => {
@@ -143,6 +147,7 @@ export function StageWorkArea({ order, stage, people, canWork: canWorkProp, busy
     setMode('form')
     setNote('')
     setParty(HOLD_PARTIES[0])
+    setHoldReason('')
   }, [stage, order.payments])
 
   if (!stage || !def) return null
@@ -552,6 +557,13 @@ export function StageWorkArea({ order, stage, people, canWork: canWorkProp, busy
                 ...(stage.key === 'artwork' && order.packItems?.length
                   ? { pm_ok: <PackItemsPanel order={order} stage={stage} editable={cardsEditable && canPmStatus} busy={busy} onStatus={(productId, pmStatus) => run({ action: 'pm_status', productId, pmStatus })} /> }
                   : {}),
+                ...(stage.key === 'artwork'
+                  ? {
+                      design: <PackingSetPanel order={order} />,
+                      client_approved: <ClientApprovalPanel order={order} canSend={cardsEditable && (granted.has('dermat_orders.work.artwork') || granted.has('dermat_orders.manage')) && Boolean(stepStates(stage.data).design?.done) && !stepStates(stage.data).client_approved?.done} />,
+                      pm_ordered: <PmOrderPanel orderId={order.id} editable={cardsEditable} />,
+                    }
+                  : {}),
                 ...(stage.key === 'artwork' ? { qa_final: <QaArtworkChecklist stage={stage} editable={cardsEditable && canQa} busy={busy} onToggle={(key, done) => run({ action: 'checklist', stepKey: key, done })} /> } : {}),
                 ...(stage.key === 'sampling' ? { client_ok: <SampleRoundsPanel orderId={order.id} stage={stage} editable={editable} busy={busy} onNewRound={(text) => run({ action: 'new_round', note: text })} /> } : {}),
                 ...(stage.key === 'manufacturing' || stage.key === 'filling'
@@ -583,6 +595,20 @@ export function StageWorkArea({ order, stage, people, canWork: canWorkProp, busy
                   ? t('dermat_orders.sheet.skipTitle', 'Skip this stage')
                   : t('dermat_orders.sheet.revertTitle', 'Reopen this stage')}
             </h4>
+            {mode === 'hold' && stage.key === 'artwork' ? (
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">{t('dermat_orders.sheet.holdReason', 'Reason')}</Label>
+                <Select value={holdReason || '__none'} onValueChange={(value) => setHoldReason(value === '__none' ? '' : value)}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none">—</SelectItem>
+                    <ListSelectItems listKey="artwork_hold_reasons" current={holdReason} />
+                  </SelectContent>
+                </Select>
+              </div>
+            ) : null}
             {mode === 'hold' ? (
               <div className="space-y-1.5">
                 <Label className="text-xs text-muted-foreground">{t('dermat_orders.sheet.whoseSide', 'Waiting on')}</Label>
@@ -643,11 +669,11 @@ export function StageWorkArea({ order, stage, people, canWork: canWorkProp, busy
               <Button
                 type="button"
                 size="sm"
-                disabled={busy || (mode !== 'skip' && !note.trim())}
+                disabled={busy || (mode !== 'skip' && !note.trim() && !(mode === 'hold' && holdReason))}
                 onClick={() =>
                   run(
                     mode === 'hold'
-                      ? { action: 'hold', note, holdParty: party, followUpOn: followUp || null, data: dataPayload() }
+                      ? { action: 'hold', note: [holdReason, note.trim()].filter(Boolean).join(' — '), holdParty: party, followUpOn: followUp || null, data: dataPayload() }
                       : mode === 'skip'
                         ? { action: 'skip', note }
                         : { action: 'revert', note },

@@ -242,6 +242,20 @@ export const LIST_DEFS: ListDef[] = [
     defaults: ['Description', 'Appearance', 'Colour', 'Odour', 'Texture', 'pH', 'Viscosity (cps)', 'Density @25°C (g/ml)', 'Centrifuge (3000 RPM, 30 min)', 'Specific gravity', 'Spreadability'],
   },
   {
+    key: 'qa_artwork_checks',
+    label: 'QA artwork checklist',
+    department: 'QA',
+    usedIn: 'Artwork stage, QA finalised step',
+    defaults: ['Product name and variant match the order', 'INCI / ingredient list matches the approved formula', 'MRP block and net quantity correct', 'Space for batch no., mfg and expiry date', 'Legal text: manufacturer, licence no., address, customer care', 'Barcode readable and correct'],
+  },
+  {
+    key: 'artwork_hold_reasons',
+    label: 'Artwork hold reasons',
+    department: 'Artwork',
+    usedIn: 'Artwork stage, put on hold',
+    defaults: ['Barcode not sent', 'MRP not sent', 'Client side', 'Other'],
+  },
+  {
     key: 'rm_categories',
     label: 'Raw material categories',
     department: 'Purchase',
