@@ -17,7 +17,7 @@ export const REGISTRATION_FIELDS: RegistrationField[] = [
   { key: 'partner_email', label: 'Partner email', kind: 'email', group: 'Partner contact' },
   { key: 'billing_address', label: 'Billing address', kind: 'address', required: true, group: 'Billing and shipping' },
   { key: 'bill_to', label: 'Bill to (name on the invoice)', group: 'Billing and shipping' },
-  { key: 'ship_to', label: 'Ship to (delivery address)', kind: 'address', group: 'Billing and shipping' },
+  { key: 'ship_to', label: 'Ship to (name and delivery address)', kind: 'address', group: 'Billing and shipping' },
   { key: 'gst_no', label: 'GST no.', group: 'Tax' },
   { key: 'pan_no', label: 'PAN no.', group: 'Tax' },
   { key: 'vat_no', label: 'VAT no. (outside India)', group: 'Tax' },
@@ -27,14 +27,15 @@ export const REGISTRATION_FIELDS: RegistrationField[] = [
   { key: 'dispatch_instruction_2', label: 'Special dispatch instruction 2', kind: 'address', group: 'Dispatch' },
 ]
 
+const COUNTRY_CODES: Record<string, string> = { india: '91', nepal: '977', bangladesh: '880', 'sri lanka': '94', bhutan: '975', uae: '971', 'united arab emirates': '971' }
+
 export function normalizePhone(value: string | undefined, country?: string): string | undefined {
   const trimmed = value?.trim()
-  if (!trimmed) return trimmed
-  if (country?.trim() && country.trim().toLowerCase() !== 'india') return trimmed
-  const digits = trimmed.replace(/[^0-9]/g, '')
-  if (!trimmed.startsWith('+') && digits.length === 10) return `+91 ${digits}`
-  if (!trimmed.startsWith('+') && digits.length === 12 && digits.startsWith('91')) return `+${digits}`
-  return trimmed
+  if (!trimmed || trimmed.startsWith('+')) return trimmed
+  const code = COUNTRY_CODES[(country?.trim() || 'India').toLowerCase()]
+  if (!code) return trimmed
+  const digits = trimmed.replace(/[^0-9]/g, '').replace(/^0+/, '')
+  return digits.startsWith(code) && digits.length > 10 ? `+${digits}` : `+${code} ${digits}`
 }
 
 export function registrationProblems(answers: Record<string, string>): string[] {
