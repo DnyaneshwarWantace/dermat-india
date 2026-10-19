@@ -106,7 +106,7 @@ export function DuesPage() {
           </header>
 
           {data ? (
-            <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            <div data-sheet-compact className="grid grid-cols-2 gap-3 lg:grid-cols-4">
               {[
                 { label: t('dermat_accounts.tile.due', 'Still due'), value: rupees(data.summary.due), icon: <Wallet className="h-4 w-4" />, tone: data.summary.due > 0 ? 'bg-status-warning-bg text-status-warning-icon' : 'bg-muted text-muted-foreground' },
                 { label: t('dermat_accounts.tile.received', 'Received'), value: rupees(data.summary.received), icon: <IndianRupee className="h-4 w-4" />, tone: 'bg-status-success-bg text-status-success-icon' },

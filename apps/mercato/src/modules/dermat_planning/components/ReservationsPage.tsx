@@ -179,7 +179,7 @@ export function ReservationsPage() {
             </p>
           ) : null}
 
-          <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
+          <div data-sheet-compact className="grid grid-cols-2 gap-3 md:grid-cols-5">
             {[
               { label: t('dermat_planning.res.tileHeld', 'Materials held'), value: String(items?.length ?? '–'), icon: <Lock className="h-4 w-4" />, tone: 'bg-status-success-bg text-status-success-icon' },
               { label: t('dermat_planning.res.tileOrders', 'Orders holding stock'), value: String(new Set((items ?? []).map((row) => row.orderId)).size), icon: <PackageSearch className="h-4 w-4" />, tone: 'bg-status-info-bg text-status-info-icon' },

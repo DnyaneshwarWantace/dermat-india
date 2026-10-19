@@ -2,6 +2,7 @@
 
 import * as React from 'react'
 import { ViewsButton } from '../../dermat_products/components/ViewsPanel'
+import { useSheetMode } from '../../dermat_departments/components/sheetMode'
 import { useGranted } from '../../dermat_departments/components/useGranted'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
@@ -31,6 +32,7 @@ import { useCellEditor } from './useCellEditor'
 import type { Order, Stage } from './types'
 
 const PAGE_SIZE = 50
+const SHEET_PAGE_SIZE = 200
 const STORAGE_KEY = 'dermat.orderBook.columns.v1'
 const STATUS_TABS = ['open', 'on_hold', 'completed', 'cancelled', 'all'] as const
 type StatusTab = (typeof STATUS_TABS)[number]
@@ -238,6 +240,8 @@ function BoardView({ orders, onOpen, opening }: { orders: SheetOrder[]; onOpen: 
 export function OrdersPage() {
   const t = useT()
   const granted = useGranted()
+  const sheet = useSheetMode()
+  const pageSize = sheet ? SHEET_PAGE_SIZE : PAGE_SIZE
   const canMoney = granted.has('dermat_orders.money')
   const shownColumns = React.useMemo(() => ALL_COLUMNS.filter((column) => canMoney || !column.money), [canMoney])
   const router = useRouter()
@@ -250,6 +254,7 @@ export function OrdersPage() {
   const [to, setTo] = React.useState('')
   const [pmFilter, setPmFilter] = React.useState<'all' | 'complete' | 'pending'>('all')
   const [similar, setSimilar] = React.useState<{ id: string; orderNo: string } | null>(null)
+  const [showFilters, setShowFilters] = React.useState(false)
   const [page, setPage] = React.useState(1)
   const [view, setView] = React.useState<'table' | 'board'>('table')
   const [visible, setVisible] = React.useState<string[]>(DEFAULT_VIEW.columns)
@@ -298,7 +303,7 @@ export function OrdersPage() {
     const handle = window.setTimeout(async () => {
       const params = filterParams()
       params.set('page', String(page))
-      params.set('pageSize', String(PAGE_SIZE))
+      params.set('pageSize', String(pageSize))
       const call = await apiCall<SheetResponse>(`/api/dermat_orders/orders/sheet?${params.toString()}`)
       if (cancelled) return
       if (!call.ok || !call.result) flash(t('dermat_orders.list.loadError', 'Failed to load orders'), 'error')
@@ -310,7 +315,7 @@ export function OrdersPage() {
       cancelled = true
       window.clearTimeout(handle)
     }
-  }, [filterParams, page, reload, t])
+  }, [filterParams, page, pageSize, reload, t])
 
   const patchOrder = (orderId: string, mutate: (order: SheetOrder) => SheetOrder) =>
     setData((prev) => (prev ? { ...prev, items: prev.items.map((order) => (order.id === orderId ? mutate(order) : order)) } : prev))
@@ -424,7 +429,7 @@ export function OrdersPage() {
             </div>
           </header>
 
-          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <div data-sheet-hide className="grid grid-cols-2 gap-3 lg:grid-cols-4">
             {[
               { money: false, only: 'noMoney', label: t('dermat_orders.book.kpiOrders', 'Orders'), value: summary ? String(summary.orders) : '–', hint: t('dermat_orders.book.kpiOrdersHint', 'In this view'), icon: <ClipboardList className="h-4 w-4" aria-hidden="true" />, tone: 'bg-primary/10 text-primary' },
               { money: true, label: t('dermat_orders.book.kpiValue', 'Booked value'), value: summary?.value != null ? rupees(summary.value) : '–', hint: t('dermat_orders.book.kpiValueHint', '{count} orders', { count: summary?.orders ?? 0 }), icon: <IndianRupee className="h-4 w-4" aria-hidden="true" />, tone: 'bg-primary/10 text-primary' },
@@ -445,14 +450,18 @@ export function OrdersPage() {
             ))}
           </div>
 
-          <div className="space-y-3 rounded-lg border bg-card p-3 shadow-xs">
+          <div className={cn('rounded-lg border bg-card shadow-xs', sheet ? 'space-y-1.5 p-2' : 'space-y-3 p-3')}>
             <div className="flex flex-wrap items-center gap-2">
-              <div className="relative min-w-60 flex-1">
+              <div className="relative min-w-0 flex-1 sm:min-w-60">
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
                 <Input id="order-book-search" value={search} onChange={(event) => setSearch(event.target.value)} className="h-9 pl-9" placeholder={t('dermat_orders.list.search', 'Search order no., customer, product ID or batch no.')} />
               </div>
+              <Button type="button" variant="outline" size="sm" className="h-9 sm:hidden" aria-expanded={showFilters} aria-controls="order-book-filters" onClick={() => setShowFilters((value) => !value)}>
+                {t('dermat_orders.book.filters', 'Filters')}
+                {from || to || pmFilter !== 'all' || similar || stageFilter !== 'all' ? <span className="ml-1.5 h-2 w-2 rounded-full bg-primary" aria-hidden="true" /> : null}
+              </Button>
               <Select value={statusTab} onValueChange={(value) => router.replace(`/backend/orders?tab=${value}`)}>
-                <SelectTrigger className="h-9 w-44">
+                <SelectTrigger className={cn('h-9 w-full sm:w-44', !showFilters && 'hidden sm:flex')}>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -464,7 +473,7 @@ export function OrdersPage() {
                 </SelectContent>
               </Select>
             </div>
-            <div className="flex flex-wrap items-center gap-2">
+            <div id="order-book-filters" className={cn('flex-wrap items-center gap-2', showFilters ? 'flex' : 'hidden sm:flex')}>
               <label className="flex items-center gap-1.5 text-xs text-muted-foreground" htmlFor="order-book-from">
                 {t('dermat_orders.book.from', 'Ordered from')}
                 <Input id="order-book-from" type="date" value={from} onChange={(event) => setFrom(event.target.value)} className="h-8 w-36 text-xs" />
@@ -498,12 +507,12 @@ export function OrdersPage() {
                 </Button>
               ) : null}
             </div>
-            <div className="flex flex-wrap gap-1.5 border-t pt-3">
-              <Button type="button" size="sm" variant={stageFilter === 'all' ? 'default' : 'outline'} className="h-7 px-2.5 text-xs" onClick={() => setStageFilter('all')}>
+            <div className={cn('-mx-1 flex flex-nowrap gap-1.5 overflow-x-auto border-t px-1 sm:flex-wrap', sheet ? 'pt-1.5' : 'pt-3')}>
+              <Button type="button" size="sm" variant={stageFilter === 'all' ? 'default' : 'outline'} className={cn('shrink-0', sheet ? 'h-6 px-2 text-xs' : 'h-7 px-2.5 text-xs')} onClick={() => setStageFilter('all')}>
                 {t('dermat_orders.book.allStages', 'All stages')}
               </Button>
               {STAGES.filter((def) => def.key !== 'order').map((def) => (
-                <Button key={def.key} type="button" size="sm" variant={stageFilter === def.key ? 'default' : 'outline'} className="h-7 px-2.5 text-xs" onClick={() => setStageFilter(def.key)}>
+                <Button key={def.key} type="button" size="sm" variant={stageFilter === def.key ? 'default' : 'outline'} className={cn('shrink-0', sheet ? 'h-6 px-2 text-xs' : 'h-7 px-2.5 text-xs')} onClick={() => setStageFilter(def.key)}>
                   {def.label}
                   <span className="ml-1.5 tabular-nums opacity-70">{summary?.stageCounts[def.key] ?? 0}</span>
                 </Button>
@@ -526,7 +535,7 @@ export function OrdersPage() {
             <BoardView orders={orders} onOpen={openStage} opening={opening} />
           ) : (
             <div className={cn('isolate overflow-hidden rounded-lg border bg-card shadow-xs transition-opacity', loading && 'opacity-60')}>
-              <div className="overflow-auto" style={{ maxHeight: 'calc(100dvh - 9rem)' }}>
+              <div className="overflow-auto" style={{ maxHeight: sheet ? 'calc(100dvh - 5.5rem)' : 'calc(100dvh - 9rem)' }}>
                 <table data-own-grid className="w-full border-separate border-spacing-0 whitespace-nowrap text-left text-xs">
                   <thead className="sticky top-0 z-20 bg-muted">
                     <tr>
@@ -537,7 +546,7 @@ export function OrdersPage() {
                           {section.name}
                         </th>
                       ))}
-                      <th className={cn('sticky right-0 z-30 border-b bg-muted px-3 py-1.5', PIN_RIGHT_LINE)} />
+                      <th className={cn('z-30 border-b bg-muted px-3 py-1.5 md:sticky md:right-0', PIN_RIGHT_LINE)} />
                     </tr>
                     <tr className="text-muted-foreground">
                       <th className={cn('sticky left-0 z-30 border-b bg-muted px-3 py-2 font-semibold', PIN_LEFT_LINE)}>{t('dermat_orders.book.order', 'Order')}</th>
@@ -547,7 +556,7 @@ export function OrdersPage() {
                           {column.label}
                         </th>
                       ))}
-                      <th className={cn('sticky right-0 z-30 border-b bg-muted px-3 py-2 font-semibold text-foreground', PIN_RIGHT_LINE)}>{t('dermat_orders.book.action', 'Now at · action')}</th>
+                      <th className={cn('z-30 border-b bg-muted px-3 py-2 font-semibold text-foreground md:sticky md:right-0', PIN_RIGHT_LINE)}>{t('dermat_orders.book.action', 'Now at · action')}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -604,7 +613,7 @@ export function OrdersPage() {
                               ),
                             )}
                             {span ? (
-                              <td rowSpan={span} className={cn('sticky right-0 z-10 w-80 min-w-72 max-w-80 border-b bg-card px-2 py-1 group-hover/row:bg-muted', PIN_RIGHT_LINE)} onClick={(event) => event.stopPropagation()}>
+                              <td rowSpan={span} className={cn('z-10 w-80 min-w-72 max-w-80 border-b bg-card px-2 py-1 group-hover/row:bg-muted md:sticky md:right-0', PIN_RIGHT_LINE)} onClick={(event) => event.stopPropagation()}>
                                 <ActionCell order={order} onOpen={openStage} opening={opening} />
                               </td>
                             ) : null}

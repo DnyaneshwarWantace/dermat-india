@@ -442,7 +442,7 @@ export function StockPage({ fixedPlace, title }: { fixedPlace?: Place; title?: s
           )}
 
           {book ? (
-            <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            <div data-sheet-compact className="grid grid-cols-2 gap-3 lg:grid-cols-4">
               {tiles.map((tile) => (
                 <div key={tile.label} className="rounded-lg border bg-card p-4">
                   <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{tile.label}</p>

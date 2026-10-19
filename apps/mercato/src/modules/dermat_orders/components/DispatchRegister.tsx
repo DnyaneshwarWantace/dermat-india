@@ -99,7 +99,7 @@ export function DispatchRegister() {
           </header>
 
           {summary ? (
-            <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            <div data-sheet-compact className="grid grid-cols-2 gap-3 lg:grid-cols-4">
               {[
                 { label: t('dermat_orders.dispatches.coming', 'Coming (packing, QA, billing)'), value: summary.coming },
                 { label: t('dermat_orders.dispatches.ready', 'Ready to dispatch'), value: summary.ready },

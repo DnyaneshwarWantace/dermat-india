@@ -533,7 +533,7 @@ export function PlanningBoard() {
             </aside>
 
             <section className="flex min-w-0 flex-col gap-4 xl:col-span-8">
-              <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+              <div data-sheet-compact className="grid grid-cols-2 gap-3 md:grid-cols-4">
                 {[
                   { label: t('dermat_planning.board.tileOrders', 'Orders picked'), value: pickedOrderIds.length + extras.length, icon: <ClipboardCheck className="h-4 w-4" />, tone: 'bg-muted text-muted-foreground' },
                   { label: t('dermat_planning.board.tileMaterials', 'Materials'), value: counts.materials, icon: <Layers className="h-4 w-4" />, tone: 'bg-status-info-bg text-status-info-icon' },
