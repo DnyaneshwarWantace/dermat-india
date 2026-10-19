@@ -27,6 +27,9 @@ import { ProductionPanel } from './ProductionPanel'
 import { StepCards } from './StepCards'
 import { PackingSetPanel } from './PackingSetPanel'
 import { PmOrderPanel } from './PmOrderPanel'
+import { FillingChecksPanel } from './FillingChecksPanel'
+import { PmTrailPanel } from './PmTrailPanel'
+import { ShipperLabelsPanel } from './labels/ShipperLabelsPanel'
 import { ClientApprovalPanel } from './approval/ClientApprovalPanel'
 import { PackItemsPanel, SampleRoundsPanel } from './ArtworkPanels'
 import { ProductionRoundsPanel, QaArtworkChecklist, QaReleaseReview } from './QualityPanels'
@@ -34,7 +37,7 @@ import type { Order, Stage } from './types'
 import { useStageSettings } from './useStageSettings'
 
 export type StageActionRequest = {
-  action: 'start' | 'checklist' | 'rework' | 'reject_batch' | 'save' | 'complete' | 'hold' | 'resume' | 'revert' | 'skip' | 'assign' | 'step' | 'pm_status' | 'new_round' | 'delivered'
+  action: 'start' | 'checklist' | 'rework' | 'reject_batch' | 'save' | 'complete' | 'hold' | 'resume' | 'revert' | 'skip' | 'assign' | 'step' | 'pm_status' | 'new_round' | 'delivered' | 'filling_check'
   stepKey?: string
   productId?: string
   pmStatus?: string
@@ -129,6 +132,7 @@ export function StageWorkArea({ order, stage, people, canWork: canWorkProp, busy
   const [note, setNote] = React.useState('')
   const [party, setParty] = React.useState(HOLD_PARTIES[0])
   const [holdReason, setHoldReason] = React.useState('')
+  const setValue = React.useCallback((key: string, value: string) => setValues((prev) => ({ ...prev, [key]: value })), [])
   const [followUp, setFollowUp] = React.useState('')
 
   React.useEffect(() => {
@@ -162,6 +166,8 @@ export function StageWorkArea({ order, stage, people, canWork: canWorkProp, busy
   }
   const canQa = ownsStep('qa_final')
   const canPmStatus = ownsStep('pm_ok') || ownsStep('pm_ordered')
+  const manufacturingStage = order.stages.find((entry) => entry.key === 'manufacturing')
+  const packingEarly = stage.key === 'packing' && stage.status === 'waiting' && canWork && order.status !== 'cancelled' && Boolean(manufacturingStage && (manufacturingStage.status === 'done' || (manufacturingStage.status === 'open' && manufacturingStage.data?.__started)))
   const nextLabels = stageList().filter((entry) => entry.after.includes(stage.key)).map((entry) => entry.label)
   const onOrderCopy = async (productId: string) => {
     const call = await apiCall<{ id?: string; error?: string }>('/api/dermat_boms/boms/order-copy', {
@@ -445,11 +451,11 @@ export function StageWorkArea({ order, stage, people, canWork: canWorkProp, busy
           </div>
         ) : null}
 
-        {STORE_STAGES.includes(stage.key) ? (
+        {STORE_STAGES.includes(stage.key) && (stage.status !== 'waiting' || packingEarly) ? (
           <div className="space-y-2">
             <div className="flex items-center justify-between gap-2">
               <Label className="text-xs text-muted-foreground">{t('dermat_orders.sheet.store', 'Material from the store')}</Label>
-              {editable ? (
+              {editable || packingEarly ? (
                 <Link
                   href={`/backend/store/requests/new?orderId=${order.id}&stageKey=${stage.key}`}
                   className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
@@ -565,11 +571,24 @@ export function StageWorkArea({ order, stage, people, canWork: canWorkProp, busy
                     }
                   : {}),
                 ...(stage.key === 'artwork' ? { qa_final: <QaArtworkChecklist stage={stage} editable={cardsEditable && canQa} busy={busy} onToggle={(key, done) => run({ action: 'checklist', stepKey: key, done })} /> } : {}),
+                ...(stage.key === 'packing'
+                  ? {
+                      packed: (
+                        <div className="space-y-3">
+                          <PmTrailPanel orderId={order.id} mode="pack" refreshKey={order.updatedAt} />
+                          <ShipperLabelsPanel order={order} stage={stage} />
+                        </div>
+                      ),
+                    }
+                  : {}),
                 ...(stage.key === 'sampling' ? { client_ok: <SampleRoundsPanel orderId={order.id} stage={stage} editable={editable} busy={busy} onNewRound={(text) => run({ action: 'new_round', note: text })} /> } : {}),
                 ...(stage.key === 'manufacturing' || stage.key === 'filling'
                   ? {
-                      [stage.key === 'manufacturing' ? 'manufactured' : 'filled']: (
-                        <ProductionPanel orderId={order.id} stageKey={stage.key} values={values} editable={editable} onChange={(key, value) => setValues((prev) => ({ ...prev, [key]: value }))} />
+                      [stage.key === 'manufacturing' ? (stepStates(stage.data).started?.done ? 'manufactured' : 'started') : 'filled']: (
+                        <div className="space-y-3">
+                          <ProductionPanel orderId={order.id} stageKey={stage.key} values={values} steps={stepStates(stage.data)} editable={cardsEditable} onChange={setValue} />
+                          {stage.key === 'filling' ? <FillingChecksPanel stage={stage} editable={cardsEditable} busy={busy} onCheck={(data, text) => run({ action: 'filling_check', data, note: text || undefined })} /> : null}
+                        </div>
                       ),
                     }
                   : {}),

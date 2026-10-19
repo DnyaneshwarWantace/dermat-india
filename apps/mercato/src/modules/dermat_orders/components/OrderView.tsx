@@ -41,6 +41,7 @@ import { paymentTermLabel } from '../../dermat_lists/lib/paymentTerms'
 import { useStageSettings } from './useStageSettings'
 import { MaterialsAccount, useOrderFile } from './OrderFile'
 import { BackLink } from '../../dermat_departments/components/BackLink'
+import { PmTrailPanel } from './PmTrailPanel'
 
 
 const KIND_LABEL: Record<string, string> = { raw_material: 'RM', packing_material: 'PM', bulk: 'Bulk', finished_goods: 'FG' }
@@ -487,7 +488,12 @@ export function OrderView({ orderId }: { orderId: string }) {
             </CardContent>
           </Card>
               ) : null}
-              {tab === 'materials' && seesMaterials ? <MaterialsAccount file={file} order={order} /> : null}
+              {tab === 'materials' && seesMaterials ? (
+                <div className="space-y-4">
+                  <MaterialsAccount file={file} order={order} />
+                  <PmTrailPanel orderId={order.id} mode="trail" refreshKey={order.updatedAt} />
+                </div>
+              ) : null}
               {tab === 'record' && !limited ? <OrderRecord file={file} /> : null}
               {tab === 'documents' ? <DocumentsOverview order={limited ? { ...order, stages: order.stages.filter((stage) => !stage.locked) } : order} onStage={goToStage} /> : null}
               {tab === 'money' && order.canSeeMoney ? <OrderMoneyCard order={order} onChanged={load} /> : null}

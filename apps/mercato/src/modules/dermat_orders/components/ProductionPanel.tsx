@@ -6,31 +6,41 @@ import { useT } from '@open-mercato/shared/lib/i18n/context'
 import { cn } from '@open-mercato/shared/lib/utils'
 import { apiCall } from '@open-mercato/ui/backend/utils/apiCall'
 import { formatQty } from './format'
+import { productionLimits } from '../lib/stages'
+import { useListOptions } from '../../dermat_lists/components/useListOptions'
 
 type Plan = { lineId: string; fgId: string; pieces: number; bulkId: string; bulkUnit: string; kgPerPiece: number; plannedKg: number }
 type Batch = { bulkId: string; lotNumber: string; onHand: number; manufacturedAt: string | null }
 
 const USE_EXISTING = 'Use bulk already made'
 
-function minutesBetween(start: string, end: string): number | null {
-  const [sh, sm] = start.split(':').map(Number)
-  const [eh, em] = end.split(':').map(Number)
-  if ([sh, sm, eh, em].some((value) => !Number.isFinite(value))) return null
-  let minutes = eh * 60 + em - (sh * 60 + sm)
-  if (minutes < 0) minutes += 24 * 60
-  return minutes
+type StepTimes = Record<string, { done?: boolean; at?: string | null }>
+
+
+function minutesBetween(start: string | null | undefined, end: string | null | undefined): number | null {
+  if (!start) return null
+  const from = new Date(start).getTime()
+  const to = end ? new Date(end).getTime() : Date.now()
+  if (!Number.isFinite(from) || !Number.isFinite(to) || to < from) return null
+  return Math.round((to - from) / 60000)
+}
+
+function clock(value: string | null | undefined): string {
+  return value ? new Date(value).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : '—'
 }
 
 export function ProductionPanel({
   orderId,
   stageKey,
   values,
+  steps = {},
   editable,
   onChange,
 }: {
   orderId: string
   stageKey: 'manufacturing' | 'filling'
   values: Record<string, string>
+  steps?: StepTimes
   editable: boolean
   onChange: (key: string, value: string) => void
 }) {
@@ -45,8 +55,14 @@ export function ProductionPanel({
     })
   }, [orderId])
 
+  const limits = productionLimits(useListOptions('production_limits'))
+  const plannedTotal = plan ? plan.reduce((sum, entry) => sum + entry.plannedKg, 0) : 0
+  React.useEffect(() => {
+    if (stageKey === 'manufacturing' && editable && plannedTotal > 0 && !values.planned_kg) onChange('planned_kg', String(Math.round(plannedTotal * 1000) / 1000))
+  }, [stageKey, editable, plannedTotal, values.planned_kg, onChange])
+
   if (!plan) return null
-  const planned = plan.reduce((sum, entry) => sum + entry.plannedKg, 0)
+  const planned = Number(values.planned_kg) || plannedTotal
   const unit = plan[0]?.bulkUnit ?? 'kg'
 
   if (stageKey === 'filling') {
@@ -73,7 +89,7 @@ export function ProductionPanel({
 
   const made = Number(values.batch_size) || 0
   const wastage = Number(values.wastage_kg) || 0
-  const minutes = values.start_time && values.end_time ? minutesBetween(values.start_time, values.end_time) : null
+  const minutes = minutesBetween(steps.started?.at, steps.manufactured?.at)
   const yieldPercent = planned > 0 && made > 0 ? Math.round((made / planned) * 1000) / 10 : null
   const reusing = values.bulk_source === USE_EXISTING
 
@@ -94,7 +110,7 @@ export function ProductionPanel({
             <Gauge className="h-3 w-3" aria-hidden="true" />
             {t('dermat_orders.production.yield', 'Yield')}
           </p>
-          <p className={cn('mt-0.5 text-sm font-semibold tabular-nums', yieldPercent !== null && yieldPercent < 95 && 'text-status-warning-text')}>
+          <p className={cn('mt-0.5 text-sm font-semibold tabular-nums', yieldPercent !== null && (yieldPercent < limits.yieldLow || yieldPercent > limits.yieldHigh) && 'text-status-warning-text')}>
             {yieldPercent === null ? '—' : `${yieldPercent}%`}
             {wastage ? <span className="ml-1 text-xs font-normal text-muted-foreground">· {formatQty(wastage, 2)} {unit} waste</span> : null}
           </p>
@@ -105,8 +121,14 @@ export function ProductionPanel({
             {t('dermat_orders.production.duration', 'Machine time')}
           </p>
           <p className="mt-0.5 text-sm font-semibold tabular-nums">{minutes === null ? '—' : `${Math.floor(minutes / 60)} h ${minutes % 60} m`}</p>
+          <p className="text-xs text-muted-foreground">{clock(steps.started?.at)} → {steps.manufactured?.at ? clock(steps.manufactured.at) : t('dermat_orders.production.running', 'running')}</p>
         </div>
       </div>
+      {yieldPercent !== null && (yieldPercent > limits.yieldHigh || yieldPercent < limits.yieldLow) ? (
+        <p className="rounded-md border border-status-warning-border bg-status-warning-bg px-3 py-2 text-xs text-status-warning-text">
+          {t('dermat_orders.production.yieldOut', 'Yield {value}% is outside {low}–{high}%. Write the reason in Remarks (water loss, evaporation, spillage).', { value: yieldPercent, low: limits.yieldLow, high: limits.yieldHigh })}
+        </p>
+      ) : null}
       {reusing ? (
         <div className="rounded-lg border border-status-info-border bg-status-info-bg p-3">
           <p className="text-xs font-medium text-status-info-text">

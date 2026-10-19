@@ -30,16 +30,17 @@ async function POST(req: Request) {
     if (!parsed.success) return NextResponse.json({ error: 'Invalid stage action', details: parsed.error.flatten() }, { status: 400 })
     const money = await canSeeMoney(ctx)
     const reopenAnyTime = parsed.data.action === 'revert' && (await hasFeatures(ctx, ['dermat_orders.reopen']))
-    const cardKey = parsed.data.action === 'step' || parsed.data.action === 'save' ? parsed.data.stepKey : parsed.data.action === 'checklist' ? 'qa_final' : parsed.data.action === 'pm_status' ? 'pm_ok' : parsed.data.action === 'delivered' ? 'delivered' : undefined
+    const cardKey = parsed.data.action === 'step' || parsed.data.action === 'save' ? parsed.data.stepKey : parsed.data.action === 'checklist' ? 'qa_final' : parsed.data.action === 'pm_status' ? 'pm_ok' : parsed.data.action === 'delivered' ? 'delivered' : parsed.data.action === 'filling_check' ? 'filled' : undefined
     const effective = effectiveStageDef(parsed.data.stageKey, await loadStageOverrides(ctx))
     const card = cardKey ? effective?.steps.find((step) => step.key === cardKey) : undefined
     const cardOwners = card ? stepOwners(parsed.data.stageKey, card) : []
     let ownsCard = false
     for (const feature of cardOwners) if (!ownsCard && (await hasFeatures(ctx, [feature]))) ownsCard = true
+    if (parsed.data.action === 'filling_check' && !ownsCard && (await hasFeatures(ctx, ['dermat_orders.work.qa']))) ownsCard = true
     if (parsed.data.action === 'pm_status' && !ownsCard && effective?.steps.some((step) => step.key === 'pm_ordered')) {
       for (const feature of stepOwners(parsed.data.stageKey, { key: 'pm_ordered' })) if (!ownsCard && (await hasFeatures(ctx, [feature]))) ownsCard = true
     }
-    const cardAction = Boolean(card) && (parsed.data.action === 'step' || parsed.data.action === 'checklist' || (parsed.data.action === 'save' && Boolean(parsed.data.stepKey)))
+    const cardAction = Boolean(card) && (parsed.data.action === 'step' || parsed.data.action === 'checklist' || parsed.data.action === 'filling_check' || (parsed.data.action === 'save' && Boolean(parsed.data.stepKey)))
     const onBehalf = cardAction && !ownsCard && (await hasFeatures(ctx, ['dermat_orders.settings']))
     if (onBehalf && card) parsed.data.note = `Done on behalf of ${cardOwners.map((feature) => OWNER_NAMES[feature] ?? feature).join(' / ')}`
     const allowed = cardAction

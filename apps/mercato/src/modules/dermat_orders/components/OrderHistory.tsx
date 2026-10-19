@@ -26,6 +26,7 @@ export const ACTION_LABEL: Record<string, string> = {
   edited: 'Order edited',
   step_done: 'Step done',
   approval_link: 'Approval link sent',
+  filling_check: 'Filling check',
   step_undone: 'Step undone',
   qa_check: 'QA check ticked',
   qa_uncheck: 'QA check unticked',

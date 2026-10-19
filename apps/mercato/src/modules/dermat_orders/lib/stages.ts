@@ -232,18 +232,18 @@ export const STAGES: StageDef[] = [
     hint: 'Bulk made in the vessel. Unit: kg / ml. Starts only when both arms are ready. Ask the RM store for the material and confirm you received it; the QC team tests the bulk (chemical and micro) before this can be done.',
     after: ['planning', 'artwork'],
     steps: [
+      { key: 'started', label: 'Manufacturing started' },
       { key: 'manufactured', label: 'Manufacturing done' },
     ],
     fields: [
       { key: 'bulk_source', label: 'Bulk', type: 'select', options: ['Make a new batch', 'Use bulk already made'] },
       { key: 'batch_no', label: 'Batch no.', type: 'text', required: true },
+      { key: 'planned_kg', label: 'Planned (kg)', type: 'number' },
       { key: 'batch_size', label: 'Bulk made / taken (kg)', type: 'number', required: true },
       { key: 'mfg_date', label: 'Mfg. date', type: 'date', required: true },
       { key: 'shift', label: 'Shift', type: 'select', options: ['A', 'B', 'C', 'General'], listKey: 'shifts' },
       { key: 'machine', label: 'Vessel / machine', type: 'text', listKey: 'vessels' },
       { key: 'operator', label: 'Operator', type: 'text', listKey: 'operators' },
-      { key: 'start_time', label: 'Started at', type: 'time' },
-      { key: 'end_time', label: 'Finished at', type: 'time' },
       { key: 'wastage_kg', label: 'Wastage (kg)', type: 'number' },
       { key: 'remarks', label: 'Remarks', type: 'textarea' },
     ],
@@ -256,11 +256,14 @@ export const STAGES: StageDef[] = [
     hint: 'Bulk filled into bottles / tubes / jars. Unit: bottles / gm / ml. Ask the PM store for bottles, tubes and caps and confirm you received them. QC after filling only if its QC rule is switched on.',
     after: ['manufacturing'],
     steps: [
+      { key: 'started', label: 'Filling started' },
       { key: 'filled', label: 'Filling done' },
     ],
     fields: [
       { key: 'filled_units', label: 'Units filled', type: 'number', required: true },
       { key: 'rejected_units', label: 'Rejected units', type: 'number' },
+      { key: 'count_type', label: 'How counted', type: 'select', options: ['Counted', 'Approximate (online line, no counter)'] },
+      { key: 'handed_to_packing', label: 'Pieces handed to packing', type: 'number' },
       { key: 'filling_date', label: 'Filling date', type: 'date' },
       { key: 'shift', label: 'Shift', type: 'select', options: ['A', 'B', 'C', 'General'], listKey: 'shifts' },
       { key: 'machine', label: 'Filling machine', type: 'text', listKey: 'filling_machines' },
@@ -281,7 +284,9 @@ export const STAGES: StageDef[] = [
     ],
     fields: [
       { key: 'packed_qty', label: 'Packed quantity (pcs)', type: 'number', required: true },
+      { key: 'rejected_pcs', label: 'Rejected in packing (pcs)', type: 'number' },
       { key: 'packed_on', label: 'Packed on', type: 'date' },
+      { key: 'pcs_per_shipper', label: 'Pieces per shipper', type: 'number' },
       { key: 'shippers', label: 'Shipper boxes', type: 'number' },
       { key: 'location', label: 'Kept at (factory location)', type: 'text', listKey: 'factory_locations' },
       { key: 'remarks', label: 'Remarks', type: 'textarea' },
@@ -575,6 +580,8 @@ export const FIELD_STEP: Record<string, Record<string, string>> = {
   sampling: { rd_number: 'request', sample_name: 'sample_made', sample_sent_on: 'sample_sent', client_feedback: 'client_ok', remarks: 'client_ok' },
   artwork: { composition_text: 'composition', designer_status: 'design', status_note: 'design', artwork_approved_on: 'client_approved', remarks: 'pm_ok' },
   planning: { material_status: 'checked', planned_for: 'reserved', planned_vessel: 'reserved', remarks: 'reserved' },
+  manufacturing: { bulk_source: 'started', batch_no: 'started', planned_kg: 'started', shift: 'started', machine: 'started', operator: 'started', batch_size: 'manufactured', mfg_date: 'manufactured', wastage_kg: 'manufactured', remarks: 'manufactured' },
+  filling: { shift: 'started', machine: 'started', operator: 'started', filled_units: 'filled', rejected_units: 'filled', count_type: 'filled', handed_to_packing: 'filled', filling_date: 'filled', remarks: 'filled' },
   qc_qa: { qc_result: 'released', released_on: 'released', coa_no: 'released', retention_qty: 'retention', retention_location: 'retention' },
   billing: { invoice_number: 'invoice', invoice_date: 'invoice', balance_payment: 'balance', remarks: 'balance' },
   dispatch: { delivered_on: 'delivered' },
@@ -687,4 +694,17 @@ export function orderHeadline(status: string, revisedAt: Date | string | null | 
   if (status === 'completed') return 'completed'
   if (revisedAt) return 'updated'
   return status === 'booked' ? 'booked' : 'confirmed'
+}
+
+export type ProductionLimits = { yieldHigh: number; yieldLow: number; checkMinutes: number }
+
+export function productionLimits(values: string[]): ProductionLimits {
+  const find = (pattern: RegExp, fallback: number) => {
+    for (const value of values) {
+      const match = value.match(pattern)
+      if (match) return Number(match[1])
+    }
+    return fallback
+  }
+  return { yieldHigh: find(/yield above\s*(\d+(?:\.\d+)?)/i, 105), yieldLow: find(/yield below\s*(\d+(?:\.\d+)?)/i, 95), checkMinutes: find(/every\s*(\d+)\s*min/i, 15) }
 }

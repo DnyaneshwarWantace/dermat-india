@@ -61,12 +61,13 @@ export function subStages(order: Order, stage: Stage): SubStage[] {
   if (stage.key === 'manufacturing') {
     items = [
       reusing ? { ...storeSub(order, stage, 'Requirement given to store'), na: true, naText: `Bulk taken from batch ${String(stage.data?.batch_no ?? '')}` } : storeSub(order, stage, 'Requirement given to store'),
+      step('started'),
       step('manufactured'),
       reusing ? { key: 'qc', label: 'QC testing', kind: 'qc', optional: false, by: null, at: null, done: true, detail: null, links: [], na: true, naText: 'Batch already QC-approved' } : (qcSub(order, stage, 'QC testing') ?? { key: 'qc', label: 'QC testing', kind: 'qc', optional: false, by: null, at: null, done: false, detail: 'Check is created when the stage opens', links: [] }),
     ]
   } else if (stage.key === 'filling') {
     const qc = qcSub(order, stage, 'QC testing')
-    items = [storeSub(order, stage, 'Bottle requirement given to store'), step('filled'), qc ?? { key: 'qc', label: 'QC testing', kind: 'qc', optional: false, by: null, at: null, done: true, detail: null, links: [], na: true, naText: 'QC after filling is switched off' }]
+    items = [storeSub(order, stage, 'Bottle requirement given to store'), step('started'), step('filled'), qc ?? { key: 'qc', label: 'QC testing', kind: 'qc', optional: false, by: null, at: null, done: true, detail: null, links: [], na: true, naText: 'QC after filling is switched off' }]
   } else if (stage.key === 'packing') {
     const qc = qcSub(order, stage, 'QC testing')
     items = [step('sample'), qc ?? { key: 'qc', label: 'QC testing', kind: 'qc', optional: false, by: null, at: null, done: true, detail: null, links: [], na: true, naText: 'No packing QC rule' }, step('packed')]

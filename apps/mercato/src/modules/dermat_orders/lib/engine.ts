@@ -1,3 +1,5 @@
+import { createLogger } from '@open-mercato/shared/lib/logger'
+import { resolveNotificationService } from '@open-mercato/core/modules/notifications/lib/notificationService'
 import { canReadStage, resolveOrderAccess, trimEvents, trimStages } from './visibility'
 import { RdRequest } from '../../dermat_rnd/data/entities'
 import { DermatOrder, DermatOrderEvent, DermatOrderLine, DermatOrderStage, type FieldChange } from '../data/entities'
@@ -39,6 +41,8 @@ function comparable(value: unknown): string | number | null {
   const text = String(value).trim()
   return text === '' ? null : text
 }
+
+const engineLogger = createLogger('dermat_orders')
 
 export function logEvent(ctx: OrderContext, order: DermatOrder, action: string, stageKey: string | null, note: string | null, byName: string | null, changes: FieldChange[] = []) {
   ctx.em.persist(
@@ -198,7 +202,7 @@ export async function progressStages(ctx: OrderContext, order: DermatOrder, stag
 }
 
 async function assertSubStageOrder(ctx: OrderContext, orderId: string, stageKey: string, stepKey: string, data: Record<string, unknown>) {
-  const needsMaterial = (stageKey === 'manufacturing' && stepKey === 'manufactured' && data.bulk_source !== USE_EXISTING_BULK) || (stageKey === 'filling' && stepKey === 'filled')
+  const needsMaterial = (stageKey === 'manufacturing' && (stepKey === 'started' || stepKey === 'manufactured') && data.bulk_source !== USE_EXISTING_BULK) || (stageKey === 'filling' && (stepKey === 'started' || stepKey === 'filled'))
   if (needsMaterial) {
     const block = await storeBlocking(ctx, orderId, stageKey)
     if (block) throw new OrderError(`Stage 1 first: ${block}`, 400, { store: true })
@@ -464,6 +468,14 @@ export async function applyStageAction(ctx: OrderContext, order: DermatOrder, in
         if (open.length) throw new OrderError(`QA artwork checklist first: ${open.map((check) => check.label).join('; ')}`, 400)
       }
       if (done) await assertSubStageOrder(ctx, order.id, def.key, step.key, stage.data ?? {})
+      if (done && def.key === 'manufacturing' && step.key === 'manufactured') {
+        const planned = Number(stage.data?.planned_kg)
+        const made = Number(stage.data?.batch_size)
+        stage.data = { ...(stage.data ?? {}), yield_percent: planned > 0 && made > 0 ? Math.round((made / planned) * 1000) / 10 : null }
+      }
+      if (done && def.key === 'filling' && step.key === 'filled' && (stage.data?.handed_to_packing === undefined || stage.data?.handed_to_packing === null || stage.data?.handed_to_packing === '')) {
+        stage.data = { ...(stage.data ?? {}), handed_to_packing: Math.max(0, (Number(stage.data?.filled_units) || 0) - (Number(stage.data?.rejected_units) || 0)) }
+      }
       const states = { ...stepStates(stage.data), [step.key]: { done, at: done ? new Date().toISOString() : null, by: done ? byName : null } }
       stage.data = { ...(stage.data ?? {}), __steps: states }
       logEvent(ctx, order, done ? 'step_done' : 'step_undone', def.key, note ? `${step.label} · ${note}` : step.label, byName, done ? changed : [])
@@ -483,6 +495,42 @@ export async function applyStageAction(ctx: OrderContext, order: DermatOrder, in
       logEvent(ctx, order, 'pm_status', def.key, `${item.title}: ${input.pmStatus}${note ? ` (${note})` : ''}`, byName)
       break
     }
+    case 'filling_check': {
+      if (def.key !== 'filling') throw new OrderError('Filling checks belong to the Filling stage')
+      if (stage.status !== 'open' && stage.status !== 'on_hold') throw new OrderError('Filling is not in progress', 409)
+      const states = stepStates(stage.data)
+      if (!states.started?.done) throw new OrderError('Start filling first', 409)
+      if (states.filled?.done) throw new OrderError('Filling is already finished', 409)
+      const weightOk = input.data?.weight_ok === 'ok'
+      const leakOk = input.data?.leak_ok === 'ok'
+      if (!['ok', 'not_ok'].includes(String(input.data?.weight_ok)) || !['ok', 'not_ok'].includes(String(input.data?.leak_ok))) throw new OrderError('Tick the weight and the leak test')
+      if ((!weightOk || !leakOk) && !note) throw new OrderError('Write what was wrong and what was done')
+      const grams = input.data?.weight_g === null || input.data?.weight_g === undefined || input.data?.weight_g === '' ? null : Number(input.data.weight_g)
+      const checks = Array.isArray(stage.data?.__checks) ? (stage.data?.__checks as unknown[]) : []
+      stage.data = { ...(stage.data ?? {}), __checks: [...checks, { at: new Date().toISOString(), by: byName, weightOk, leakOk, weightG: Number.isFinite(grams) ? grams : null, note }] }
+      logEvent(ctx, order, 'filling_check', def.key, `Weight ${weightOk ? 'OK' : 'NOT OK'}${Number.isFinite(grams) && grams !== null ? ` (${grams} g)` : ''} · leak ${leakOk ? 'OK' : 'NOT OK'}${note ? ` · ${note}` : ''}`, byName)
+      if (!weightOk || !leakOk) {
+        try {
+          await resolveNotificationService(ctx.container as unknown as { resolve: (name: string) => unknown }).createForFeature(
+            {
+              type: 'dermat_orders.stage.paused',
+              requiredFeature: 'dermat_orders.work.qa',
+              title: `${order.orderNo}: filling check NOT OK`,
+              body: `Weight ${weightOk ? 'OK' : 'NOT OK'} · leak ${leakOk ? 'OK' : 'NOT OK'}${note ? ` · ${note}` : ''} · ${byName ?? ''}`,
+              severity: 'warning',
+              sourceModule: 'dermat_orders',
+              sourceEntityType: 'dermat_orders:order',
+              sourceEntityId: order.id,
+              linkHref: `/backend/orders/${order.id}/stages/filling`,
+            },
+            { tenantId: ctx.tenantId, organizationId: ctx.organizationId },
+          )
+        } catch (error) {
+          engineLogger.error('Failed to notify QA of a failed filling check', { err: error })
+        }
+      }
+      break
+    }
     case 'checklist': {
       if (def.key !== 'artwork') throw new OrderError('The QA artwork checklist belongs to Artwork & packaging')
       if (stage.status !== 'open' && stage.status !== 'on_hold') throw new OrderError(`${def.label} is not in progress`, 409)
@@ -498,7 +546,7 @@ export async function applyStageAction(ctx: OrderContext, order: DermatOrder, in
     }
     case 'rework':
     case 'reject_batch': {
-      const resets: Record<string, string[]> = { manufacturing: ['manufactured'], filling: ['filled'], packing: ['sample', 'packed'] }
+      const resets: Record<string, string[]> = { manufacturing: ['started', 'manufactured'], filling: ['started', 'filled'], packing: ['sample', 'packed'] }
       const reset = resets[def.key]
       if (!reset) throw new OrderError('Only manufacturing, filling and packing can be reworked')
       if (input.action === 'reject_batch' && def.key !== 'manufacturing') throw new OrderError('Only a manufacturing batch can be rejected; filling and packing are reworked')

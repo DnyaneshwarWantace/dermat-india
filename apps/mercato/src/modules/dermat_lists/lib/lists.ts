@@ -242,6 +242,13 @@ export const LIST_DEFS: ListDef[] = [
     defaults: ['Description', 'Appearance', 'Colour', 'Odour', 'Texture', 'pH', 'Viscosity (cps)', 'Density @25°C (g/ml)', 'Centrifuge (3000 RPM, 30 min)', 'Specific gravity', 'Spreadability'],
   },
   {
+    key: 'production_limits',
+    label: 'Production limits',
+    department: 'Production',
+    usedIn: 'Manufacturing yield warning and filling check interval. Change only the numbers, e.g. "Yield above 103%".',
+    defaults: ['Yield above 105%', 'Yield below 95%', 'Filling check every 15 minutes'],
+  },
+  {
     key: 'qa_artwork_checks',
     label: 'QA artwork checklist',
     department: 'QA',
