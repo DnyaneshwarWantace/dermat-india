@@ -69,6 +69,10 @@ export const orderListQuerySchema = z.object({
   stageStatus: z.enum(['active', 'waiting', 'done']).default('active'),
   customerId: z.string().uuid().optional(),
   productId: z.string().uuid().optional(),
+  from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  pm: z.enum(['complete', 'pending']).optional(),
+  similarTo: z.string().uuid().optional(),
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(50),
 })

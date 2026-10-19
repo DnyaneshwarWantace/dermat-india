@@ -20,7 +20,7 @@ export const metadata = {
 }
 
 const querySchema = orderListQuerySchema
-  .pick({ search: true, status: true, stage: true, customerId: true, productId: true })
+  .pick({ search: true, status: true, stage: true, customerId: true, productId: true, from: true, to: true, pm: true, similarTo: true })
   .extend({
     stageStatus: z.enum(['active', 'waiting', 'done']).default('active'),
     page: z.coerce.number().int().min(1).default(1),

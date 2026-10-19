@@ -22,7 +22,18 @@ async function matchingCustomerIds(ctx: OrderContext, search: string): Promise<s
   return Array.from(new Set([...byName, ...byLegal.map((row) => row.entity_id)]))
 }
 
-export type OrderFilterQuery = Pick<OrderListQuery, 'customerId' | 'productId' | 'status' | 'stage' | 'stageStatus' | 'search'>
+export type OrderFilterQuery = Pick<OrderListQuery, 'customerId' | 'productId' | 'status' | 'stage' | 'stageStatus' | 'search' | 'from' | 'to' | 'pm' | 'similarTo'>
+
+export const PM_COMPLETE_SQL = `exists (select 1 from dermat_order_stages s where s.order_id = o.id and s.stage_key = 'artwork' and jsonb_typeof(s.data->'__pm') = 'object' and s.data->'__pm' <> '{}'::jsonb
+  and not exists (select 1 from jsonb_each(s.data->'__pm') e where e.value->>'status' is distinct from 'PM OK'))`
+
+function formulationSet(orderRef: string): string {
+  return `select i.component_product_id as product_id from dermat_order_lines l
+      join dermat_bom_headers h on h.product_id = l.product_id and h.status = 'approved' and h.deleted_at is null
+      join dermat_bom_items i on i.bom_id = h.id and i.component_kind = 'bulk'
+     where l.order_id = ${orderRef}
+    union select l.product_id from dermat_order_lines l where l.order_id = ${orderRef}`
+}
 
 export async function orderFilter(ctx: OrderContext, query: OrderFilterQuery): Promise<{ where: string[]; params: unknown[] }> {
   const where: string[] = ['o.tenant_id = ?', 'o.organization_id = ?', 'o.deleted_at is null']
@@ -45,6 +56,20 @@ export async function orderFilter(ctx: OrderContext, query: OrderFilterQuery): P
     const statuses = query.stageStatus === 'waiting' ? `('waiting')` : query.stageStatus === 'done' ? `('done', 'skipped')` : `('open', 'on_hold')`
     where.push(`exists (select 1 from dermat_order_stages s where s.order_id = o.id and s.stage_key = ? and s.status in ${statuses})`)
     params.push(query.stage)
+  }
+  if (query.from) {
+    where.push('o.order_date >= ?')
+    params.push(query.from)
+  }
+  if (query.to) {
+    where.push('o.order_date <= ?')
+    params.push(query.to)
+  }
+  if (query.pm === 'complete') where.push(PM_COMPLETE_SQL)
+  else if (query.pm === 'pending') where.push(`not ${PM_COMPLETE_SQL}`)
+  if (query.similarTo) {
+    where.push(`exists (select 1 from (${formulationSet('o.id')}) mine join (${formulationSet('?::uuid')}) theirs on theirs.product_id = mine.product_id)`)
+    params.push(query.similarTo, query.similarTo)
   }
   if (query.search) {
     const term = `%${query.search.replace(/[\\%_]/g, (char) => `\\${char}`)}%`

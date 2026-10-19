@@ -5,7 +5,7 @@ import { ViewsButton } from '../../dermat_products/components/ViewsPanel'
 import { useGranted } from '../../dermat_departments/components/useGranted'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { AlertTriangle, ArrowRight, CalendarClock, ChevronLeft, ChevronRight, ClipboardList, Clock, Copy, Eye, RotateCcw, Columns3, FileSpreadsheet, IndianRupee, LayoutGrid, List, PauseCircle, Plus, Search, Wallet } from 'lucide-react'
+import { AlertTriangle, ArrowRight, FlaskConical, X, CalendarClock, ChevronLeft, ChevronRight, ClipboardList, Clock, Copy, Eye, RotateCcw, Columns3, FileSpreadsheet, IndianRupee, LayoutGrid, List, PauseCircle, Plus, Search, Wallet } from 'lucide-react'
 import { useT } from '@open-mercato/shared/lib/i18n/context'
 import { cn } from '@open-mercato/shared/lib/utils'
 import { Page, PageBody } from '@open-mercato/ui/backend/Page'
@@ -246,6 +246,10 @@ export function OrdersPage() {
   const statusTab: StatusTab = tabParam && (STATUS_TABS as readonly string[]).includes(tabParam) ? tabParam : 'open'
   const [stageFilter, setStageFilter] = React.useState<string>('all')
   const [search, setSearch] = React.useState('')
+  const [from, setFrom] = React.useState('')
+  const [to, setTo] = React.useState('')
+  const [pmFilter, setPmFilter] = React.useState<'all' | 'complete' | 'pending'>('all')
+  const [similar, setSimilar] = React.useState<{ id: string; orderNo: string } | null>(null)
   const [page, setPage] = React.useState(1)
   const [view, setView] = React.useState<'table' | 'board'>('table')
   const [visible, setVisible] = React.useState<string[]>(DEFAULT_VIEW.columns)
@@ -261,7 +265,7 @@ export function OrdersPage() {
   React.useEffect(() => {
     apiCall<{ items?: Array<{ id: string; name: string }> }>('/api/dermat_orders/people', undefined, { fallback: { items: [] } }).then((call) => setPeople(call.result?.items ?? []))
   }, [])
-  React.useEffect(() => setPage(1), [statusTab, stageFilter, search])
+  React.useEffect(() => setPage(1), [statusTab, stageFilter, search, from, to, pmFilter, similar])
 
   const changeColumns = (next: string[]) => {
     setVisible(next)
@@ -280,8 +284,12 @@ export function OrdersPage() {
       params.set('stageStatus', 'active')
     }
     if (search.trim()) params.set('search', search.trim())
+    if (from) params.set('from', from)
+    if (to) params.set('to', to)
+    if (pmFilter !== 'all') params.set('pm', pmFilter)
+    if (similar) params.set('similarTo', similar.id)
     return params
-  }, [statusTab, stageFilter, search])
+  }, [statusTab, stageFilter, search, from, to, pmFilter, similar])
 
   React.useEffect(() => {
     let cancelled = false
@@ -397,7 +405,14 @@ export function OrdersPage() {
               {view === 'table' ? (
                 <EditTableBar editing={table.editing} dirtyCount={table.dirtyCount} saving={table.saving} onEdit={table.startEditing} onCancel={table.cancelEditing} onSave={() => void table.saveAll()} />
               ) : null}
-              <ExportButton onExport={() => openServerExport(`/api/dermat_orders/orders/export?${filterParams().toString()}`)} />
+              <ExportButton
+                label={t('dermat_orders.book.exportExcel', 'Export to Excel')}
+                onExport={() => {
+                  const params = filterParams()
+                  params.set('format', 'xlsx')
+                  openServerExport(`/api/dermat_orders/orders/export?${params.toString()}`)
+                }}
+              />
               {granted.has('dermat_orders.manage') ? (
               <Button asChild>
                 <Link href="/backend/orders/new">
@@ -448,6 +463,40 @@ export function OrdersPage() {
                   <SelectItem value="all">{t('dermat_orders.list.tab.all', 'All orders')}</SelectItem>
                 </SelectContent>
               </Select>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <label className="flex items-center gap-1.5 text-xs text-muted-foreground" htmlFor="order-book-from">
+                {t('dermat_orders.book.from', 'Ordered from')}
+                <Input id="order-book-from" type="date" value={from} onChange={(event) => setFrom(event.target.value)} className="h-8 w-36 text-xs" />
+              </label>
+              <label className="flex items-center gap-1.5 text-xs text-muted-foreground" htmlFor="order-book-to">
+                {t('dermat_orders.book.to', 'to')}
+                <Input id="order-book-to" type="date" value={to} onChange={(event) => setTo(event.target.value)} className="h-8 w-36 text-xs" />
+              </label>
+              <Select value={pmFilter} onValueChange={(value) => setPmFilter(value as typeof pmFilter)}>
+                <SelectTrigger className="h-8 w-48 text-xs" aria-label={t('dermat_orders.book.pmFilter', 'Packing material')}>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">{t('dermat_orders.book.pmAll', 'Any packing material')}</SelectItem>
+                  <SelectItem value="complete">{t('dermat_orders.book.pmComplete', 'PM complete (green)')}</SelectItem>
+                  <SelectItem value="pending">{t('dermat_orders.book.pmPending', 'PM not complete')}</SelectItem>
+                </SelectContent>
+              </Select>
+              {similar ? (
+                <span className="flex h-8 items-center gap-1.5 rounded-full border bg-primary/10 px-3 text-xs font-medium text-primary">
+                  <FlaskConical className="h-3.5 w-3.5" aria-hidden="true" />
+                  {t('dermat_orders.book.similarChip', 'Same formulation as {orderNo}', { orderNo: similar.orderNo })}
+                  <button type="button" className="rounded-full p-0.5 hover:bg-primary/20" onClick={() => setSimilar(null)} aria-label={t('dermat_orders.book.similarClear', 'Show all orders')}>
+                    <X className="h-3 w-3" aria-hidden="true" />
+                  </button>
+                </span>
+              ) : null}
+              {from || to || pmFilter !== 'all' || similar ? (
+                <Button type="button" variant="ghost" size="sm" className="h-8 text-xs" onClick={() => { setFrom(''); setTo(''); setPmFilter('all'); setSimilar(null) }}>
+                  {t('dermat_orders.book.clearFilters', 'Clear filters')}
+                </Button>
+              ) : null}
             </div>
             <div className="flex flex-wrap gap-1.5 border-t pt-3">
               <Button type="button" size="sm" variant={stageFilter === 'all' ? 'default' : 'outline'} className="h-7 px-2.5 text-xs" onClick={() => setStageFilter('all')}>
@@ -513,12 +562,25 @@ export function OrdersPage() {
                             className={cn('group/row align-middle hover:bg-muted/30', order.status === 'cancelled' && 'opacity-60')}
                           >
                             {span ? (
-                              <td rowSpan={span} className={cn('sticky left-0 z-10 border-b bg-card px-3 py-1.5 group-hover/row:bg-muted', PIN_LEFT_LINE)} title={formatDate(order.orderDate)}>
+                              <td
+                                rowSpan={span}
+                                className={cn('sticky left-0 z-10 border-b px-3 py-1.5 group-hover/row:bg-muted', order.pm.set > 0 && order.pm.ok === order.pm.set ? 'bg-status-success-bg' : 'bg-card', PIN_LEFT_LINE)}
+                                title={[formatDate(order.orderDate), order.pm.set > 0 && order.pm.ok === order.pm.set ? t('dermat_orders.book.pmCompleteHint', 'All packing material OK') : null].filter(Boolean).join(' · ')}
+                              >
                                 <span className="flex items-center gap-1.5">
                                   <Link href={`/backend/orders/${order.id}`} className="font-mono font-semibold text-primary hover:underline">
                                     {order.orderNo}
                                   </Link>
                                   {order.late ? <span className="rounded-sm bg-status-error-bg px-1 font-semibold text-status-error-text">{t('dermat_orders.book.late', 'Late')}</span> : null}
+                                  <button
+                                    type="button"
+                                    className="rounded-sm p-0.5 text-muted-foreground opacity-0 hover:bg-muted hover:text-foreground focus-visible:opacity-100 group-hover/row:opacity-100"
+                                    title={t('dermat_orders.book.similar', 'Orders with the same formulation')}
+                                    aria-label={t('dermat_orders.book.similarFor', 'Orders with the same formulation as {orderNo}', { orderNo: order.orderNo })}
+                                    onClick={() => setSimilar({ id: order.id, orderNo: order.orderNo })}
+                                  >
+                                    <FlaskConical className="h-3.5 w-3.5" aria-hidden="true" />
+                                  </button>
                                 </span>
                               </td>
                             ) : null}

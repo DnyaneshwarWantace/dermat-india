@@ -18917,6 +18917,22 @@ CREATE TABLE IF NOT EXISTS public.dermat_customer_registrations (id uuid DEFAULT
 CREATE UNIQUE INDEX IF NOT EXISTS dermat_customer_registrations_token_uq ON public.dermat_customer_registrations USING btree (token);
 ALTER TABLE public.dermat_tax_invoices ADD COLUMN IF NOT EXISTS irn text, ADD COLUMN IF NOT EXISTS ack_no text, ADD COLUMN IF NOT EXISTS ack_date text;
 
+CREATE TABLE public.dermat_whatsapp_numbers (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    organization_id uuid NOT NULL,
+    tenant_id uuid NOT NULL,
+    user_id uuid NOT NULL,
+    phone text NOT NULL,
+    enabled boolean DEFAULT true NOT NULL,
+    last_sent_at timestamp with time zone,
+    last_error text,
+    sent_count integer DEFAULT 0 NOT NULL,
+    created_at timestamp with time zone NOT NULL,
+    updated_at timestamp with time zone NOT NULL,
+    CONSTRAINT dermat_whatsapp_numbers_pkey PRIMARY KEY (id)
+);
+CREATE UNIQUE INDEX dermat_whatsapp_numbers_user_uq ON public.dermat_whatsapp_numbers USING btree (tenant_id, user_id);
+
 --
 -- PostgreSQL database dump complete
 --
