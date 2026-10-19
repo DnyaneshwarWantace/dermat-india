@@ -262,7 +262,7 @@ export class DermatOrderStage {
 @Entity({ tableName: 'dermat_order_events' })
 @Index({ name: 'dermat_order_events_order_idx', properties: ['orderId'] })
 export class DermatOrderEvent {
-  [OptionalProps]?: 'stageKey' | 'note' | 'byName' | 'changes' | 'createdAt'
+  [OptionalProps]?: 'stageKey' | 'stepKey' | 'note' | 'byName' | 'changes' | 'createdAt'
 
   @PrimaryKey({ type: 'uuid', defaultRaw: 'gen_random_uuid()' })
   id!: string
@@ -278,6 +278,9 @@ export class DermatOrderEvent {
 
   @Property({ name: 'stage_key', type: 'text', nullable: true })
   stageKey?: string | null
+
+  @Property({ name: 'step_key', type: 'text', nullable: true })
+  stepKey?: string | null
 
   @Property({ type: 'text' })
   action!: string

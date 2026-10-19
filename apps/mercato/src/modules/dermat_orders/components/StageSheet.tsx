@@ -59,6 +59,7 @@ type StageWorkAreaProps = {
   shortCount: number | null
   onAction: (stage: Stage, request: StageActionRequest) => Promise<boolean>
   variant?: 'sheet' | 'page'
+  onlyStep?: string
 }
 
 const STORE_STAGES = ['manufacturing', 'filling', 'packing']
@@ -120,7 +121,7 @@ function StageStrip({ order, current, onPick }: { order: Order; current: string;
 
 type Mode = 'form' | 'hold' | 'revert' | 'skip'
 
-export function StageWorkArea({ order, stage, people, canWork: canWorkProp, busy, shortCount, onAction, variant = 'sheet' }: StageWorkAreaProps) {
+export function StageWorkArea({ order, stage, people, canWork: canWorkProp, busy, shortCount, onAction, variant = 'sheet', onlyStep }: StageWorkAreaProps) {
   const granted = useGranted()
   const canWork = canWorkProp && Boolean(stage) && granted.has(stageWorkFeature(stage?.key ?? ''))
   const canReopenLate = canWorkProp && granted.has('dermat_orders.reopen')
@@ -238,6 +239,69 @@ export function StageWorkArea({ order, stage, people, canWork: canWorkProp, busy
       />
     )
   }
+
+  const stepCards = (
+    <StepCards
+      onlyStep={onlyStep}
+      order={order}
+      stage={stage}
+      def={def}
+      editable={cardsEditable}
+      busy={busy}
+      fields={formFields}
+      renderInput={renderInput}
+      payloadFor={payloadFor}
+      onStep={(stepKey, done, data) => run({ action: 'step', stepKey, done, data })}
+      onSave={(stepKey, data) => run({ action: 'save', stepKey, data })}
+      people={people}
+      canAssign={canWork || granted.has('dermat_orders.manage')}
+      onAssign={(stepKey, userId) => run({ action: 'assign', stepKey, responsibleUserId: userId })}
+      onCompleteMain={(data) => run({ action: 'complete', data })}
+      extras={{
+        ...(stage.key === 'artwork' && order.packItems?.length
+          ? { pm_ok: <PackItemsPanel order={order} stage={stage} editable={cardsEditable && canPmStatus} busy={busy} onStatus={(productId, pmStatus) => run({ action: 'pm_status', productId, pmStatus })} /> }
+          : {}),
+        ...(stage.key === 'artwork'
+          ? {
+              design: <PackingSetPanel order={order} />,
+              client_approved: <ClientApprovalPanel order={order} canSend={cardsEditable && (granted.has('dermat_orders.work.artwork') || granted.has('dermat_orders.manage')) && Boolean(stepStates(stage.data).design?.done) && !stepStates(stage.data).client_approved?.done} />,
+              pm_ordered: <PmOrderPanel orderId={order.id} editable={cardsEditable} />,
+            }
+          : {}),
+        ...(stage.key === 'artwork' ? { qa_final: <QaArtworkChecklist stage={stage} editable={cardsEditable && canQa} busy={busy} onToggle={(key, done) => run({ action: 'checklist', stepKey: key, done })} /> } : {}),
+        ...(stage.key === 'packing'
+          ? {
+              packed: (
+                <div className="space-y-3">
+                  <PmTrailPanel orderId={order.id} mode="pack" refreshKey={order.updatedAt} />
+                  <ShipperLabelsPanel order={order} stage={stage} />
+                </div>
+              ),
+            }
+          : {}),
+        ...(stage.key === 'dispatch' ? { dispatched: <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border p-3 text-sm"><span>{t('dermat_orders.dispatch.sendHint', 'Send the dispatch details and the bilty to the client.')}</span><SendDocButton kind="dispatch" recordId={order.id} label={t('dermat_orders.dispatch.send', 'Send to client')} /></div> } : {}),
+        ...(stage.key === 'sampling' ? { client_ok: <SampleRoundsPanel orderId={order.id} stage={stage} editable={editable} busy={busy} onNewRound={(text) => run({ action: 'new_round', note: text })} /> } : {}),
+        ...(stage.key === 'manufacturing' || stage.key === 'filling'
+          ? {
+              [stage.key === 'manufacturing' ? (stepStates(stage.data).started?.done ? 'manufactured' : 'started') : 'filled']: (
+                <div className="space-y-3">
+                  <ProductionPanel orderId={order.id} stageKey={stage.key} values={values} steps={stepStates(stage.data)} editable={cardsEditable} onChange={setValue} />
+                  {stage.key === 'filling' ? <FillingChecksPanel stage={stage} editable={cardsEditable} busy={busy} onCheck={(data, text) => run({ action: 'filling_check', data, note: text || undefined })} /> : null}
+                </div>
+              ),
+            }
+          : {}),
+      }}
+      completeLabel={
+        stage.key === 'advance'
+          ? t('dermat_orders.sheet.verifySend', 'Verified — send to {next}', { next: nextLabels.join(' + ') })
+          : nextLabels.length
+            ? t('dermat_orders.sheet.completeSend', 'Done — send to {next}', { next: nextLabels.join(' + ') })
+            : t('dermat_orders.sheet.completeLast', 'Done — close the order')
+      }
+    />
+  )
+  if (onlyStep) return <div className="space-y-3 p-4">{stepCards}</div>
 
   return (
     <>
@@ -545,64 +609,7 @@ export function StageWorkArea({ order, stage, people, canWork: canWorkProp, busy
         {mode === 'form' ? <StageHistory events={order.events} stageKey={stage.key} /> : null}
         {mode === 'form' ? (
           <div className="space-y-4">
-            <StepCards
-              order={order}
-              stage={stage}
-              def={def}
-              editable={cardsEditable}
-              busy={busy}
-              fields={formFields}
-              renderInput={renderInput}
-              payloadFor={payloadFor}
-              onStep={(stepKey, done, data) => run({ action: 'step', stepKey, done, data })}
-              onSave={(stepKey, data) => run({ action: 'save', stepKey, data })}
-              people={people}
-              canAssign={canWork || granted.has('dermat_orders.manage')}
-              onAssign={(stepKey, userId) => run({ action: 'assign', stepKey, responsibleUserId: userId })}
-              onCompleteMain={(data) => run({ action: 'complete', data })}
-              extras={{
-                ...(stage.key === 'artwork' && order.packItems?.length
-                  ? { pm_ok: <PackItemsPanel order={order} stage={stage} editable={cardsEditable && canPmStatus} busy={busy} onStatus={(productId, pmStatus) => run({ action: 'pm_status', productId, pmStatus })} /> }
-                  : {}),
-                ...(stage.key === 'artwork'
-                  ? {
-                      design: <PackingSetPanel order={order} />,
-                      client_approved: <ClientApprovalPanel order={order} canSend={cardsEditable && (granted.has('dermat_orders.work.artwork') || granted.has('dermat_orders.manage')) && Boolean(stepStates(stage.data).design?.done) && !stepStates(stage.data).client_approved?.done} />,
-                      pm_ordered: <PmOrderPanel orderId={order.id} editable={cardsEditable} />,
-                    }
-                  : {}),
-                ...(stage.key === 'artwork' ? { qa_final: <QaArtworkChecklist stage={stage} editable={cardsEditable && canQa} busy={busy} onToggle={(key, done) => run({ action: 'checklist', stepKey: key, done })} /> } : {}),
-                ...(stage.key === 'packing'
-                  ? {
-                      packed: (
-                        <div className="space-y-3">
-                          <PmTrailPanel orderId={order.id} mode="pack" refreshKey={order.updatedAt} />
-                          <ShipperLabelsPanel order={order} stage={stage} />
-                        </div>
-                      ),
-                    }
-                  : {}),
-                ...(stage.key === 'dispatch' ? { dispatched: <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border p-3 text-sm"><span>{t('dermat_orders.dispatch.sendHint', 'Send the dispatch details and the bilty to the client.')}</span><SendDocButton kind="dispatch" recordId={order.id} label={t('dermat_orders.dispatch.send', 'Send to client')} /></div> } : {}),
-                ...(stage.key === 'sampling' ? { client_ok: <SampleRoundsPanel orderId={order.id} stage={stage} editable={editable} busy={busy} onNewRound={(text) => run({ action: 'new_round', note: text })} /> } : {}),
-                ...(stage.key === 'manufacturing' || stage.key === 'filling'
-                  ? {
-                      [stage.key === 'manufacturing' ? (stepStates(stage.data).started?.done ? 'manufactured' : 'started') : 'filled']: (
-                        <div className="space-y-3">
-                          <ProductionPanel orderId={order.id} stageKey={stage.key} values={values} steps={stepStates(stage.data)} editable={cardsEditable} onChange={setValue} />
-                          {stage.key === 'filling' ? <FillingChecksPanel stage={stage} editable={cardsEditable} busy={busy} onCheck={(data, text) => run({ action: 'filling_check', data, note: text || undefined })} /> : null}
-                        </div>
-                      ),
-                    }
-                  : {}),
-              }}
-              completeLabel={
-                stage.key === 'advance'
-                  ? t('dermat_orders.sheet.verifySend', 'Verified — send to {next}', { next: nextLabels.join(' + ') })
-                  : nextLabels.length
-                    ? t('dermat_orders.sheet.completeSend', 'Done — send to {next}', { next: nextLabels.join(' + ') })
-                    : t('dermat_orders.sheet.completeLast', 'Done — close the order')
-              }
-            />
+            {stepCards}
             {stage.status !== 'waiting' ? (
               <StageDocuments orderId={order.id} stageKey={stage.key} documents={[]} editable={editable} />
             ) : null}

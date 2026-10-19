@@ -177,6 +177,16 @@
           "collation": null,
           "enumItems": [],
           "mappedType": "uuid"
+        },
+        "step_key": {
+          "name": "step_key",
+          "type": "text",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": true,
+          "length": null,
+          "mappedType": "text"
         }
       },
       "indexes": [

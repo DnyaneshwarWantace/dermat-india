@@ -44,13 +44,14 @@ function comparable(value: unknown): string | number | null {
 
 const engineLogger = createLogger('dermat_orders')
 
-export function logEvent(ctx: OrderContext, order: DermatOrder, action: string, stageKey: string | null, note: string | null, byName: string | null, changes: FieldChange[] = []) {
+export function logEvent(ctx: OrderContext, order: DermatOrder, action: string, stageKey: string | null, note: string | null, byName: string | null, changes: FieldChange[] = [], stepKey: string | null = null) {
   ctx.em.persist(
     ctx.em.create(DermatOrderEvent, {
       organizationId: ctx.organizationId,
       tenantId: ctx.tenantId,
       orderId: order.id,
       stageKey,
+      stepKey,
       action,
       note,
       byName,
@@ -409,7 +410,7 @@ export async function applyStageAction(ctx: OrderContext, order: DermatOrder, in
       const steps = { ...((stage.data?.__steps as Record<string, unknown> | undefined) ?? {}), delivered: { done: true, at: new Date().toISOString(), by: byName } }
       stage.data = { ...(stage.data ?? {}), delivered_on: deliveredOn, __steps: steps }
       order.updatedAt = new Date()
-      logEvent(ctx, order, 'delivered', def.key, [`Delivered on ${deliveredOn}`, note].filter(Boolean).join(' · '), byName)
+      logEvent(ctx, order, 'delivered', def.key, [`Delivered on ${deliveredOn}`, note].filter(Boolean).join(' · '), byName, [], 'delivered')
       break
     }
     case 'assign': {
@@ -422,7 +423,7 @@ export async function applyStageAction(ctx: OrderContext, order: DermatOrder, in
         if (userId) people[step.key] = { userId, name }
         else delete people[step.key]
         stage.data = { ...(stage.data ?? {}), __people: people }
-        logEvent(ctx, order, 'assigned', def.key, `${step.label}: ${name ?? 'Nobody'}`, byName)
+        logEvent(ctx, order, 'assigned', def.key, `${step.label}: ${name ?? 'Nobody'}`, byName, [], step.key)
         break
       }
       stage.responsibleUserId = userId
@@ -478,7 +479,7 @@ export async function applyStageAction(ctx: OrderContext, order: DermatOrder, in
       }
       const states = { ...stepStates(stage.data), [step.key]: { done, at: done ? new Date().toISOString() : null, by: done ? byName : null } }
       stage.data = { ...(stage.data ?? {}), __steps: states }
-      logEvent(ctx, order, done ? 'step_done' : 'step_undone', def.key, note ? `${step.label} · ${note}` : step.label, byName, done ? changed : [])
+      logEvent(ctx, order, done ? 'step_done' : 'step_undone', def.key, note ? `${step.label} · ${note}` : step.label, byName, done ? changed : [], step.key)
       if (done && stage.status === 'open' && !missingSteps(def, stage.data).length) await completeStage(false)
       else assignDefaultCard(def, stage, overrides)
       break
@@ -492,7 +493,7 @@ export async function applyStageAction(ctx: OrderContext, order: DermatOrder, in
       if (!item) throw new OrderError('That packing item is not on this order', 404)
       const current = (stage.data?.__pm as Record<string, unknown> | undefined) ?? {}
       stage.data = { ...(stage.data ?? {}), __pm: { ...current, [item.productId]: { status: input.pmStatus, note: note ?? null, at: new Date().toISOString(), by: byName } } }
-      logEvent(ctx, order, 'pm_status', def.key, `${item.title}: ${input.pmStatus}${note ? ` (${note})` : ''}`, byName)
+      logEvent(ctx, order, 'pm_status', def.key, `${item.title}: ${input.pmStatus}${note ? ` (${note})` : ''}`, byName, [], 'pm_ok')
       break
     }
     case 'filling_check': {
@@ -541,7 +542,7 @@ export async function applyStageAction(ctx: OrderContext, order: DermatOrder, in
       const done = input.done !== false
       const current = (stage.data?.__qa_art as Record<string, unknown> | undefined) ?? {}
       stage.data = { ...(stage.data ?? {}), __qa_art: { ...current, [check.key]: { done, at: done ? new Date().toISOString() : null, by: done ? byName : null, note: note ?? null } } }
-      logEvent(ctx, order, done ? 'qa_check' : 'qa_uncheck', def.key, `${check.label}${note ? ` — ${note}` : ''}`, byName)
+      logEvent(ctx, order, done ? 'qa_check' : 'qa_uncheck', def.key, `${check.label}${note ? ` — ${note}` : ''}`, byName, [], 'qa_final')
       break
     }
     case 'rework':
@@ -593,7 +594,7 @@ export async function applyStageAction(ctx: OrderContext, order: DermatOrder, in
       const steps = { ...stepStates(stage.data) }
       for (const key of ['sample_made', 'sample_sent', 'client_ok']) steps[key] = { done: false, at: null, by: null }
       stage.data = { ...(stage.data ?? {}), client_feedback: null, __steps: steps, __rounds: [...rounds, { round: rounds.length + 1, feedback: note, at: new Date().toISOString(), by: byName }] }
-      logEvent(ctx, order, 'sample_round', def.key, `Round ${rounds.length + 2}: ${note}`, byName)
+      logEvent(ctx, order, 'sample_round', def.key, `Round ${rounds.length + 2}: ${note}`, byName, [], 'client_ok')
       break
     }
     case 'save': {
@@ -605,7 +606,7 @@ export async function applyStageAction(ctx: OrderContext, order: DermatOrder, in
         input.data = Object.fromEntries(Object.entries(input.data).filter(([key]) => own.has(key)))
       }
       mergeData()
-      logEvent(ctx, order, 'saved', def.key, note, byName, changed)
+      logEvent(ctx, order, 'saved', def.key, note, byName, changed, input.stepKey ?? null)
       break
     }
     case 'complete': {
@@ -819,6 +820,7 @@ export async function serializeOrder(ctx: OrderContext, order: DermatOrder) {
     events: events.map((event) => ({
       id: event.id,
       stageKey: event.stageKey ?? null,
+      stepKey: event.stepKey ?? null,
       action: event.action,
       note: event.note ?? null,
       byName: event.byName ?? null,
@@ -838,8 +840,8 @@ export async function serializeOrder(ctx: OrderContext, order: DermatOrder) {
         stages: view.stages.map((stage) => ({ ...stage, data: withoutMoneyFields(stage.key, stage.data) })),
         events: view.events.map((event) => ({ ...event, note: isMoneyEvent(event.action) ? null : event.note, changes: event.changes.filter((change) => !event.stageKey || !isMoneyStageField(event.stageKey, change.key)) })),
       }
-  const accessView = { full: access.full, stages: Array.from(access.stages), view: Array.from(access.view), cards: Array.from(access.cards) }
-  if (access.full) return { ...priced, access: accessView, stages: priced.stages.map((stage) => ({ ...stage, locked: false })) }
+  const accessView = { full: access.full, stages: Array.from(access.stages), view: Array.from(access.view), see: Array.from(access.see), cards: Array.from(access.cards) }
+  if (access.full) return { ...priced, access: accessView, stages: trimStages(access, priced.stages, overrides) }
   const contact = access.accounts || access.dispatch
   const customer = priced.customer
   return {
@@ -852,7 +854,7 @@ export async function serializeOrder(ctx: OrderContext, order: DermatOrder) {
     billingAddress: access.accounts ? priced.billingAddress : null,
     shippingAddress: contact ? priced.shippingAddress : null,
     stages: trimStages(access, priced.stages, overrides),
-    events: trimEvents(access, priced.events),
+    events: trimEvents(access, priced.events, overrides),
     qc: Object.fromEntries(Object.entries(priced.qc).filter(([key]) => canReadStage(access, key))),
   }
 }

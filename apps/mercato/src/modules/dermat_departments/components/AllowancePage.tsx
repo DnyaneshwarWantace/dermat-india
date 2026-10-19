@@ -21,7 +21,7 @@ import { hasFeature, roleLabel } from '../lib/access'
 type Role = { id: string; name: string }
 type RoleAcl = { isSuperAdmin: boolean; features: string[] }
 type Person = { id: string; email: string; name: string | null; roles: string[] }
-type Level = 'none' | 'view' | 'work'
+type Level = 'none' | 'view' | 'work' | 'lead'
 
 const DEPARTMENTS: Array<{ key: string; label: string; work: string; see: string | null; base: string[] }> = [
   { key: 'sales', label: 'Order (Sales)', work: 'dermat_orders.manage', see: 'dermat_orders.see.sales', base: ['dermat_orders.view'] },
@@ -42,20 +42,21 @@ const FLAGS: Array<{ key: string; label: string; feature: string }> = [
   { key: 'supplier', label: 'Supplier names', feature: 'dermat_products.supplier' },
 ]
 
-const LEVEL_WORD: Record<Level, string> = { none: 'None', view: 'View', work: 'Work' }
+const LEVEL_WORD: Record<Level, string> = { none: 'None', view: 'View', work: 'Work', lead: 'Lead' }
 
 function levelOf(features: string[], dept: (typeof DEPARTMENTS)[number]): Level {
-  if (hasFeature(features, false, dept.work)) return 'work'
+  if (hasFeature(features, false, dept.work)) return dept.see && hasFeature(features, false, dept.see) ? 'lead' : 'work'
   if (dept.see && hasFeature(features, false, dept.see)) return 'view'
   return 'none'
 }
 
 function withLevel(features: string[], dept: (typeof DEPARTMENTS)[number], level: Level): string[] {
   const next = new Set(features.filter((feature) => feature !== dept.work && feature !== dept.see))
-  if (level === 'work') {
+  if (level === 'work' || level === 'lead') {
     next.add(dept.work)
     for (const feature of dept.base) next.add(feature)
   }
+  if (level === 'lead' && dept.see) next.add(dept.see)
   if (level === 'view' && dept.see) {
     next.add(dept.see)
     next.add('dermat_orders.view')
@@ -175,7 +176,7 @@ export function AllowancePage() {
         const at = column(dept.label)
         if (at < 0) continue
         const word = (row[at] ?? '').trim().toLowerCase()
-        const level: Level | null = word === 'work' ? 'work' : word === 'view' ? (dept.see ? 'view' : 'none') : word === 'none' || word === '' ? 'none' : null
+        const level: Level | null = word === 'lead' ? (dept.see ? 'lead' : 'work') : word === 'work' ? 'work' : word === 'view' ? (dept.see ? 'view' : 'none') : word === 'none' || word === '' ? 'none' : null
         if (level) features = withLevel(features, dept, level)
       }
       for (const flag of FLAGS) {
@@ -206,7 +207,7 @@ export function AllowancePage() {
             <div className="space-y-1">
               <h1 className="text-xl font-bold">{t('dermat_departments.allowance.title', 'Allowance sheet')}</h1>
               <p className="max-w-3xl text-sm text-muted-foreground">
-                {t('dermat_departments.allowance.lede', 'For every person, what they may do on each stage of an order: None (sees only the stage name and where it is), View (reads it), Work (fills and finishes their steps). Saving gives the person their own access; their department role stays as it is.')}
+                {t('dermat_departments.allowance.lede', 'For every person, what they may do on each stage of an order: None (sees only the stage name and where it is), View (reads every step), Work (fills and finishes their own steps and sees only those steps in full), Lead (works their steps and sees every step). Saving gives the person their own access; their department role stays as it is.')}
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
@@ -275,13 +276,14 @@ export function AllowancePage() {
                               </span>
                             ) : (
                               <Select value={level} onValueChange={(value) => change(person, withLevel(features, dept, value as Level))}>
-                                <SelectTrigger className={cn('h-8 w-24 text-xs', level === 'work' && 'font-semibold text-status-success-text', level === 'view' && 'text-status-info-text')} aria-label={`${person.name ?? person.email}: ${dept.label}`}>
+                                <SelectTrigger className={cn('h-8 w-24 text-xs', (level === 'work' || level === 'lead') && 'font-semibold text-status-success-text', level === 'view' && 'text-status-info-text')} aria-label={`${person.name ?? person.email}: ${dept.label}`}>
                                   <SelectValue />
                                 </SelectTrigger>
                                 <SelectContent>
                                   <SelectItem value="none">{t('dermat_departments.allowance.none', 'None')}</SelectItem>
                                   {dept.see ? <SelectItem value="view">{t('dermat_departments.allowance.view', 'View')}</SelectItem> : null}
                                   <SelectItem value="work">{t('dermat_departments.allowance.work', 'Work')}</SelectItem>
+                                  {dept.see ? <SelectItem value="lead">{t('dermat_departments.allowance.lead', 'Lead')}</SelectItem> : null}
                                 </SelectContent>
                               </Select>
                             )}

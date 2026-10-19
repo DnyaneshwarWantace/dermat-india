@@ -70,7 +70,9 @@ export function subStages(order: Order, stage: Stage): SubStage[] {
     items = [storeSub(order, stage, 'Bottle requirement given to store'), step('started'), step('filled'), qc ?? { key: 'qc', label: 'QC testing', kind: 'qc', optional: false, by: null, at: null, done: true, detail: null, links: [], na: true, naText: 'QC after filling is switched off' }]
   } else if (stage.key === 'packing') {
     const qc = qcSub(order, stage, 'QC testing')
-    items = [step('sample'), qc ?? { key: 'qc', label: 'QC testing', kind: 'qc', optional: false, by: null, at: null, done: true, detail: null, links: [], na: true, naText: 'No packing QC rule' }, step('packed')]
+    const asked = (order.store?.[stage.key] ?? []).some((request) => request.status !== 'cancelled')
+    const store = storeSub(order, stage, 'Cartons, labels and shippers given by store')
+    items = [asked ? store : { ...store, optional: true, detail: 'Not asked (only if secondary packing comes from the PM store)' }, step('sample'), qc ?? { key: 'qc', label: 'QC testing', kind: 'qc', optional: false, by: null, at: null, done: true, detail: null, links: [], na: true, naText: 'No packing QC rule' }, step('packed')]
   } else {
     items = def.steps.map((entry) => step(entry.key))
   }

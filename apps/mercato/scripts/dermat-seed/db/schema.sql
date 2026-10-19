@@ -18933,6 +18933,8 @@ CREATE TABLE public.dermat_whatsapp_numbers (
 );
 CREATE UNIQUE INDEX dermat_whatsapp_numbers_user_uq ON public.dermat_whatsapp_numbers USING btree (tenant_id, user_id);
 
+ALTER TABLE public.dermat_order_events ADD COLUMN IF NOT EXISTS step_key text;
+
 --
 -- PostgreSQL database dump complete
 --

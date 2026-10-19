@@ -61,9 +61,13 @@ export type OrderPayment = {
   createdAt: string
 }
 
+export type CardLevel = 'none' | 'read' | 'work'
+
 export type Stage = {
   key: string
   locked?: boolean
+  partial?: boolean
+  cardAccess?: Record<string, CardLevel>
   label: string
   department: string
   hint: string
@@ -80,7 +84,7 @@ export type Stage = {
   reopen?: ReopenInfo
 }
 
-export type OrderEvent = { id: string; stageKey: string | null; action: string; note: string | null; byName: string | null; changes: Array<{ key: string; label: string; from: string | number | null; to: string | number | null }>; at: string }
+export type OrderEvent = { id: string; stageKey: string | null; stepKey?: string | null; action: string; note: string | null; byName: string | null; changes: Array<{ key: string; label: string; from: string | number | null; to: string | number | null }>; at: string }
 
 export type OrderQcCheck = {
   id: string
@@ -148,7 +152,7 @@ export type Order = {
   packingSets?: Array<{ lineId: string; product: string; code: string | null; name: string | null; kind: string | null; size: string | null; specs: string | null; parts: Array<{ name: string; qty: number }>; printed: string[] }>
   pricesIncludeGst: boolean
   canSeeMoney: boolean
-  access?: { full: boolean; stages: string[]; view?: string[]; cards?: string[] }
+  access?: { full: boolean; stages: string[]; view?: string[]; see?: string[]; cards?: string[] }
   totals: { gross: number; discount: number; taxable: number; gst: number; total: number } | null
   payments: { received: number; due: number; items: OrderPayment[] } | null
   events: OrderEvent[]

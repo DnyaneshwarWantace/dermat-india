@@ -117,7 +117,7 @@ export async function taskList(ctx: OrderContext, scope: 'mine' | 'department' |
         deliveryDate: row.delivery_date,
         overdue: Boolean(row.delivery_date && row.delivery_date < today),
         holdReason: row.hold_reason,
-        href: `/backend/orders/${row.order_id}/stages/${def.key}`,
+        href: `/backend/orders/${row.order_id}/stages/${def.key}${card.key === MAIN_CARD ? '' : `/steps/${card.key}`}`,
       })
     }
   }

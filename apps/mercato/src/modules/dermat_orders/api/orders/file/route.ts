@@ -1,3 +1,4 @@
+import { resolveOrderAccess } from '../../../lib/visibility'
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import type { OpenApiRouteDoc } from '@open-mercato/shared/lib/openapi'
@@ -18,6 +19,7 @@ async function GET(req: Request) {
   if (!parsed.success) return NextResponse.json({ error: 'Order id is required' }, { status: 400 })
   try {
     const order = await findOrder(ctx, parsed.data.id)
+    if (!(await resolveOrderAccess(ctx)).full) return NextResponse.json({ error: 'The order record is for people who see the whole order' }, { status: 403 })
     return await withStageOverrides(ctx, async () => NextResponse.json(await orderFile(ctx, order)))
   } catch (error) {
     if (error instanceof OrderError) return NextResponse.json({ error: error.message }, { status: error.status })

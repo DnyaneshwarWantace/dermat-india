@@ -2,7 +2,7 @@
 
 import * as React from 'react'
 import Link from 'next/link'
-import { Check, CheckCircle2, Clock, FileText, Lock, MinusCircle, Undo2, UserRound } from 'lucide-react'
+import { ArrowUpRight, Check, CheckCircle2, Clock, EyeOff, FileText, Lock, MinusCircle, Undo2, UserRound } from 'lucide-react'
 import { useT } from '@open-mercato/shared/lib/i18n/context'
 import { cn } from '@open-mercato/shared/lib/utils'
 import { Button } from '@open-mercato/ui/primitives/button'
@@ -32,6 +32,7 @@ type StepCardsProps = {
   people?: Array<{ id: string; name: string }>
   canAssign?: boolean
   onAssign?: (stepKey: string, userId: string | null) => Promise<boolean>
+  onlyStep?: string
 }
 
 function shown(field: StageField, value: unknown): string | null {
@@ -41,13 +42,14 @@ function shown(field: StageField, value: unknown): string | null {
   return String(value)
 }
 
-export function StepCards({ order, stage, def, editable, busy, fields, renderInput, payloadFor, onStep, onSave, onCompleteMain, completeLabel, extras = {}, people = [], canAssign = false, onAssign }: StepCardsProps) {
+export function StepCards({ order, stage, def, editable, busy, fields, renderInput, payloadFor, onStep, onSave, onCompleteMain, completeLabel, extras = {}, people = [], canAssign = false, onAssign, onlyStep }: StepCardsProps) {
   const t = useT()
   const granted = useGranted()
   const allDocs = order.documents?.[stage.key] ?? []
   const working = stage.status === 'open' || stage.status === 'on_hold'
   const fieldByKey = new Map(fields.map((field) => [field.key, field]))
 
+  const levelOf = (key: string) => stage.cardAccess?.[key] ?? 'read'
   const ownersOf = (key: string) => (key === MAIN_CARD ? [] : stepOwners(def.key, def.steps.find((step) => step.key === key) ?? { key }))
   const canDo = (key: string) => {
     if (!editable) return false
@@ -100,15 +102,19 @@ export function StepCards({ order, stage, def, editable, busy, fields, renderInp
 
   return (
     <div className="space-y-2">
-      <p className="text-xs font-medium text-muted-foreground">
-        {t('dermat_orders.cards.title', 'Steps of this stage · {done} of {total} done', { done: doneCount, total: counted.length })}
-      </p>
+      {onlyStep ? null : (
+        <p className="text-xs font-medium text-muted-foreground">
+          {t('dermat_orders.cards.title', 'Steps of this stage · {done} of {total} done', { done: doneCount, total: counted.length })}
+        </p>
+      )}
       <ol className="space-y-2">
         {items.map((item, index) => {
+          if (onlyStep && item.key !== onlyStep) return null
           if (item.kind !== 'step') return <AutoCard key={item.key} item={item} index={index + 1} />
           const keys = cardFieldKeys(def, item.key)
           const docs = allDocs.filter((doc) => documentCard(def, doc) === item.key)
           const mine = canDo(item.key)
+          const hidden = levelOf(item.key) === 'none'
           const active = item.status === 'current' || (item.optional && item.status === 'pending' && working)
           const isLast = index === items.length - 1 || items.slice(index + 1).every((next) => next.status === 'na' || next.optional || next.kind !== 'step')
           return (
@@ -116,6 +122,7 @@ export function StepCards({ order, stage, def, editable, busy, fields, renderInp
               key={item.key}
               index={index + 1}
               title={item.label}
+              href={`/backend/orders/${order.id}/stages/${stage.key}/steps/${item.key}`}
               owner={ownerText(item.key)}
               optional={item.optional}
               state={item.status === 'done' ? 'done' : item.status === 'na' ? 'na' : active ? 'current' : 'pending'}
@@ -151,10 +158,17 @@ export function StepCards({ order, stage, def, editable, busy, fields, renderInp
                 ) : null
               }
             >
-              {item.status === 'done' || (active && (keys.length || docs.length)) ? (
+              {hidden ? (
+                item.status === 'done' || active ? (
+                  <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <EyeOff className="h-3.5 w-3.5" aria-hidden="true" />
+                    {t('dermat_orders.cards.private', 'Only {owner} see the details of this step.', { owner: ownerText(item.key) })}
+                  </p>
+                ) : null
+              ) : item.status === 'done' || (active && (keys.length || docs.length)) ? (
                 <CardBody stage={stage} order={order} keys={keys} fieldByKey={fieldByKey} docs={docs} active={active && mine} renderInput={renderInput} />
               ) : null}
-              {(active || item.status === 'done') && extras[item.key] ? extras[item.key] : null}
+              {!hidden && (active || item.status === 'done') && extras[item.key] ? extras[item.key] : null}
               {active && mine ? (
                 <div className="flex flex-wrap justify-end gap-2">
                   {keys.length ? (
@@ -178,7 +192,7 @@ export function StepCards({ order, stage, def, editable, busy, fields, renderInp
 
 type CardState = 'done' | 'current' | 'pending' | 'na'
 
-function Card({ index, title, owner, optional, state, stamp, waiting, action, person, children }: { index: number; title: string; owner: string; optional?: boolean; state: CardState; stamp: string | null; waiting?: string | null; action?: React.ReactNode; person?: React.ReactNode; children?: React.ReactNode }) {
+function Card({ index, title, href, owner, optional, state, stamp, waiting, action, person, children }: { index: number; title: string; href?: string; owner: string; optional?: boolean; state: CardState; stamp: string | null; waiting?: string | null; action?: React.ReactNode; person?: React.ReactNode; children?: React.ReactNode }) {
   const t = useT()
   const icon =
     state === 'done' ? (
@@ -203,7 +217,14 @@ function Card({ index, title, owner, optional, state, stamp, waiting, action, pe
         <div className="min-w-0 flex-1 space-y-0.5">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <p className={cn('text-sm', state === 'current' ? 'font-semibold' : 'font-medium')}>
-              {title}
+              {href ? (
+                <Link href={href} className="inline-flex items-center gap-1 hover:underline" title={t('dermat_orders.cards.openStep', 'Open this step')}>
+                  {title}
+                  <ArrowUpRight className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
+                </Link>
+              ) : (
+                title
+              )}
               {optional ? <span className="ml-1 text-xs font-normal text-muted-foreground">{t('dermat_orders.sheet.optional', '(if needed)')}</span> : null}
             </p>
             <span className="flex items-center gap-2">
