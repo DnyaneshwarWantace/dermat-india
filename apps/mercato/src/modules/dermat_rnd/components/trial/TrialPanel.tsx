@@ -19,6 +19,7 @@ import { TrialDialogs, type TrialDialogKind } from './TrialDialogs'
 import { totalsOf } from './formula'
 import { MicroView } from './MicroView'
 import { openClientSheet, type ClientSheetLabels } from './clientSheet'
+import { SendDocButton } from '../../../dermat_orders/components/links/SendDocButton'
 
 const OPEN_REQUEST = ['requested', 'in_progress', 'changes']
 
@@ -200,6 +201,7 @@ export function TrialPanel({ request, trial, canManage, canMakeBom, canRequest, 
                 {t('dermat_rnd.trial.printClient', 'Print for client')}
               </Button>
             ) : null}
+            {(canManage || canRequest) && trial.status !== 'draft' ? <SendDocButton kind="sample" recordId={trial.id} label={t('dermat_rnd.trial.sendClient', 'Send to client')} /> : null}
           </div>
         ) : null}
         {trial.stabilityStatus === 'running' && OPEN_REQUEST.includes(request.status) && trial.status !== 'draft' ? (

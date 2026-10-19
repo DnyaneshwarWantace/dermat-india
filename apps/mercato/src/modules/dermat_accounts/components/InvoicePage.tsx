@@ -23,6 +23,7 @@ import { dateText, rupeeText } from '../../dermat_products/lib/whatsapp'
 import { buildInvoiceHtml, printInvoice } from './invoicePrint'
 import { INVOICE_STATUS, type CompanyView, type InvoiceView } from './types'
 import { BackLink } from '../../dermat_departments/components/BackLink'
+import { SendDocButton } from '../../dermat_orders/components/links/SendDocButton'
 
 const HISTORY: Record<string, string> = { created: 'Drafted', edited: 'Edited', quantities: 'Quantities changed', issued: 'Issued', credited: 'Credit note made', cancelled: 'Cancelled' }
 
@@ -57,6 +58,9 @@ export function InvoicePage({ id }: { id: string }) {
       vehicleNo: next.vehicleNo ?? '',
       lrNo: next.lrNo ?? '',
       ewayBillNo: next.ewayBillNo ?? '',
+      irn: next.irn ?? '',
+      ackNo: next.ackNo ?? '',
+      ackDate: next.ackDate ?? '',
       terms: next.terms ?? '',
       bankDetails: next.bankDetails ?? '',
       notes: next.notes ?? '',
@@ -151,6 +155,9 @@ export function InvoicePage({ id }: { id: string }) {
         vehicleNo: form.vehicleNo,
         lrNo: form.lrNo,
         ewayBillNo: form.ewayBillNo,
+        irn: form.irn,
+        ackNo: form.ackNo,
+        ackDate: form.ackDate || null,
         terms: form.terms,
         bankDetails: form.bankDetails,
         notes: form.notes,
@@ -223,6 +230,7 @@ export function InvoicePage({ id }: { id: string }) {
                 <Printer className="mr-1.5 h-4 w-4" aria-hidden="true" />
                 {t('dermat_accounts.inv.print', 'Print / PDF')}
               </Button>
+              {!draft ? <SendDocButton kind="invoice" recordId={doc.id} size="default" /> : null}
               {draft && canRecord ? (
                 <Button type="button" onClick={() => send('/api/dermat_accounts/invoices/action', { id, action: 'issue' }, t('dermat_accounts.inv.issued', 'Invoice issued; the order Billing stage has the invoice no.'))} disabled={busy}>
                   <CheckCircle2 className="mr-1.5 h-4 w-4" aria-hidden="true" />
@@ -340,6 +348,16 @@ export function InvoicePage({ id }: { id: string }) {
                   {field('lrNo', t('dermat_accounts.inv.lr', 'LR / docket no.'))}
                   {field('ewayBillNo', t('dermat_accounts.inv.eway', 'E-way bill no.'))}
                 </div>
+                {credit ? null : (
+                  <div className="space-y-2">
+                    <Label className="text-xs text-muted-foreground">{t('dermat_accounts.inv.einvoice', 'E-invoice (from the GST portal)')}</Label>
+                    {field('irn', t('dermat_accounts.inv.irn', 'IRN'))}
+                    <div className="grid grid-cols-2 gap-3">
+                      {field('ackNo', t('dermat_accounts.inv.ackNo', 'Ack no.'))}
+                      {field('ackDate', t('dermat_accounts.inv.ackDate', 'Ack date'), { type: 'date' })}
+                    </div>
+                  </div>
+                )}
                 <div className="space-y-1">
                   <Label htmlFor="inv-bank" className="text-xs text-muted-foreground">{t('dermat_accounts.inv.bank', 'Bank details')}</Label>
                   <Textarea id="inv-bank" rows={3} value={form.bankDetails ?? ''} disabled={doc.status === 'cancelled' || !canRecord} onChange={(event) => setForm((prev) => ({ ...prev, bankDetails: event.target.value }))} />

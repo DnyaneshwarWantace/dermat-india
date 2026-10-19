@@ -421,3 +421,61 @@ export class DermatArtworkApproval {
   @Property({ name: 'updated_at', type: Date, onCreate: () => new Date(), onUpdate: () => new Date() })
   updatedAt: Date = new Date()
 }
+
+export type DocLinkKind = 'pi' | 'invoice' | 'po' | 'dispatch' | 'sample'
+export type DocLinkSend = { via: 'email' | 'whatsapp' | 'copy'; by: string | null; at: string; to: string | null }
+
+@Entity({ tableName: 'dermat_doc_links' })
+@Index({ name: 'dermat_doc_links_record_idx', properties: ['organizationId', 'tenantId', 'kind', 'recordId'] })
+@Unique({ name: 'dermat_doc_links_token_uq', properties: ['token'] })
+export class DermatDocLink {
+  [OptionalProps]?: 'orderId' | 'customerId' | 'sends' | 'openedCount' | 'lastOpenedAt' | 'revokedAt' | 'createdByName' | 'createdAt' | 'updatedAt'
+
+  @PrimaryKey({ type: 'uuid', defaultRaw: 'gen_random_uuid()' })
+  id!: string
+
+  @Property({ name: 'organization_id', type: 'uuid' })
+  organizationId!: string
+
+  @Property({ name: 'tenant_id', type: 'uuid' })
+  tenantId!: string
+
+  @Property({ type: 'text' })
+  token!: string
+
+  @Property({ type: 'text' })
+  kind!: DocLinkKind
+
+  @Property({ name: 'record_id', type: 'uuid' })
+  recordId!: string
+
+  @Property({ name: 'order_id', type: 'uuid', nullable: true })
+  orderId?: string | null
+
+  @Property({ name: 'customer_id', type: 'uuid', nullable: true })
+  customerId?: string | null
+
+  @Property({ type: 'text' })
+  title!: string
+
+  @Property({ type: 'json', nullable: true })
+  sends?: DocLinkSend[] | null
+
+  @Property({ name: 'opened_count', type: 'integer', default: 0 })
+  openedCount: number = 0
+
+  @Property({ name: 'last_opened_at', type: Date, nullable: true })
+  lastOpenedAt?: Date | null
+
+  @Property({ name: 'revoked_at', type: Date, nullable: true })
+  revokedAt?: Date | null
+
+  @Property({ name: 'created_by_name', type: 'text', nullable: true })
+  createdByName?: string | null
+
+  @Property({ name: 'created_at', type: Date, onCreate: () => new Date() })
+  createdAt: Date = new Date()
+
+  @Property({ name: 'updated_at', type: Date, onCreate: () => new Date(), onUpdate: () => new Date() })
+  updatedAt: Date = new Date()
+}

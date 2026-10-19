@@ -11,6 +11,7 @@ import { DataTable } from '@open-mercato/ui/backend/DataTable'
 import { RowActions } from '@open-mercato/ui/backend/RowActions'
 import { ListEmptyState } from '@open-mercato/ui/backend/filters/ListEmptyState'
 import { Button } from '@open-mercato/ui/primitives/button'
+import { SendRegistrationButton } from '../../dermat_accounts/components/registration/SendRegistrationButton'
 import { apiCall } from '@open-mercato/ui/backend/utils/apiCall'
 import { flash } from '@open-mercato/ui/backend/FlashMessages'
 import { paymentTermLabel } from '../../dermat_lists/lib/paymentTerms'
@@ -103,6 +104,7 @@ export default function CustomersList() {
           actions={
             canManage ? (
               <div className="flex flex-wrap gap-2">
+                <SendRegistrationButton size="default" />
                 <Button asChild variant="outline">
                   <Link href="/backend/masters/import-customers">
                     <FileUp className="mr-2 h-4 w-4" />

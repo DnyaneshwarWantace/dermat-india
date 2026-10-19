@@ -30,6 +30,7 @@ import { PmOrderPanel } from './PmOrderPanel'
 import { FillingChecksPanel } from './FillingChecksPanel'
 import { PmTrailPanel } from './PmTrailPanel'
 import { ShipperLabelsPanel } from './labels/ShipperLabelsPanel'
+import { SendDocButton } from './links/SendDocButton'
 import { ClientApprovalPanel } from './approval/ClientApprovalPanel'
 import { PackItemsPanel, SampleRoundsPanel } from './ArtworkPanels'
 import { ProductionRoundsPanel, QaArtworkChecklist, QaReleaseReview } from './QualityPanels'
@@ -581,6 +582,7 @@ export function StageWorkArea({ order, stage, people, canWork: canWorkProp, busy
                       ),
                     }
                   : {}),
+                ...(stage.key === 'dispatch' ? { dispatched: <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border p-3 text-sm"><span>{t('dermat_orders.dispatch.sendHint', 'Send the dispatch details and the bilty to the client.')}</span><SendDocButton kind="dispatch" recordId={order.id} label={t('dermat_orders.dispatch.send', 'Send to client')} /></div> } : {}),
                 ...(stage.key === 'sampling' ? { client_ok: <SampleRoundsPanel orderId={order.id} stage={stage} editable={editable} busy={busy} onNewRound={(text) => run({ action: 'new_round', note: text })} /> } : {}),
                 ...(stage.key === 'manufacturing' || stage.key === 'filling'
                   ? {

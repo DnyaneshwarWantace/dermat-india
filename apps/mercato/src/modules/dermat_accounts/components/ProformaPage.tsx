@@ -23,6 +23,7 @@ import { dateText, rupeeText } from '../../dermat_products/lib/whatsapp'
 import { buildPiHtml, printPi } from './piPrint'
 import { PI_STATUS, type CompanyView, type PiView } from './types'
 import { BackLink } from '../../dermat_departments/components/BackLink'
+import { SendDocButton } from '../../dermat_orders/components/links/SendDocButton'
 
 const HISTORY: Record<string, string> = { created: 'Drafted', edited: 'Edited', refreshed: 'Lines refreshed from the order', sent: 'Sent to customer', cancelled: 'Cancelled' }
 
@@ -197,6 +198,7 @@ export function ProformaPage({ id }: { id: string }) {
                 <Printer className="mr-1.5 h-4 w-4" aria-hidden="true" />
                 {t('dermat_accounts.pi.print', 'Print / PDF')}
               </Button>
+              {pi.status !== 'cancelled' ? <SendDocButton kind="pi" recordId={pi.id} size="default" /> : null}
               {canRecord && !pi.orderId && pi.status !== 'cancelled' ? (
                 <Button asChild>
                   <Link href={`/backend/orders/new?fromPi=${pi.id}`}>{t('dermat_accounts.pi.makeOrder', 'Make order from this proforma')}</Link>

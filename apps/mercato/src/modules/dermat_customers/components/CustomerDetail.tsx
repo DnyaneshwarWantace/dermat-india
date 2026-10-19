@@ -26,6 +26,8 @@ import { SampleChargesCard } from '../../dermat_accounts/components/SampleCharge
 import { usePaymentTerms } from '../../dermat_lists/components/usePaymentTerms'
 import { paymentTermLabel } from '../../dermat_lists/lib/paymentTerms'
 import { CustomerSamples } from './CustomerSamples'
+import { SendRegistrationButton } from '../../dermat_accounts/components/registration/SendRegistrationButton'
+import { LinksSentPanel } from '../../dermat_orders/components/links/LinksSentPanel'
 import { BackLink } from '../../dermat_departments/components/BackLink'
 
 type Row = Record<string, unknown> & { id: string }
@@ -347,6 +349,13 @@ export function CustomerDetail({ customerId }: { customerId: string }) {
     [t('dermat_customers.detail.manager', 'Sales manager'), field(company, 'sales_manager') ?? '—'],
     [t('dermat_customers.detail.phone', 'Phone'), readable(company.primary_phone) ?? '—'],
     [t('dermat_customers.detail.email', 'Email'), readable(company.primary_email) ?? '—'],
+    ...([
+      [t('dermat_customers.detail.pan', 'PAN no.'), field(company, 'pan_no')],
+      [t('dermat_customers.detail.vat', 'VAT no.'), field(company, 'vat_no')],
+      [t('dermat_customers.detail.transporter', 'Transporter / delivery type'), field(company, 'transporter')],
+      [t('dermat_customers.detail.insurance', 'Undertaking / insurance policy no.'), field(company, 'insurance_policy_no')],
+      [t('dermat_customers.detail.dispatch', 'Special dispatch instructions'), field(company, 'dispatch_instructions')],
+    ].filter((entry): entry is [string, string] => Boolean(entry[1]))),
   ]
 
   return (
@@ -388,6 +397,9 @@ export function CustomerDetail({ customerId }: { customerId: string }) {
                   {t('dermat_customers.detail.edit', 'Edit details')}
                 </Link>
               </Button>
+              ) : null}
+              {granted.has('dermat_accounts.view') && company ? (
+                <SendRegistrationButton customerId={customerId} customerName={readable(company.display_name) ?? null} email={readable(company.primary_email) ?? ''} phone={readable(company.primary_phone) ?? ''} />
               ) : null}
               {granted.has('dermat_orders.manage') ? (
               <Button asChild size="sm">
@@ -494,6 +506,10 @@ export function CustomerDetail({ customerId }: { customerId: string }) {
 
             <div className="lg:col-span-12">
               <CustomerSamples customerId={customerId} />
+            </div>
+
+            <div className="lg:col-span-12">
+              <LinksSentPanel customerId={customerId} />
             </div>
 
             <div className="space-y-5 lg:col-span-4">

@@ -18909,6 +18909,14 @@ ALTER TABLE public.dermat_stage_settings ADD COLUMN IF NOT EXISTS card_settings 
 CREATE TABLE IF NOT EXISTS public.dermat_artwork_approvals (id uuid DEFAULT gen_random_uuid() NOT NULL, organization_id uuid NOT NULL, tenant_id uuid NOT NULL, order_id uuid NOT NULL, token_hash text NOT NULL, status text DEFAULT 'open'::text NOT NULL, file_ids jsonb, client_name text, client_designation text, signature text, comments text, ip text, user_agent text, decided_at timestamp with time zone, expires_at timestamp with time zone NOT NULL, created_by_name text, created_at timestamp with time zone NOT NULL, updated_at timestamp with time zone NOT NULL, CONSTRAINT dermat_artwork_approvals_pkey PRIMARY KEY (id), CONSTRAINT dermat_artwork_approvals_token_uq UNIQUE (token_hash));
 CREATE INDEX IF NOT EXISTS dermat_artwork_approvals_order_idx ON public.dermat_artwork_approvals USING btree (organization_id, tenant_id, order_id);
 
+CREATE TABLE IF NOT EXISTS public.dermat_doc_links (id uuid DEFAULT gen_random_uuid() NOT NULL, organization_id uuid NOT NULL, tenant_id uuid NOT NULL, token text NOT NULL, kind text NOT NULL, record_id uuid NOT NULL, order_id uuid, customer_id uuid, title text NOT NULL, sends jsonb, opened_count integer DEFAULT 0 NOT NULL, last_opened_at timestamp with time zone, revoked_at timestamp with time zone, created_by_name text, created_at timestamp with time zone NOT NULL, updated_at timestamp with time zone NOT NULL, CONSTRAINT dermat_doc_links_pkey PRIMARY KEY (id));
+CREATE UNIQUE INDEX IF NOT EXISTS dermat_doc_links_token_uq ON public.dermat_doc_links USING btree (token);
+CREATE INDEX IF NOT EXISTS dermat_doc_links_record_idx ON public.dermat_doc_links USING btree (organization_id, tenant_id, kind, record_id);
+
+CREATE TABLE IF NOT EXISTS public.dermat_customer_registrations (id uuid DEFAULT gen_random_uuid() NOT NULL, organization_id uuid NOT NULL, tenant_id uuid NOT NULL, token text NOT NULL, customer_id uuid, status text DEFAULT 'open'::text NOT NULL, answers jsonb, submitted_at timestamp with time zone, ip text, decided_by_name text, decided_at timestamp with time zone, note text, created_by_name text, created_at timestamp with time zone NOT NULL, updated_at timestamp with time zone NOT NULL, CONSTRAINT dermat_customer_registrations_pkey PRIMARY KEY (id));
+CREATE UNIQUE INDEX IF NOT EXISTS dermat_customer_registrations_token_uq ON public.dermat_customer_registrations USING btree (token);
+ALTER TABLE public.dermat_tax_invoices ADD COLUMN IF NOT EXISTS irn text, ADD COLUMN IF NOT EXISTS ack_no text, ADD COLUMN IF NOT EXISTS ack_date text;
+
 --
 -- PostgreSQL database dump complete
 --

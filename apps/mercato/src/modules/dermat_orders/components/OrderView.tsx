@@ -38,6 +38,7 @@ import { WhatsAppMenu } from '../../dermat_products/components/WhatsAppMenu'
 import { customerMessages } from './customerMessages'
 import { openServerExport } from '../../dermat_products/lib/csvExport'
 import { paymentTermLabel } from '../../dermat_lists/lib/paymentTerms'
+import { LinksSentPanel } from './links/LinksSentPanel'
 import { useStageSettings } from './useStageSettings'
 import { MaterialsAccount, useOrderFile } from './OrderFile'
 import { BackLink } from '../../dermat_departments/components/BackLink'
@@ -496,6 +497,7 @@ export function OrderView({ orderId }: { orderId: string }) {
               ) : null}
               {tab === 'record' && !limited ? <OrderRecord file={file} /> : null}
               {tab === 'documents' ? <DocumentsOverview order={limited ? { ...order, stages: order.stages.filter((stage) => !stage.locked) } : order} onStage={goToStage} /> : null}
+              {tab === 'documents' && !limited ? <LinksSentPanel orderId={order.id} /> : null}
               {tab === 'money' && order.canSeeMoney ? <OrderMoneyCard order={order} onChanged={load} /> : null}
               {tab === 'history' ? <OrderHistory events={order.events} /> : null}
             </div>

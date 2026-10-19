@@ -93,6 +93,9 @@ async function PUT(req: Request) {
         if (input.vehicleNo !== undefined) doc.vehicleNo = clean(input.vehicleNo)?.toUpperCase() ?? null
         if (input.lrNo !== undefined) doc.lrNo = clean(input.lrNo)
         if (input.ewayBillNo !== undefined) doc.ewayBillNo = clean(input.ewayBillNo)
+        if (input.irn !== undefined) doc.irn = clean(input.irn)
+        if (input.ackNo !== undefined) doc.ackNo = clean(input.ackNo)
+        if (input.ackDate !== undefined) doc.ackDate = input.ackDate ?? null
         if (input.terms !== undefined) doc.terms = clean(input.terms)
         if (input.bankDetails !== undefined) doc.bankDetails = clean(input.bankDetails)
         if (input.notes !== undefined) doc.notes = clean(input.notes)

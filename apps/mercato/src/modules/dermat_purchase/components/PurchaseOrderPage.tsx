@@ -25,6 +25,7 @@ import { dateText, rupeeText } from '../../dermat_products/lib/whatsapp'
 import { EmailPoButton } from './EmailPoDialog'
 import { useGranted } from '../../dermat_departments/components/useGranted'
 import { BackLink } from '../../dermat_departments/components/BackLink'
+import { SendDocButton } from '../../dermat_orders/components/links/SendDocButton'
 
 function steps(po: PoView): StepIndicatorStep[] {
   const order = ['draft', 'pending_approval', 'approved', 'partly_received', 'received']
@@ -198,6 +199,7 @@ export function PurchaseOrderPage({ poId }: { poId: string }) {
               <div className="flex flex-wrap gap-2">
                 <WhatsAppMenu phone={po.vendorPhone} recipient={po.vendorContact ? `${po.vendorContact} (${po.vendorName})` : po.vendorName} messages={vendorMessages(po)} />
                 {(po.status === 'approved' || po.status === 'partly_received') && granted.has('dermat_purchase.manage') ? <EmailPoButton po={po} onSent={() => void load()} /> : null}
+                {(po.status === 'approved' || po.status === 'partly_received') && granted.has('dermat_purchase.manage') ? <SendDocButton kind="po" recordId={po.id} size="default" /> : null}
                 <Button type="button" variant="ghost" onClick={() => printPurchaseOrder(po)}>
                   <Printer className="mr-1.5 h-4 w-4" aria-hidden="true" />
                   {t('dermat_purchase.detail.print', 'Print PO')}

@@ -70,6 +70,7 @@ export function buildInvoiceHtml(doc: InvoiceView, company: CompanyView, forPrin
       <div class="muted">Date ${day(doc.invoiceDate)}${!credit && doc.dueDate ? `<br>Due ${day(doc.dueDate)}` : ''}<br>Order ${esc(doc.orderNo)}${credit && doc.againstCode ? `<br>Against invoice ${esc(doc.againstCode)}` : ''}</div>
     </div>
   </div>
+  ${doc.irn ? `<div class="muted" style="margin-top:8px">IRN <span class="mono">${esc(doc.irn)}</span>${doc.ackNo ? ` · Ack no. <span class="mono">${esc(doc.ackNo)}</span>` : ''}${doc.ackDate ? ` · Ack date ${day(doc.ackDate)}` : ''}</div>` : ''}
   <div class="grid">
     <div class="box"><h3>Bill to</h3><strong>${esc(doc.customerName)}</strong>${doc.customerGstin ? `<div class="code">GSTIN ${esc(doc.customerGstin)}</div>` : ''}</div>
     <div class="box"><h3>Place of supply</h3><div>${esc(doc.placeOfSupply ?? '—')}</div><div class="muted">${doc.interState ? 'Inter-state · IGST' : 'Intra-state · CGST + SGST'}</div></div>
