@@ -17,7 +17,7 @@ async function POST(req: Request) {
   const parsed = bodySchema.safeParse(await req.json().catch(() => null))
   if (!parsed.success) return NextResponse.json({ error: 'orderId is required' }, { status: 400 })
   let allowed = false
-  for (const feature of ['dermat_orders.work.production', 'dermat_orders.work.dispatch', 'dermat_orders.manage']) if (!allowed && (await hasFeatures(ctx, [feature]))) allowed = true
+  for (const feature of ['dermat_orders.work.production', 'dermat_orders.work.packing', 'dermat_orders.work.dispatch', 'dermat_orders.manage']) if (!allowed && (await hasFeatures(ctx, [feature]))) allowed = true
   if (!allowed) return NextResponse.json({ error: 'Only Production, Dispatch or Sales can print shipper labels' }, { status: 403 })
   try {
     const order = await findOrder(ctx, parsed.data.orderId)

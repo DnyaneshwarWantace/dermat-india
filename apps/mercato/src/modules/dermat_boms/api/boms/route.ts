@@ -1,4 +1,6 @@
 import { NextResponse } from 'next/server'
+import { resolveOrderContext } from '../../../dermat_orders/lib/server'
+import { syncFormulationSteps } from '../../../dermat_orders/lib/autoSteps'
 import { z } from 'zod'
 import type { EntityManager } from '@mikro-orm/postgresql'
 import type { OpenApiRouteDoc } from '@open-mercato/shared/lib/openapi'
@@ -134,6 +136,8 @@ async function POST(req: Request) {
     const prepared = await prepareDraftBom(ctx, input)
     return await runGuarded(ctx, req, { resourceId: input.productId, operation: 'create', payload: input }, async () => {
       const bom = await createDraftBom(ctx, input, prepared)
+      const orderCtx = await resolveOrderContext(req)
+      if (!('error' in orderCtx)) await syncFormulationSteps(orderCtx, input.productId, bom.orderId ?? null)
       return NextResponse.json({ id: bom.id, code: bom.code }, { status: 201 })
     })
   } catch (error) {

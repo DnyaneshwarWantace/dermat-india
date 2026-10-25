@@ -65,4 +65,9 @@ export const SHEET_CSS = [
   `${ON} main .space-y-6>:not(:first-child){margin-top:.75rem!important}`,
   `${ON} main .space-y-4>:not(:first-child){margin-top:.5rem!important}`,
   `${ON} main .gap-5{gap:.75rem!important}`,
+  `${ON} main ul.divide-y>li>:is(a,div,button):first-child,${ON} main ul.divide-y>li[class*="py-"]{padding-top:4px!important;padding-bottom:4px!important;gap:8px!important}`,
+  `${ON} main ul.divide-y>li :is(.h-9.w-9,.h-10.w-10){display:none!important}`,
+  `${ON} main ul.divide-y>li div:has(>p+p){display:flex!important;align-items:baseline;gap:6px;min-width:0}`,
+  `${ON} main ul.divide-y>li div:has(>p+p)>p{margin-top:0!important}`,
+  `${ON} main ul.divide-y>li :is(.mt-1,.mt-1\\.5,.mt-0\\.5){margin-top:0!important}`,
 ].join('\n')

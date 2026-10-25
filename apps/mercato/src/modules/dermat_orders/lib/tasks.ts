@@ -1,5 +1,5 @@
 import { loadCustomers, hasFeatures, type OrderContext } from './server'
-import { MAIN_CARD, OWNER_NAMES, stageWorkFeature, stepOwners, stepRequired, stepStates, type StageDef } from './stages'
+import { MAIN_CARD, OWNER_NAMES, stageWorkFeatures, stepOwners, stepRequired, stepStates, type StageDef } from './stages'
 import { effectiveStageDef, loadStageOverrides } from './stageSettings'
 
 const DAY_MS = 86400000
@@ -14,14 +14,20 @@ export function cardPeople(data: Record<string, unknown> | null | undefined): Re
 export type OpenCard = { key: string; label: string; owners: string[] }
 
 export function openCards(def: StageDef, data: Record<string, unknown> | null | undefined): OpenCard[] {
-  if (!def.steps.length) return [{ key: MAIN_CARD, label: def.label, owners: [stageWorkFeature(def.key)] }]
+  if (!def.steps.length) return [{ key: MAIN_CARD, label: def.label, owners: stageWorkFeatures(def.key) }]
   const states = stepStates(data)
   const result: OpenCard[] = []
+  let sequentialGiven = false
   for (const step of def.steps) {
     if (states[step.key]?.done) continue
     if (!stepRequired(def, step, data)) continue
+    if (step.parallel) {
+      result.push({ key: step.key, label: step.label, owners: stepOwners(def.key, step) })
+      continue
+    }
+    if (sequentialGiven) continue
     result.push({ key: step.key, label: step.label, owners: stepOwners(def.key, step) })
-    break
+    sequentialGiven = true
   }
   return result
 }

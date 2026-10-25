@@ -16,7 +16,7 @@ import { StatusBadge } from '@open-mercato/ui/primitives/status-badge'
 import { apiCall } from '@open-mercato/ui/backend/utils/apiCall'
 import { flash } from '@open-mercato/ui/backend/FlashMessages'
 import { isMoneyStageField } from '../lib/moneyFields'
-import { HOLD_PARTIES, reopenBlock, reopenUntilText, stageList, WORK_STATE_LABEL, stageDef, stageWorkFeature, stepOwners, stepStates, workState, type StageField, type WorkState } from '../lib/stages'
+import { HOLD_PARTIES, reopenBlock, reopenUntilText, stageList, WORK_STATE_LABEL, stageDef, stageWorkFeatures, stepOwners, stepStates, workState, type StageField, type WorkState } from '../lib/stages'
 import { useGranted } from '../../dermat_departments/components/useGranted'
 import { StageDocuments } from './StageDocuments'
 import { StageHistory } from './OrderHistory'
@@ -123,7 +123,7 @@ type Mode = 'form' | 'hold' | 'revert' | 'skip'
 
 export function StageWorkArea({ order, stage, people, canWork: canWorkProp, busy, shortCount, onAction, variant = 'sheet', onlyStep }: StageWorkAreaProps) {
   const granted = useGranted()
-  const canWork = canWorkProp && Boolean(stage) && granted.has(stageWorkFeature(stage?.key ?? ''))
+  const canWork = canWorkProp && Boolean(stage) && stageWorkFeatures(stage?.key ?? '').some((feature) => granted.has(feature))
   const canReopenLate = canWorkProp && granted.has('dermat_orders.reopen')
   const router = useRouter()
   const t = useT()
@@ -258,6 +258,47 @@ export function StageWorkArea({ order, stage, people, canWork: canWorkProp, busy
       onAssign={(stepKey, userId) => run({ action: 'assign', stepKey, responsibleUserId: userId })}
       onCompleteMain={(data) => run({ action: 'complete', data })}
       extras={{
+        ...(stage.key === 'filling' || stage.key === 'packing'
+          ? {
+              pm_asked: (
+                <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-muted/30 px-3 py-2 text-xs">
+                  <span className="text-muted-foreground">
+                    {stage.key === 'filling'
+                      ? t('dermat_orders.cards.askBottles', 'Ask the PM store for bottles, caps, pumps and labels. The step ticks itself when the request is sent.')
+                      : t('dermat_orders.cards.askBoxes', 'Ask the PM store for cartons and shippers if they come from the store. The step ticks itself when the request is sent.')}
+                  </span>
+                  {cardsEditable ? (
+                    <Link href={`/backend/store/requests/new?orderId=${order.id}&stageKey=${stage.key}`} className="font-medium text-primary hover:underline">
+                      {t('dermat_orders.cards.askStore', 'Ask the store →')}
+                    </Link>
+                  ) : null}
+                </div>
+              ),
+            }
+          : {}),
+        ...(stage.key === 'formulation'
+          ? Object.fromEntries(
+              ['bom_made', 'bom_approved'].map((key) => [
+                key,
+                <ul key={key} className="space-y-1 text-xs">
+                  {order.lines.map((line) => (
+                    <li key={line.id} className="flex flex-wrap items-center justify-between gap-2">
+                      <span>{line.brandName ?? line.product?.title ?? '—'}</span>
+                      {line.bom ? (
+                        <Link href={`/backend/boms/${line.bom.id}`} className="font-medium text-primary hover:underline">
+                          {line.bom.status === 'approved' ? t('dermat_orders.cards.bomApproved', 'BOM approved →') : t('dermat_orders.cards.bomDraft', 'BOM draft, to approve →')}
+                        </Link>
+                      ) : (
+                        <Link href={`/backend/boms/new?productId=${line.productId}`} className="font-medium text-primary hover:underline">
+                          {t('dermat_orders.cards.bomMake', 'Make the BOM →')}
+                        </Link>
+                      )}
+                    </li>
+                  ))}
+                </ul>,
+              ]),
+            )
+          : {}),
         ...(stage.key === 'artwork' && order.packItems?.length
           ? { pm_ok: <PackItemsPanel order={order} stage={stage} editable={cardsEditable && canPmStatus} busy={busy} onStatus={(productId, pmStatus) => run({ action: 'pm_status', productId, pmStatus })} /> }
           : {}),

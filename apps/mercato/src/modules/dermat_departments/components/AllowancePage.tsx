@@ -23,13 +23,20 @@ type RoleAcl = { isSuperAdmin: boolean; features: string[] }
 type Person = { id: string; email: string; name: string | null; roles: string[] }
 type Level = 'none' | 'view' | 'work' | 'lead'
 
-const DEPARTMENTS: Array<{ key: string; label: string; work: string; see: string | null; base: string[] }> = [
+type Legacy = { work: string; see: string }
+const PRODUCTION_LEGACY: Legacy = { work: 'dermat_orders.work.production', see: 'dermat_orders.see.production' }
+const PRODUCTION_STAGES = ['manufacturing', 'filling', 'packing']
+
+const DEPARTMENTS: Array<{ key: string; label: string; work: string; see: string | null; base: string[]; legacy?: Legacy }> = [
   { key: 'sales', label: 'Order (Sales)', work: 'dermat_orders.manage', see: 'dermat_orders.see.sales', base: ['dermat_orders.view'] },
   { key: 'accounts', label: 'Advance & billing', work: 'dermat_orders.work.accounts', see: 'dermat_orders.see.accounts', base: ['dermat_orders.view', 'dermat_orders.stages'] },
   { key: 'rnd', label: 'Sampling & formula', work: 'dermat_orders.work.rnd', see: 'dermat_orders.see.rnd', base: ['dermat_orders.view', 'dermat_orders.stages'] },
   { key: 'artwork', label: 'Artwork', work: 'dermat_orders.work.artwork', see: 'dermat_orders.see.artwork', base: ['dermat_orders.view', 'dermat_orders.stages'] },
   { key: 'planning', label: 'Planning', work: 'dermat_orders.work.planning', see: 'dermat_orders.see.planning', base: ['dermat_orders.view', 'dermat_orders.stages'] },
-  { key: 'production', label: 'Production', work: 'dermat_orders.work.production', see: 'dermat_orders.see.production', base: ['dermat_orders.view', 'dermat_orders.stages'] },
+  { key: 'manufacturing', label: 'Manufacturing', work: 'dermat_orders.work.manufacturing', see: 'dermat_orders.see.manufacturing', base: ['dermat_orders.view', 'dermat_orders.stages'], legacy: PRODUCTION_LEGACY },
+  { key: 'filling', label: 'Filling', work: 'dermat_orders.work.filling', see: 'dermat_orders.see.filling', base: ['dermat_orders.view', 'dermat_orders.stages'], legacy: PRODUCTION_LEGACY },
+  { key: 'packing', label: 'Packing', work: 'dermat_orders.work.packing', see: 'dermat_orders.see.packing', base: ['dermat_orders.view', 'dermat_orders.stages'], legacy: PRODUCTION_LEGACY },
+  { key: 'ipqa', label: 'In-process QA (bottle and box requests)', work: 'dermat_orders.work.ipqa', see: null, base: ['dermat_orders.view', 'dermat_orders.stages'] },
   { key: 'qa', label: 'QA release', work: 'dermat_orders.work.qa', see: 'dermat_orders.see.qa', base: ['dermat_orders.view', 'dermat_orders.stages'] },
   { key: 'dispatch', label: 'Dispatch', work: 'dermat_orders.work.dispatch', see: 'dermat_orders.see.dispatch', base: ['dermat_orders.view', 'dermat_orders.stages'] },
   { key: 'purchase', label: 'Purchase cards', work: 'dermat_orders.work.purchase', see: null, base: ['dermat_orders.view', 'dermat_orders.stages'] },
@@ -45,13 +52,31 @@ const FLAGS: Array<{ key: string; label: string; feature: string }> = [
 const LEVEL_WORD: Record<Level, string> = { none: 'None', view: 'View', work: 'Work', lead: 'Lead' }
 
 function levelOf(features: string[], dept: (typeof DEPARTMENTS)[number]): Level {
-  if (hasFeature(features, false, dept.work)) return dept.see && hasFeature(features, false, dept.see) ? 'lead' : 'work'
-  if (dept.see && hasFeature(features, false, dept.see)) return 'view'
+  const works = hasFeature(features, false, dept.work) || Boolean(dept.legacy && hasFeature(features, false, dept.legacy.work))
+  const sees = Boolean(dept.see && hasFeature(features, false, dept.see)) || Boolean(dept.legacy && hasFeature(features, false, dept.legacy.see))
+  if (works) return sees ? 'lead' : 'work'
+  if (sees) return 'view'
   return 'none'
 }
 
+function withoutLegacy(features: string[], dept: (typeof DEPARTMENTS)[number]): string[] {
+  if (!dept.legacy) return features
+  const legacy = dept.legacy
+  const next = new Set(features)
+  const siblings = DEPARTMENTS.filter((entry) => entry.legacy === legacy && PRODUCTION_STAGES.includes(entry.key))
+  if (next.has(legacy.work)) {
+    next.delete(legacy.work)
+    for (const sibling of siblings) next.add(sibling.work)
+  }
+  if (next.has(legacy.see)) {
+    next.delete(legacy.see)
+    for (const sibling of siblings) if (sibling.see) next.add(sibling.see)
+  }
+  return Array.from(next)
+}
+
 function withLevel(features: string[], dept: (typeof DEPARTMENTS)[number], level: Level): string[] {
-  const next = new Set(features.filter((feature) => feature !== dept.work && feature !== dept.see))
+  const next = new Set(withoutLegacy(features, dept).filter((feature) => feature !== dept.work && feature !== dept.see))
   if (level === 'work' || level === 'lead') {
     next.add(dept.work)
     for (const feature of dept.base) next.add(feature)
@@ -81,6 +106,7 @@ export function AllowancePage() {
   const [roleAcls, setRoleAcls] = React.useState<Record<string, RoleAcl>>({})
   const [personal, setPersonal] = React.useState<Record<string, { features: string[]; updatedAt: string | null }>>({})
   const [draft, setDraft] = React.useState<Record<string, string[]>>({})
+  const [logVersion, setLogVersion] = React.useState(0)
   const [error, setError] = React.useState<string | null>(null)
   const [saving, setSaving] = React.useState(false)
   const [search, setSearch] = React.useState('')
@@ -111,6 +137,7 @@ export function AllowancePage() {
     setPersonal(personalMap)
     setPeople(list)
     setDraft({})
+    setLogVersion((value) => value + 1)
   }, [t])
 
   React.useEffect(() => {
@@ -136,7 +163,23 @@ export function AllowancePage() {
           mutationPayload: body,
           operation: () => (version ? withScopedApiRequestHeaders(buildOptimisticLockHeader(version), request) : request()),
         })
-        if (!call.ok) failed += 1
+        if (!call.ok) {
+          failed += 1
+          continue
+        }
+        const person = people?.find((entry) => entry.id === userId)
+        const before = new Set(person ? (personal[userId]?.features ?? Array.from(new Set(person.roles.flatMap((role) => roleAcls[role]?.features ?? [])))) : [])
+        const after = new Set(features)
+        const added = Array.from(after).filter((feature) => !before.has(feature))
+        const removed = Array.from(before).filter((feature) => !after.has(feature))
+        if (added.length || removed.length) {
+          const entry = { userId, userName: person?.name ?? person?.email ?? null, added, removed }
+          await runMutation({
+            context: { resourceKind: 'dermat_departments.access_log', resourceId: userId },
+            mutationPayload: entry,
+            operation: () => apiCall('/api/dermat_departments/access-log', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(entry) }),
+          })
+        }
       }
       if (failed) flash(t('dermat_departments.allowance.partly', '{count} people could not be saved. Reload and try again.', { count: failed }), 'error')
       else flash(t('dermat_departments.allowance.saved', 'Allowance sheet saved for {count} people', { count: changed.length }), 'success')
@@ -317,9 +360,54 @@ export function AllowancePage() {
             </table>
           </div>
         </div>
+        <AccessLogPanel key={logVersion} />
       </PageBody>
     </Page>
   )
 }
 
 export default AllowancePage
+
+type LogEntry = { id: string; userName: string | null; changedByName: string | null; added: string[]; removed: string[]; at: string }
+
+function featureWord(feature: string): string {
+  const dept = DEPARTMENTS.find((entry) => entry.work === feature || entry.see === feature)
+  if (dept) return `${dept.label} ${dept.see === feature ? 'view' : 'work'}`
+  const flag = FLAGS.find((entry) => entry.feature === feature)
+  if (flag) return flag.label
+  if (feature === PRODUCTION_LEGACY.work) return 'Production work'
+  if (feature === PRODUCTION_LEGACY.see) return 'Production view'
+  return feature
+}
+
+function AccessLogPanel() {
+  const t = useT()
+  const [items, setItems] = React.useState<LogEntry[] | null>(null)
+  React.useEffect(() => {
+    apiCall<{ items?: LogEntry[] }>('/api/dermat_departments/access-log', undefined, { fallback: { items: [] } }).then((call) => setItems(call.result?.items ?? []))
+  }, [])
+  if (!items) return null
+  return (
+    <section className="mt-6 space-y-2 rounded-lg border bg-card p-4">
+      <h2 className="text-sm font-semibold">{t('dermat_departments.allowance.log', 'Recent access changes')}</h2>
+      {items.length ? (
+        <ul className="divide-y text-sm">
+          {items.slice(0, 30).map((item) => (
+            <li key={item.id} className="flex flex-wrap items-baseline justify-between gap-2 py-1.5">
+              <span>
+                <span className="font-medium">{item.userName ?? '—'}</span>
+                {item.added.length ? <span className="ml-2 text-status-success-text">+ {item.added.map(featureWord).join(', ')}</span> : null}
+                {item.removed.length ? <span className="ml-2 text-status-error-text">− {item.removed.map(featureWord).join(', ')}</span> : null}
+              </span>
+              <span className="text-xs text-muted-foreground">
+                {t('dermat_departments.allowance.logBy', '{who} · {when}', { who: item.changedByName ?? '—', when: new Date(item.at).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) })}
+              </span>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="text-sm text-muted-foreground">{t('dermat_departments.allowance.logEmpty', 'No changes recorded yet.')}</p>
+      )}
+    </section>
+  )
+}

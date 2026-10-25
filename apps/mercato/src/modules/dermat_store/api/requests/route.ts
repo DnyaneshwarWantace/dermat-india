@@ -6,6 +6,7 @@ import { StoreRequest, StoreRequestLine } from '../../data/entities'
 import { listSchema, requestCreateSchema } from '../../data/validators'
 import { STORE_LABEL, awaitingReceipt, createRequests, findRequest, requestView } from '../../lib/service'
 import { notifyRequested } from '../../lib/notify'
+import { tickStoreAsked } from '../../../dermat_orders/lib/autoSteps'
 import { resolveStoreContext, runGuarded, storeErrorResponse } from '../../lib/server'
 import { stageDef } from '../../../dermat_orders/lib/stages'
 
@@ -82,6 +83,7 @@ async function POST(req: Request) {
     return await runGuarded(ctx, req, { resourceId: parsed.data.orderId, operation: 'create', payload: parsed.data }, async () => {
       const created = await ctx.em.transactional(async (em) => createRequests({ ...ctx, em: em as typeof ctx.em }, parsed.data))
       await notifyRequested(ctx, created)
+      await tickStoreAsked(ctx, created.map((request) => ({ orderId: request.orderId, stageKey: request.stageKey })))
       return NextResponse.json({ items: created.map((request) => ({ id: request.id, code: request.code, store: request.store })) }, { status: 201 })
     })
   } catch (error) {

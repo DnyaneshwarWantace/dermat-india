@@ -2,7 +2,7 @@ import { resolveNotificationService } from '@open-mercato/core/modules/notificat
 import { createLogger } from '@open-mercato/shared/lib/logger'
 import { DermatOrder, DermatOrderStage } from '../data/entities'
 import { loadCustomers, type OrderContext } from './server'
-import { applyDayLimit, stageDef, stageWorkFeature } from './stages'
+import { applyDayLimit, stageDef, stageWorkFeatures } from './stages'
 import { effectiveStageDef, loadStageOverrides } from './stageSettings'
 
 const logger = createLogger('dermat_orders')
@@ -25,21 +25,23 @@ export async function notifyStagesOpened(ctx: Scope, order: DermatOrder, stageKe
     for (const key of stageKeys) {
       const def = stageDef(key)
       if (!def) continue
-      await service(ctx).createForFeature(
-        {
-          type: 'dermat_orders.stage.ready',
-          requiredFeature: stageWorkFeature(key),
-          title: `${def.label}: ${order.orderNo} is ready for ${def.department}`,
-          body: [customer, order.priority === 'urgent' ? 'Urgent order' : null, def.hint].filter(Boolean).join(' · '),
-          severity: order.priority === 'urgent' ? 'warning' : 'info',
-          sourceModule: 'dermat_orders',
-          sourceEntityType: 'dermat_orders:order',
-          sourceEntityId: order.id,
-          linkHref: `/backend/orders/${order.id}/stages/${key}`,
-          groupKey: `dermat_orders:${order.id}:${key}:ready`,
-        },
-        { tenantId: ctx.tenantId, organizationId: ctx.organizationId },
-      )
+      for (const feature of stageWorkFeatures(key)) {
+        await service(ctx).createForFeature(
+          {
+            type: 'dermat_orders.stage.ready',
+            requiredFeature: feature,
+            title: `${def.label}: ${order.orderNo} is ready for ${def.department}`,
+            body: [customer, order.priority === 'urgent' ? 'Urgent order' : null, def.hint].filter(Boolean).join(' · '),
+            severity: order.priority === 'urgent' ? 'warning' : 'info',
+            sourceModule: 'dermat_orders',
+            sourceEntityType: 'dermat_orders:order',
+            sourceEntityId: order.id,
+            linkHref: `/backend/orders/${order.id}/stages/${key}`,
+            groupKey: `dermat_orders:${order.id}:${key}:ready`,
+          },
+          { tenantId: ctx.tenantId, organizationId: ctx.organizationId },
+        )
+      }
     }
   } catch (error) {
     logger.error('Failed to send stage-ready notification', { err: error })
@@ -53,21 +55,23 @@ export async function notifyStagesPaused(ctx: Scope, order: DermatOrder, reopene
     for (const key of stageKeys) {
       const def = stageDef(key)
       if (!def) continue
-      await service(ctx).createForFeature(
-        {
-          type: 'dermat_orders.stage.paused',
-          requiredFeature: stageWorkFeature(key),
-          title: `${def.label}: ${order.orderNo} is back to waiting`,
-          body: [`${reopened.label} was reopened${byName ? ` by ${byName}` : ''}`, reason.trim()].filter(Boolean).join(' · '),
-          severity: 'warning',
-          sourceModule: 'dermat_orders',
-          sourceEntityType: 'dermat_orders:order',
-          sourceEntityId: order.id,
-          linkHref: `/backend/orders/${order.id}/stages/${reopenedKey}`,
-          groupKey: `dermat_orders:${order.id}:${key}:paused`,
-        },
-        { tenantId: ctx.tenantId, organizationId: ctx.organizationId },
-      )
+      for (const feature of stageWorkFeatures(key)) {
+        await service(ctx).createForFeature(
+          {
+            type: 'dermat_orders.stage.paused',
+            requiredFeature: feature,
+            title: `${def.label}: ${order.orderNo} is back to waiting`,
+            body: [`${reopened.label} was reopened${byName ? ` by ${byName}` : ''}`, reason.trim()].filter(Boolean).join(' · '),
+            severity: 'warning',
+            sourceModule: 'dermat_orders',
+            sourceEntityType: 'dermat_orders:order',
+            sourceEntityId: order.id,
+            linkHref: `/backend/orders/${order.id}/stages/${reopenedKey}`,
+            groupKey: `dermat_orders:${order.id}:${key}:paused`,
+          },
+          { tenantId: ctx.tenantId, organizationId: ctx.organizationId },
+        )
+      }
     }
   } catch (error) {
     logger.error('Failed to send stage-paused notification', { err: error })
@@ -156,7 +160,7 @@ export async function sweepOverdueStages(ctx: Scope, options: { force?: boolean 
       groupKey: `dermat_orders:${order.id}:${stage.stageKey}:overdue`,
     }
     try {
-      await service(ctx).createForFeature({ ...base, requiredFeature: stageWorkFeature(stage.stageKey) }, { tenantId: ctx.tenantId, organizationId: ctx.organizationId })
+      for (const feature of stageWorkFeatures(stage.stageKey)) await service(ctx).createForFeature({ ...base, requiredFeature: feature }, { tenantId: ctx.tenantId, organizationId: ctx.organizationId })
       await service(ctx).createForFeature({ ...base, requiredFeature: 'dermat_dashboard.everyone' }, { tenantId: ctx.tenantId, organizationId: ctx.organizationId })
       stage.data = { ...(stage.data ?? {}), __overdue_notified: new Date().toISOString() }
       sent += 1

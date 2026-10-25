@@ -31,8 +31,8 @@ type BaseStage = {
   documents: Array<{ key: string; label: string; required: 'always' | 'eway' | null; card: string }>
 }
 type ExtraStep = { key: string; label: string; after: string | null; optional?: boolean }
-type CardSettings = { owners?: Record<string, string[]>; people?: Record<string, { userId: string; name: string | null }>; fields?: Record<string, string>; documents?: Record<string, string>; labels?: Record<string, string>; extraSteps?: ExtraStep[] }
-type Cards = { owners: Record<string, string[]>; people: Record<string, { userId: string; name: string | null }>; fields: Record<string, string>; documents: Record<string, string>; labels: Record<string, string>; extraSteps: ExtraStep[] }
+type CardSettings = { owners?: Record<string, string[]>; people?: Record<string, { userId: string; name: string | null }>; fields?: Record<string, string>; documents?: Record<string, string>; labels?: Record<string, string>; extraSteps?: ExtraStep[]; parallel?: string[] }
+type Cards = { owners: Record<string, string[]>; people: Record<string, { userId: string; name: string | null }>; fields: Record<string, string>; documents: Record<string, string>; labels: Record<string, string>; extraSteps: ExtraStep[]; parallel: string[] }
 type CardStep = { key: string; label: string; optional?: boolean; locked: boolean; extra: boolean; defaultOwners: string[] }
 
 function cardSteps(stage: BaseStage, cards: Cards, hidden: string[], stageOwner: string[]): CardStep[] {
@@ -59,7 +59,12 @@ function cardsFor(stage: BaseStage, saved: CardSettings | null | undefined): Car
     documents: Object.fromEntries(stage.documents.map((doc) => [doc.key, saved?.documents?.[doc.key] ?? doc.card])),
     labels: { ...(saved?.labels ?? {}) },
     extraSteps: [...(saved?.extraSteps ?? [])],
+    parallel: [...(saved?.parallel ?? [])],
   }
+}
+
+function cardsKnown(stage: BaseStage, cards: Cards): string[] {
+  return [...stage.steps.map((step) => step.key), ...cards.extraSteps.map((step) => step.key)]
 }
 
 function changedCards(stage: BaseStage, cards: Cards): CardSettings {
@@ -71,6 +76,7 @@ function changedCards(stage: BaseStage, cards: Cards): CardSettings {
     documents: Object.fromEntries(Object.entries(cards.documents).filter(([key, value]) => value !== stage.documents.find((doc) => doc.key === key)?.card)),
     labels: Object.fromEntries(Object.entries(cards.labels).filter(([key, value]) => value.trim() && value.trim() !== stage.steps.find((step) => step.key === key)?.label)),
     extraSteps: cards.extraSteps.map((step) => ({ ...step, label: step.label.trim() })),
+    parallel: cards.parallel.filter((key) => cardsKnown(stage, cards).includes(key)),
   }
 }
 
@@ -301,6 +307,16 @@ export function StageSettingsPage() {
                               </label>
                             ))}
                           </div>
+                          {index > 0 ? (
+                            <label htmlFor={`par-${step.key}`} className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                              <Checkbox
+                                id={`par-${step.key}`}
+                                checked={draft.cards.parallel.includes(step.key)}
+                                onCheckedChange={(checked) => setCards({ parallel: checked === true ? [...draft.cards.parallel, step.key] : draft.cards.parallel.filter((entry) => entry !== step.key) })}
+                              />
+                              {t('dermat_orders.stageSettings.parallel', 'Can start straight away (does not wait for the steps above)')}
+                            </label>
+                          ) : null}
                           {!owners.length ? <p className="text-xs text-status-warning-text">{t('dermat_orders.stageSettings.noOwner', 'Tick at least one department, or the stage department keeps it.')}</p> : null}
                         </div>
                       )

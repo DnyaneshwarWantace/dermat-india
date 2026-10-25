@@ -1,7 +1,9 @@
 "use client"
 
 import * as React from 'react'
-import { Rows3, Rows2 } from 'lucide-react'
+import Link from 'next/link'
+import { ListTodo, Rows3, Rows2 } from 'lucide-react'
+import { apiCall } from '@open-mercato/ui/backend/utils/apiCall'
 import { useT } from '@open-mercato/shared/lib/i18n/context'
 import type { InjectionWidgetModule } from '@open-mercato/shared/modules/widgets/injection'
 import { SHEET_CSS, applySheetMode, readSheetMode, setSheetMode, useSheetMode } from '../../../components/sheetMode'
@@ -18,9 +20,36 @@ function element(tag: string, attrs: Record<string, string>): HTMLElement {
   return node
 }
 
+type TaskRow = { overdue: boolean }
+
+function useTaskCount(): { count: number; overdue: number } | null {
+  const [state, setState] = React.useState<{ count: number; overdue: number } | null>(null)
+  React.useEffect(() => {
+    let alive = true
+    const load = async () => {
+      const call = await apiCall<{ items?: TaskRow[] }>('/api/dermat_orders/tasks?scope=department', { headers: { 'x-om-forbidden-redirect': '0' } }, { fallback: { items: [] } })
+      if (!alive) return
+      if (!call.ok) return setState(null)
+      const items = call.result?.items ?? []
+      setState({ count: items.length, overdue: items.filter((item) => item.overdue).length })
+    }
+    void load()
+    const timer = window.setInterval(() => void load(), 120_000)
+    const onFocus = () => void load()
+    window.addEventListener('focus', onFocus)
+    return () => {
+      alive = false
+      window.clearInterval(timer)
+      window.removeEventListener('focus', onFocus)
+    }
+  }, [])
+  return state
+}
+
 function AppChrome() {
   const t = useT()
   const on = useSheetMode()
+  const tasks = useTaskCount()
 
   React.useEffect(() => {
     applySheetMode(readSheetMode())
@@ -40,6 +69,19 @@ function AppChrome() {
   const label = on ? t('dermat_departments.sheet.on', 'Sheet view on: tap for normal view') : t('dermat_departments.sheet.off', 'Normal view: tap for sheet view')
   const Icon = on ? Rows3 : Rows2
   return (
+    <span className="flex items-center gap-1.5">
+      {tasks ? (
+        <Link
+          href="/backend/my-work"
+          title={t('dermat_departments.tasks.title', '{count} open tasks for you and your department', { count: tasks.count })}
+          aria-label={t('dermat_departments.tasks.title', '{count} open tasks for you and your department', { count: tasks.count })}
+          className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border px-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        >
+          <ListTodo className="h-4 w-4" aria-hidden="true" />
+          <span className="hidden sm:inline">{t('dermat_departments.tasks.label', 'Tasks')}</span>
+          <span className={tasks.overdue ? 'rounded-full bg-status-error-bg px-1.5 tabular-nums text-status-error-text' : 'rounded-full bg-muted px-1.5 tabular-nums text-foreground'}>{tasks.count}</span>
+        </Link>
+      ) : null}
     <button
       type="button"
       onClick={() => setSheetMode(!on)}
@@ -51,6 +93,7 @@ function AppChrome() {
       <Icon className="h-4 w-4" aria-hidden="true" />
       <span className="hidden sm:inline">{t('dermat_departments.sheet.label', 'Sheet view')}</span>
     </button>
+    </span>
   )
 }
 

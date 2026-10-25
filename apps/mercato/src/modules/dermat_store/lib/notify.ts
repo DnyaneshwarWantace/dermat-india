@@ -1,6 +1,6 @@
 import { resolveNotificationService } from '@open-mercato/core/modules/notifications/lib/notificationService'
 import { createLogger } from '@open-mercato/shared/lib/logger'
-import { stageDef, stageWorkFeature } from '../../dermat_orders/lib/stages'
+import { stageDef, stageWorkFeatures } from '../../dermat_orders/lib/stages'
 import type { StoreRequest } from '../data/entities'
 import type { StoreContext } from './server'
 
@@ -43,9 +43,9 @@ export async function notifyRequested(ctx: StoreContext, requests: StoreRequest[
 
 export async function notifyIssued(ctx: StoreContext, request: StoreRequest, byName: string | null) {
   const stage = stageDef(request.stageKey)?.label ?? request.stageKey
-  await send(ctx, {
+  for (const requiredFeature of stageWorkFeatures(request.stageKey)) await send(ctx, {
     type: 'dermat_store.request.issued',
-    requiredFeature: stageWorkFeature(request.stageKey),
+    requiredFeature,
     title: `${request.code}: material issued for ${request.orderNo} — count and confirm`,
     body: [stage, byName ? `Issued by ${byName}` : null].filter(Boolean).join(' · '),
     request,

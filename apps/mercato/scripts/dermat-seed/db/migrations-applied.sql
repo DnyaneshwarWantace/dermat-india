@@ -336,6 +336,7 @@ COPY public.mikro_orm_migrations_dermat_departments (id, name, executed_at) FROM
 1	Migration20260913112959_dermat_departments	2026-09-13 11:49:38.759628+00
 2	Migration20260923074928_dermat_departments	2026-09-22 08:03:43.556046+00
 3	Migration20261019150000_dermat_departments	2026-10-19 15:00:00+00
+4	Migration20261025100000_dermat_departments	2026-10-25 10:00:00+00
 \.
 
 
@@ -365,6 +366,7 @@ COPY public.mikro_orm_migrations_dermat_orders (id, name, executed_at) FROM stdi
 10	Migration20261019120000_dermat_orders	2026-10-19 12:00:00+00
 11	Migration20261019130000_dermat_orders	2026-10-19 13:00:00+00
 12	Migration20261019160000_dermat_orders	2026-10-19 16:00:00+00
+13	Migration20261025090000_dermat_orders	2026-10-25 09:00:00+00
 \.
 
 
@@ -1077,7 +1079,7 @@ SELECT pg_catalog.setval('public.mikro_orm_migrations_dermat_customers_id_seq', 
 -- Name: mikro_orm_migrations_dermat_departments_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
-SELECT pg_catalog.setval('public.mikro_orm_migrations_dermat_departments_id_seq', 3, true);
+SELECT pg_catalog.setval('public.mikro_orm_migrations_dermat_departments_id_seq', 4, true);
 
 
 --
@@ -1091,7 +1093,7 @@ SELECT pg_catalog.setval('public.mikro_orm_migrations_dermat_lists_id_seq', 1, t
 -- Name: mikro_orm_migrations_dermat_orders_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
-SELECT pg_catalog.setval('public.mikro_orm_migrations_dermat_orders_id_seq', 12, true);
+SELECT pg_catalog.setval('public.mikro_orm_migrations_dermat_orders_id_seq', 13, true);
 
 
 --

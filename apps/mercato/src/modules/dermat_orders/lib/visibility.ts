@@ -1,5 +1,5 @@
 import { hasFeatures, type OrderContext } from './server'
-import { MAIN_CARD, STAGE_SEE_FEATURE, STAGE_WORK_FEATURE, cardKeys, fieldCard, sharedFieldKeys, stageDef, stageList, stepOwners, type StageDef } from './stages'
+import { MAIN_CARD, STAGE_WORK_FEATURE, cardKeys, fieldCard, sharedFieldKeys, stageDef, stageList, stageSeeFeatures, stageWorkFeatures, stepOwners, type StageDef } from './stages'
 import { effectiveStageDef, type StageOverrides } from './stageSettings'
 
 export type CardLevel = 'none' | 'read' | 'work'
@@ -21,13 +21,15 @@ const STEP_PRIVATE_DATA: Record<string, Record<string, string>> = {
 
 export async function resolveOrderAccess(ctx: OrderContext): Promise<OrderAccess> {
   const defs = stageList()
-  const ownerFeatures = new Set<string>([...Object.values(STAGE_WORK_FEATURE), ...Object.values(STAGE_SEE_FEATURE)])
+  const stageKeys = Object.keys(STAGE_WORK_FEATURE)
+  const ownerFeatures = new Set<string>(stageKeys.flatMap((key) => [...stageWorkFeatures(key), ...stageSeeFeatures(key)]))
   for (const def of defs) for (const step of def.steps) for (const feature of stepOwners(def.key, step)) ownerFeatures.add(feature)
+  const any = (features: string[]) => features.some((feature) => granted.has(feature))
   const granted = new Set<string>()
   for (const feature of ownerFeatures) if (await hasFeatures(ctx, [feature])) granted.add(feature)
   const cards = new Set<string>()
   for (const def of defs) {
-    if (!def.steps.length && granted.has(STAGE_WORK_FEATURE[def.key] ?? '')) cards.add(`${def.key}.${MAIN_CARD}`)
+    if (!def.steps.length && any(stageWorkFeatures(def.key))) cards.add(`${def.key}.${MAIN_CARD}`)
     for (const step of def.steps) if (stepOwners(def.key, step).some((feature) => granted.has(feature))) cards.add(`${def.key}.${step.key}`)
   }
   const accounts = granted.has('dermat_orders.work.accounts')
@@ -36,8 +38,8 @@ export async function resolveOrderAccess(ctx: OrderContext): Promise<OrderAccess
     const all = new Set(Object.keys(STAGE_WORK_FEATURE))
     return { full: true, stages: all, view: all, see: all, cards, accounts: true, dispatch: true }
   }
-  const stages = new Set(Object.entries(STAGE_WORK_FEATURE).filter(([, feature]) => granted.has(feature)).map(([key]) => key))
-  const see = new Set(Object.entries(STAGE_SEE_FEATURE).filter(([, feature]) => granted.has(feature)).map(([key]) => key))
+  const stages = new Set(stageKeys.filter((key) => any(stageWorkFeatures(key))))
+  const see = new Set(stageKeys.filter((key) => any(stageSeeFeatures(key))))
   const view = new Set([...stages, ...see])
   for (const card of cards) view.add(card.split('.')[0])
   return { full: false, stages, view, see, cards, accounts, dispatch }

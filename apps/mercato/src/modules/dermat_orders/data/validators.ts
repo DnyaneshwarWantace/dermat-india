@@ -107,7 +107,7 @@ export const stageSettingSchema = z.object({
   documents: z.record(z.string(), z.enum(['always', 'optional'])).default({}),
   cardSettings: z
     .object({
-      owners: z.record(settingKey, z.array(z.string().regex(/^dermat_orders\.(manage|work\.[a-z]+)$/)).max(6)).optional(),
+      owners: z.record(settingKey, z.array(z.string().regex(/^dermat_orders\.(manage|work\.[a-z]+)$/)).max(8)).optional(),
       people: z.record(settingKey, z.object({ userId: z.string().uuid(), name: z.string().max(120).nullable() })).optional(),
       fields: z.record(settingKey, settingKey).optional(),
       documents: z.record(settingKey, settingKey).optional(),
@@ -116,6 +116,7 @@ export const stageSettingSchema = z.object({
         .array(z.object({ key: z.string().regex(/^x_[a-z0-9_]{1,40}$/), label: z.string().trim().min(1, 'Every new step needs a name').max(80), after: settingKey.nullable(), optional: z.boolean().optional() }))
         .max(10)
         .optional(),
+      parallel: z.array(settingKey).max(20).optional(),
     })
     .optional()
     .nullable(),

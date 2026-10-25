@@ -203,6 +203,17 @@ export async function progressStages(ctx: OrderContext, order: DermatOrder, stag
 }
 
 async function assertSubStageOrder(ctx: OrderContext, orderId: string, stageKey: string, stepKey: string, data: Record<string, unknown>) {
+  if ((stageKey === 'filling' || stageKey === 'packing') && stepKey === 'pm_asked') {
+    const asked = ((await requestsForOrder(ctx, orderId))[stageKey] ?? []).some((request) => request.status !== 'cancelled')
+    if (!asked && (await storeBlocking(ctx, orderId, stageKey))) throw new OrderError('Ask the store first: use "Ask the store" on this step', 400, { store: true })
+  }
+  if (stageKey === 'formulation' && (stepKey === 'bom_made' || stepKey === 'bom_approved')) {
+    const lines = await ctx.em.find(DermatOrderLine, { orderId })
+    const boms = await approvedPackBoms(ctx, lines.map((line) => line.productId), orderId)
+    const products = await loadProducts(ctx, lines.map((line) => line.productId))
+    const missing = lines.filter((line) => (stepKey === 'bom_made' ? !boms.get(line.productId) : boms.get(line.productId)?.status !== 'approved')).map((line) => products.get(line.productId)?.title ?? 'a product')
+    if (missing.length) throw new OrderError(stepKey === 'bom_made' ? `Make the BOM first for: ${missing.join(', ')}` : `Approve the BOM first for: ${missing.join(', ')}`, 400)
+  }
   const needsMaterial = (stageKey === 'manufacturing' && (stepKey === 'started' || stepKey === 'manufactured') && data.bulk_source !== USE_EXISTING_BULK) || (stageKey === 'filling' && (stepKey === 'started' || stepKey === 'filled'))
   if (needsMaterial) {
     const block = await storeBlocking(ctx, orderId, stageKey)
@@ -440,7 +451,7 @@ export async function applyStageAction(ctx: OrderContext, order: DermatOrder, in
       const index = def.steps.findIndex((entry) => entry.key === step.key)
       const current = stepStates(stage.data)
       if (done && current[step.key]?.done) throw new OrderError(`${step.label} is already done`, 409)
-      if (done && !step.optional) {
+      if (done && !step.optional && !step.parallel) {
         const earlier = def.steps.slice(0, index).filter((entry) => stepRequired(def, entry, stage.data) && !current[entry.key]?.done)
         if (earlier.length) throw new OrderError(`Do these first: ${earlier.map((entry) => entry.label).join(', ')}`, 400, { steps: earlier.map((entry) => entry.key) })
       }

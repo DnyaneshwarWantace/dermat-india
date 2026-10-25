@@ -23,7 +23,7 @@ import { EditTableBar } from '../../dermat_products/components/EditTableBar'
 import { flash } from '@open-mercato/ui/backend/FlashMessages'
 import { ExportButton } from '../../dermat_products/components/ExportButton'
 import { openServerExport } from '../../dermat_products/lib/csvExport'
-import { STAGES, WORK_STATE_LABEL, reopenBlock, reopenLeftText, stageList, stageWorkFeature } from '../lib/stages'
+import { STAGES, WORK_STATE_LABEL, reopenBlock, reopenLeftText, stageList, stageWorkFeatures } from '../lib/stages'
 import { formatDate, formatQty } from './format'
 import { ALL_COLUMNS, DEFAULT_VIEW, SHEET_VIEWS, BRAND_COLUMN, StatePill, sheetWorkState, type SheetColumn, type SheetOrder } from './orderBookColumns'
 import { StageSheet, type StageActionRequest } from './StageSheet'
@@ -63,7 +63,7 @@ function ReopenClock({ order, onOpen }: { order: SheetOrder; onOpen: (orderId: s
   const choices = stageList()
     .filter((def) => def.key !== 'order')
     .map((def) => ({ def, stage: order.stages[def.key] }))
-    .filter(({ def, stage }) => stage && (stage.status === 'done' || stage.status === 'skipped') && stage.reopen && !reopenBlock(stage.reopen, now) && granted.has(stageWorkFeature(def.key)))
+    .filter(({ def, stage }) => stage && (stage.status === 'done' || stage.status === 'skipped') && stage.reopen && !reopenBlock(stage.reopen, now) && stageWorkFeatures(def.key).some((feature) => granted.has(feature)))
   if (!choices.length) return null
   return (
     <Popover>

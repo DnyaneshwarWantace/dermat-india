@@ -18935,6 +18935,20 @@ CREATE UNIQUE INDEX dermat_whatsapp_numbers_user_uq ON public.dermat_whatsapp_nu
 
 ALTER TABLE public.dermat_order_events ADD COLUMN IF NOT EXISTS step_key text;
 
+CREATE TABLE public.dermat_access_log (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    organization_id uuid NOT NULL,
+    tenant_id uuid NOT NULL,
+    user_id uuid NOT NULL,
+    user_name text,
+    changed_by_name text,
+    added jsonb NOT NULL,
+    removed jsonb NOT NULL,
+    created_at timestamp with time zone NOT NULL,
+    CONSTRAINT dermat_access_log_pkey PRIMARY KEY (id)
+);
+CREATE INDEX dermat_access_log_scope_idx ON public.dermat_access_log USING btree (tenant_id, created_at);
+
 --
 -- PostgreSQL database dump complete
 --

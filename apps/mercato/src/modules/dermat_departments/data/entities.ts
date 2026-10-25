@@ -97,3 +97,35 @@ export class WhatsappNumber {
   @Property({ name: 'updated_at', type: Date, onCreate: () => new Date(), onUpdate: () => new Date() })
   updatedAt: Date = new Date()
 }
+
+@Entity({ tableName: 'dermat_access_log' })
+export class AccessLogEntry {
+  [OptionalProps]?: 'userName' | 'changedByName' | 'createdAt'
+
+  @PrimaryKey({ type: 'uuid', defaultRaw: 'gen_random_uuid()' })
+  id!: string
+
+  @Property({ name: 'organization_id', type: 'uuid' })
+  organizationId!: string
+
+  @Property({ name: 'tenant_id', type: 'uuid' })
+  tenantId!: string
+
+  @Property({ name: 'user_id', type: 'uuid' })
+  userId!: string
+
+  @Property({ name: 'user_name', type: 'text', nullable: true })
+  userName?: string | null
+
+  @Property({ name: 'changed_by_name', type: 'text', nullable: true })
+  changedByName?: string | null
+
+  @Property({ type: 'json' })
+  added!: string[]
+
+  @Property({ type: 'json' })
+  removed!: string[]
+
+  @Property({ name: 'created_at', type: Date, onCreate: () => new Date() })
+  createdAt: Date = new Date()
+}

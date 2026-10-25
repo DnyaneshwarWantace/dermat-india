@@ -73,6 +73,7 @@ function cleanCardSettings(input: StageSettingInput['cardSettings'], stepKeys: s
     documents: pick(input.documents, (_key, value) => known(value)),
     labels: pick(input.labels, (key, value) => stepKeys.includes(key) && value.trim().length > 0),
     extraSteps,
+    parallel: Array.from(new Set((input.parallel ?? []).filter(known))),
   }
   return Object.values(result).some((entry) => (Array.isArray(entry) ? entry.length : Object.keys(entry).length)) ? result : null
 }

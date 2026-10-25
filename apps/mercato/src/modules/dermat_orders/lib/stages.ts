@@ -11,7 +11,7 @@ export type StageField = {
   step?: string
 }
 
-export type StageStep = { key: string; label: string; optional?: boolean; owners?: string[] }
+export type StageStep = { key: string; label: string; optional?: boolean; owners?: string[]; parallel?: boolean }
 
 export type StageDef = {
   key: string
@@ -75,6 +75,27 @@ export const STAGE_SEE_FEATURE: Record<string, string> = {
 
 export function stageWorkFeature(stageKey: string): string {
   return STAGE_WORK_FEATURE[stageKey] ?? 'dermat_orders.stages'
+}
+
+export const STAGE_OWN_WORK_FEATURE: Record<string, string> = {
+  manufacturing: 'dermat_orders.work.manufacturing',
+  filling: 'dermat_orders.work.filling',
+  packing: 'dermat_orders.work.packing',
+}
+
+export const STAGE_OWN_SEE_FEATURE: Record<string, string> = {
+  manufacturing: 'dermat_orders.see.manufacturing',
+  filling: 'dermat_orders.see.filling',
+  packing: 'dermat_orders.see.packing',
+}
+
+export function stageWorkFeatures(stageKey: string): string[] {
+  return STAGE_OWN_WORK_FEATURE[stageKey] ? [stageWorkFeature(stageKey), STAGE_OWN_WORK_FEATURE[stageKey]] : [stageWorkFeature(stageKey)]
+}
+
+export function stageSeeFeatures(stageKey: string): string[] {
+  const base = STAGE_SEE_FEATURE[stageKey]
+  return [base, STAGE_OWN_SEE_FEATURE[stageKey]].filter((feature): feature is string => Boolean(feature))
 }
 
 export type StageDocument = { key: string; label: string; hint: string; required?: 'always' | 'eway'; step?: string }
@@ -201,7 +222,10 @@ export const STAGES: StageDef[] = [
     group: 'rnd',
     hint: 'Every product in the order needs an approved BOM. Runs side by side with artwork.',
     after: ['sampling'],
-    steps: [],
+    steps: [
+      { key: 'bom_made', label: 'BOM made for every product' },
+      { key: 'bom_approved', label: 'BOM approved' },
+    ],
     fields: [{ key: 'remarks', label: 'Remarks', type: 'textarea' }],
   },
   {
@@ -256,6 +280,7 @@ export const STAGES: StageDef[] = [
     hint: 'Bulk filled into bottles / tubes / jars. Unit: bottles / gm / ml. Ask the PM store for bottles, tubes and caps and confirm you received them. QC after filling only if its QC rule is switched on.',
     after: ['manufacturing'],
     steps: [
+      { key: 'pm_asked', label: 'Bottles, caps and labels asked from the store' },
       { key: 'started', label: 'Filling started' },
       { key: 'filled', label: 'Filling done' },
     ],
@@ -279,6 +304,7 @@ export const STAGES: StageDef[] = [
     hint: 'Finished goods packed. Unit: pieces. Ask the PM store for cartons, labels and the sample kit and confirm you received them. The QC team does the final QC before this can be done.',
     after: ['filling'],
     steps: [
+      { key: 'pm_asked', label: 'Cartons and shippers asked from the store', optional: true },
       { key: 'sample', label: 'Sample of the finished good made' },
       { key: 'packed', label: 'All packaging done' },
     ],
@@ -380,6 +406,7 @@ export type StageOverride = {
     documents?: Record<string, string>
     labels?: Record<string, string>
     extraSteps?: Array<{ key: string; label: string; after: string | null; optional?: boolean }>
+    parallel?: string[]
   } | null
 }
 
@@ -426,7 +453,7 @@ export function applyStageOverride(def: StageDef, override?: StageOverride | nul
     label: override.label?.trim() || def.label,
     steps: withExtraSteps(def.steps, cards.extraSteps ?? [])
       .filter((step) => !hidden.has(step.key))
-      .map((step) => ({ ...step, label: cards.labels?.[step.key]?.trim() || step.label, ...(cards.owners?.[step.key]?.length ? { owners: cards.owners[step.key] } : {}) })),
+      .map((step) => ({ ...step, label: cards.labels?.[step.key]?.trim() || step.label, ...(cards.owners?.[step.key]?.length ? { owners: cards.owners[step.key] } : {}), ...(cards.parallel?.includes(step.key) ? { parallel: true } : {}) })),
     fields: [...def.fields.map((field) => (required.has(field.key) && !field.required ? { ...field, required: true } : field)), ...extras].map((field) => (cards.fields?.[field.key] ? { ...field, step: cards.fields[field.key] } : field)),
   }
 }
@@ -553,6 +580,7 @@ const WORK = {
   dispatch: 'dermat_orders.work.dispatch',
   purchase: 'dermat_orders.work.purchase',
   store: 'dermat_orders.work.store',
+  ipqa: 'dermat_orders.work.ipqa',
 }
 
 export const OWNER_NAMES: Record<string, string> = {
@@ -566,12 +594,18 @@ export const OWNER_NAMES: Record<string, string> = {
   [WORK.dispatch]: 'Dispatch',
   [WORK.purchase]: 'Purchase',
   [WORK.store]: 'Store',
+  [WORK.ipqa]: 'In-process QA',
+  'dermat_orders.work.manufacturing': 'Manufacturing',
+  'dermat_orders.work.filling': 'Filling',
+  'dermat_orders.work.packing': 'Packing',
 }
 
 export const STEP_OWNERS: Record<string, Record<string, string[]>> = {
   sampling: { sample_sent: [WORK.rnd, SALES], client_ok: [SALES, WORK.rnd] },
   artwork: { composition: [WORK.qa, WORK.artwork], client_approved: [SALES, WORK.artwork], qa_final: [WORK.qa], pm_ordered: [WORK.purchase, WORK.artwork], pm_ok: [WORK.store, WORK.artwork] },
   planning: { purchase: [WORK.planning, WORK.purchase], received: [WORK.store, WORK.planning] },
+  filling: { pm_asked: [WORK.ipqa, WORK.production, 'dermat_orders.work.filling'] },
+  packing: { pm_asked: [WORK.ipqa, WORK.production, 'dermat_orders.work.packing'] },
   dispatch: { delivered: [WORK.dispatch, SALES] },
 }
 
@@ -603,7 +637,7 @@ const STEP_NEEDED_WHEN: Record<string, Record<string, (data: Record<string, unkn
 
 export function stepOwners(stageKey: string, step: Pick<StageStep, 'key' | 'owners'>): string[] {
   if (step.owners?.length) return step.owners
-  return STEP_OWNERS[stageKey]?.[step.key] ?? [stageWorkFeature(stageKey)]
+  return STEP_OWNERS[stageKey]?.[step.key] ?? stageWorkFeatures(stageKey)
 }
 
 export const MAIN_CARD = '__main'
@@ -637,7 +671,7 @@ export function stepRequired(def: StageDef, step: StageStep, data: Record<string
   {
     const states = stepStates(data)
     const index = def.steps.findIndex((entry) => entry.key === step.key)
-    if (!states[step.key]?.done && def.steps.slice(index + 1).some((entry) => states[entry.key]?.done)) return false
+    if (!step.parallel && !states[step.key]?.done && def.steps.slice(index + 1).some((entry) => !entry.parallel && states[entry.key]?.done)) return false
   }
   if (!step.optional) return true
   const rule = STEP_NEEDED_WHEN[def.key]?.[step.key]

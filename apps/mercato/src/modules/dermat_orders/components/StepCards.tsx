@@ -8,7 +8,7 @@ import { cn } from '@open-mercato/shared/lib/utils'
 import { Button } from '@open-mercato/ui/primitives/button'
 import { Label } from '@open-mercato/ui/primitives/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@open-mercato/ui/primitives/select'
-import { MAIN_CARD, OWNER_NAMES, cardFieldKeys, documentCard, stageWorkFeature, stepOwners, type StageDef, type StageField } from '../lib/stages'
+import { MAIN_CARD, OWNER_NAMES, cardFieldKeys, documentCard, stageWorkFeatures, stepOwners, type StageDef, type StageField } from '../lib/stages'
 import { useGranted } from '../../dermat_departments/components/useGranted'
 import { StageDocuments } from './StageDocuments'
 import { formatDate, formatDateTime, formatQty } from './format'
@@ -53,7 +53,7 @@ export function StepCards({ order, stage, def, editable, busy, fields, renderInp
   const ownersOf = (key: string) => (key === MAIN_CARD ? [] : stepOwners(def.key, def.steps.find((step) => step.key === key) ?? { key }))
   const canDo = (key: string) => {
     if (!editable) return false
-    if (key === MAIN_CARD) return granted.has(stageWorkFeature(def.key))
+    if (key === MAIN_CARD) return stageWorkFeatures(def.key).some((feature) => granted.has(feature))
     return ownersOf(key).some((feature) => granted.has(feature))
   }
   const ownerText = (key: string) => {

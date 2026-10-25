@@ -9,7 +9,7 @@ import { currentUserName, findOrder, hasFeatures, resolveOrderContext } from '..
 import { notifyAssigned, notifyCardAssigned, notifyStagesOpened, notifyStagesPaused } from '../../../lib/notify'
 import { cardPeople } from '../../../lib/tasks'
 import { canSeeMoney } from '../../../lib/money'
-import { OWNER_NAMES, STOCK_STAGES, stageDef, stageWorkFeature, stepOwners } from '../../../lib/stages'
+import { OWNER_NAMES, STOCK_STAGES, stageDef, stageWorkFeatures, stepOwners } from '../../../lib/stages'
 import { effectiveStageDef, loadStageOverrides } from '../../../lib/stageSettings'
 import { enforceOrderLock, orderErrorResponse, runGuarded } from '../../../lib/guard'
 import { STORE_STAGE_KEYS, consumeForStage, type StoreStage } from '../../../../dermat_store/lib/service'
@@ -47,7 +47,7 @@ async function POST(req: Request) {
       ? ownsCard || onBehalf
       : reopenAnyTime ||
         ownsCard ||
-        (await hasFeatures(ctx, [stageWorkFeature(parsed.data.stageKey)])) ||
+        (await Promise.all(stageWorkFeatures(parsed.data.stageKey).map((feature) => hasFeatures(ctx, [feature])))).some(Boolean) ||
         (parsed.data.action === 'assign' && (await hasFeatures(ctx, ['dermat_orders.manage'])))
     if (!allowed && cardAction && card) {
       return NextResponse.json({ error: `${card.label} is done by ${cardOwners.map((feature) => OWNER_NAMES[feature] ?? feature).join(' or ')}` }, { status: 403 })
