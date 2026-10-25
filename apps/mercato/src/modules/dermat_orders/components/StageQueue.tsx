@@ -11,6 +11,7 @@ import { useT } from '@open-mercato/shared/lib/i18n/context'
 import { cn } from '@open-mercato/shared/lib/utils'
 import { Page, PageBody } from '@open-mercato/ui/backend/Page'
 import { DataTable } from '@open-mercato/ui/backend/DataTable'
+import { Input } from '@open-mercato/ui/primitives/input'
 import { Tabs, TabsList, TabsTrigger } from '@open-mercato/ui/primitives/tabs'
 import { Label } from '@open-mercato/ui/primitives/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@open-mercato/ui/primitives/select'
@@ -298,6 +299,55 @@ export function StageQueue({ stageKey }: { stageKey: string }) {
             </div>
           ) : null}
         </div>
+        <div className="space-y-2 md:hidden">
+          <Input
+            aria-label={t('dermat_orders.list.search', 'Search order no., customer, product ID or batch no.')}
+            placeholder={t('dermat_orders.queue.phoneSearch', 'Search order, customer, product')}
+            className="h-11"
+            value={search}
+            onChange={(event) => {
+              setSearch(event.target.value)
+              setPage(1)
+            }}
+          />
+          {(tab === 'active' && cardFilter !== 'all' ? rows.filter((row) => row.stages[stageKey]?.currentCard?.key === cardFilter) : rows).map((row) => {
+            const here = row.stages[stageKey]
+            const card = here?.currentCard ?? null
+            const href = card && card.key !== '__main' ? `/backend/orders/${row.id}/stages/${stageKey}/steps/${card.key}` : `/backend/orders/${row.id}/stages/${stageKey}`
+            const first = row.lines[0]
+            return (
+              <Link key={row.id} href={href} className="block rounded-lg border bg-card p-3 active:bg-muted">
+                <span className="flex items-baseline justify-between gap-2">
+                  <span className="font-mono text-sm font-semibold text-primary">{row.orderNo}</span>
+                  <span className={row.late ? 'text-xs font-semibold text-status-error-text' : 'text-xs text-muted-foreground'}>
+                    {row.late ? t('dermat_orders.book.late', 'Late') : here?.days != null ? t('dermat_orders.queue.days', '{days} d here', { days: formatQty(here.days, 1) }) : ''}
+                  </span>
+                </span>
+                <span className="mt-0.5 block truncate text-sm">{first ? `${first.brandName ?? first.productTitle} · ${formatQty(first.quantity, 0)} pcs${row.lines.length > 1 ? ` +${row.lines.length - 1}` : ''}` : '—'}</span>
+                <span className="block truncate text-xs text-muted-foreground">{row.customerName}</span>
+                {card ? (
+                  <span className="mt-1.5 flex items-center justify-between gap-2 rounded-md bg-muted/60 px-2 py-1 text-xs">
+                    <span className="truncate font-medium">{card.label}</span>
+                    <span className="shrink-0 text-muted-foreground">{card.personName ?? card.owners.join(' / ')}</span>
+                  </span>
+                ) : null}
+              </Link>
+            )
+          })}
+          {!isLoading && !rows.length ? <p className="py-8 text-center text-sm text-muted-foreground">{t('dermat_orders.queue.empty', 'Nothing here right now.')}</p> : null}
+          {totalPages > 1 ? (
+            <div className="flex items-center justify-between pt-1">
+              <Button type="button" variant="outline" className="h-10" disabled={page <= 1} onClick={() => setPage((value) => value - 1)}>
+                {t('dermat_orders.book.prev', 'Previous page')}
+              </Button>
+              <span className="text-xs text-muted-foreground tabular-nums">{page} / {totalPages}</span>
+              <Button type="button" variant="outline" className="h-10" disabled={page >= totalPages} onClick={() => setPage((value) => value + 1)}>
+                {t('dermat_orders.book.next', 'Next page')}
+              </Button>
+            </div>
+          ) : null}
+        </div>
+        <div className="hidden md:block">
         <DataTable
           perspective={{ tableId: `dermat_orders.work.${stageKey}` }}
           title={
@@ -327,6 +377,7 @@ export function StageQueue({ stageKey }: { stageKey: string }) {
           pagination={{ page, pageSize: PAGE_SIZE, total, totalPages, onPageChange: setPage }}
           isLoading={isLoading}
         />
+        </div>
         {order ? (
           <StageSheet
             order={order}

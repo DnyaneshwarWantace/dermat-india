@@ -6,6 +6,7 @@ import { useT } from '@open-mercato/shared/lib/i18n/context'
 import { cn } from '@open-mercato/shared/lib/utils'
 import { apiCall } from '@open-mercato/ui/backend/utils/apiCall'
 import { AttachmentsSection } from '@open-mercato/ui/backend/detail/AttachmentsSection'
+import { TakePhotoButton } from './stage/TakePhotoButton'
 import { EWAY_BILL_LIMIT, documentRecordId } from '../lib/stages'
 import type { StageDocumentStatus } from './types'
 
@@ -14,6 +15,7 @@ const ENTITY = 'dermat_orders:order_stage'
 export function StageDocuments({ orderId, stageKey, documents, editable, showOther = true }: { orderId: string; stageKey: string; documents: StageDocumentStatus[]; editable: boolean; showOther?: boolean }) {
   const t = useT()
   const [counts, setCounts] = React.useState<Record<string, number>>(() => Object.fromEntries(documents.map((doc) => [doc.key, doc.count])))
+  const [refresh, setRefresh] = React.useState(0)
 
   React.useEffect(() => {
     setCounts(Object.fromEntries(documents.map((doc) => [doc.key, doc.count])))
@@ -72,8 +74,13 @@ export function StageDocuments({ orderId, stageKey, documents, editable, showOth
                 {count ? t('dermat_orders.docs.files', '{count} file(s)', { count }) : requirement}
               </span>
             </div>
+            {editable ? (
+              <div className="mb-2">
+                <TakePhotoButton entityId={ENTITY} recordId={documentRecordId(orderId, stageKey, doc.key)} onUploaded={() => { setRefresh((value) => value + 1); void recount(doc.key) }} />
+              </div>
+            ) : null}
             {editable || count ? (
-              <AttachmentsSection entityId={ENTITY} recordId={documentRecordId(orderId, stageKey, doc.key)} showHeader={false} compact onChanged={() => void recount(doc.key)} />
+              <AttachmentsSection key={`${doc.key}-${refresh}`} entityId={ENTITY} recordId={documentRecordId(orderId, stageKey, doc.key)} showHeader={false} compact onChanged={() => void recount(doc.key)} />
             ) : null}
           </div>
         )

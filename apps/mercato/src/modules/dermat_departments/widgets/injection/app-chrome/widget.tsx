@@ -7,6 +7,7 @@ import { apiCall } from '@open-mercato/ui/backend/utils/apiCall'
 import { useT } from '@open-mercato/shared/lib/i18n/context'
 import type { InjectionWidgetModule } from '@open-mercato/shared/modules/widgets/injection'
 import { SHEET_CSS, applySheetMode, readSheetMode, setSheetMode, useSheetMode } from '../../../components/sheetMode'
+import { PHONE_CSS, PhoneBar } from '../../../components/PhoneBar'
 
 const ICON = '/api/dermat_departments/app/icon'
 
@@ -55,7 +56,7 @@ function AppChrome() {
     applySheetMode(readSheetMode())
     ensureHead('style#dermat-sheet-css', () => {
       const style = element('style', { id: 'dermat-sheet-css' })
-      style.textContent = SHEET_CSS
+      style.textContent = `${SHEET_CSS}\n${PHONE_CSS}`
       return style
     })
     ensureHead('link[rel="manifest"]', () => element('link', { rel: 'manifest', href: '/api/dermat_departments/app/manifest' }))
@@ -70,6 +71,7 @@ function AppChrome() {
   const Icon = on ? Rows3 : Rows2
   return (
     <span className="flex items-center gap-1.5">
+      <PhoneBar taskCount={tasks?.count ?? null} />
       {tasks ? (
         <Link
           href="/backend/my-work"

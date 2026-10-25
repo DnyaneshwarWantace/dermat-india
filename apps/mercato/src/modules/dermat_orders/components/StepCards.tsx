@@ -170,13 +170,13 @@ export function StepCards({ order, stage, def, editable, busy, fields, renderInp
               ) : null}
               {!hidden && (active || item.status === 'done') && extras[item.key] ? extras[item.key] : null}
               {active && mine ? (
-                <div className="flex flex-wrap justify-end gap-2">
+                <div className="sticky bottom-16 z-10 -mx-3 flex gap-2 border-t bg-card px-3 py-2 md:static md:mx-0 md:flex-wrap md:justify-end md:border-0 md:p-0">
                   {keys.length ? (
-                    <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => void onSave(item.key, payloadFor(keys))}>
+                    <Button type="button" variant="outline" size="sm" className="h-11 flex-1 md:h-8 md:flex-none" disabled={busy} onClick={() => void onSave(item.key, payloadFor(keys))}>
                       {t('dermat_orders.sheet.save', 'Save')}
                     </Button>
                   ) : null}
-                  <Button type="button" size="sm" disabled={busy} onClick={() => void onStep(item.key, true, payloadFor(keys))}>
+                  <Button type="button" size="sm" className="h-11 flex-1 md:h-8 md:flex-none" disabled={busy} onClick={() => void onStep(item.key, true, payloadFor(keys))}>
                     <Check className="mr-1.5 h-4 w-4" aria-hidden="true" />
                     {isLast ? t('dermat_orders.cards.doneLast', 'Done — finish {stage}', { stage: def.label }) : t('dermat_orders.cards.done', 'Done')}
                   </Button>

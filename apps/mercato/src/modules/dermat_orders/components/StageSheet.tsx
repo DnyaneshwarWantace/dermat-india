@@ -233,6 +233,7 @@ export function StageWorkArea({ order, stage, people, canWork: canWorkProp, busy
       <Input
         type={field.type === 'date' ? 'date' : field.type === 'time' ? 'time' : field.type === 'number' ? 'number' : 'text'}
         step={field.type === 'number' ? 'any' : undefined}
+        inputMode={field.type === 'number' ? 'decimal' : undefined}
         value={value}
         placeholder={field.placeholder}
         onChange={(event) => set(event.target.value)}
