@@ -30,7 +30,7 @@ async function payload(ctx: OrderContext) {
       dayLimit: STAGE_DAY_LIMIT[stage.key] ?? null,
       reopenHours: DEFAULT_REOPEN_HOURS,
       steps: stage.steps.map((step) => ({ ...step, locked: (LOCKED_STEPS[stage.key] ?? []).includes(step.key), owners: stepOwners(stage.key, step) })),
-      fields: stage.fields.map((field) => ({ key: field.key, label: field.label, type: field.type, required: Boolean(field.required), shared: (DEFAULT_SHARED_FIELDS[stage.key] ?? []).includes(field.key), card: fieldCard(stage, field.key) })),
+      fields: stage.fields.map((field) => ({ key: field.key, label: field.label, type: field.type, required: Boolean(field.required), beforeDone: Boolean(field.beforeDone), shared: (DEFAULT_SHARED_FIELDS[stage.key] ?? []).includes(field.key), card: fieldCard(stage, field.key) })),
       documents: (STAGE_DOCUMENTS[stage.key] ?? []).map((doc) => ({ key: doc.key, label: doc.label, required: doc.required ?? null, card: documentCard(stage, doc) })),
     })),
   }
@@ -74,6 +74,7 @@ function cleanCardSettings(input: StageSettingInput['cardSettings'], stepKeys: s
     labels: pick(input.labels, (key, value) => stepKeys.includes(key) && value.trim().length > 0),
     extraSteps,
     parallel: Array.from(new Set((input.parallel ?? []).filter(known))),
+    optional: Array.from(new Set(input.optional ?? [])),
   }
   return Object.values(result).some((entry) => (Array.isArray(entry) ? entry.length : Object.keys(entry).length)) ? result : null
 }

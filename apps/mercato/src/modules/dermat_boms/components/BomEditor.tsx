@@ -229,9 +229,13 @@ export function BomEditor({ bomId, productId }: { bomId?: string; productId?: st
   const load = React.useCallback(async () => {
     setLoadError(null)
     if (bomId) {
-      const call = await apiCall<BomView>(`/api/dermat_boms/boms?id=${encodeURIComponent(bomId)}`)
+      const call = await apiCall<BomView & { formulaHidden?: boolean }>(`/api/dermat_boms/boms?id=${encodeURIComponent(bomId)}`)
       if (!call.ok || !call.result) {
         setLoadError(t('dermat_boms.errors.load', 'Could not load this BOM.'))
+        return
+      }
+      if (call.result.formulaHidden) {
+        setLoadError(t('dermat_boms.errors.formulaHidden', 'This formula is shown only to R&D, production and planning.'))
         return
       }
       setState(stateFromBom(call.result))

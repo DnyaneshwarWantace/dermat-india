@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { publicRateLimit } from '../../../lib/rateLimit'
 import { z } from 'zod'
 import type { EntityManager } from '@mikro-orm/postgresql'
 import type { OpenApiRouteDoc } from '@open-mercato/shared/lib/openapi'
@@ -13,6 +14,8 @@ export const metadata = {
 const querySchema = z.object({ token: z.string().min(20).max(40) })
 
 async function GET(req: Request) {
+  const limited = publicRateLimit(req, 'doc-link')
+  if (limited) return limited
   const parsed = querySchema.safeParse(Object.fromEntries(new URL(req.url).searchParams))
   if (!parsed.success) return NextResponse.json({ error: 'This link is not valid' }, { status: 404 })
   const container = await createRequestContainer()

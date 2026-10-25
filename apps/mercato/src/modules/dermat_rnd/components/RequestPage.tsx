@@ -92,7 +92,7 @@ export function RequestPage({ requestId, backHref = '/backend/rnd/requests' }: {
           {tab === 'request' ? (
             <div className="flex flex-col gap-4">
               <RequestOverview request={request} trials={trials} onOpenTrial={openTrial} />
-              {request.kind === 'client' || request.customerId ? <SampleChargesCard customerId={request.customerId ?? null} rdRequestId={request.id} rdCode={request.code} /> : null}
+              {(request.kind === 'client' || request.customerId) && granted.has('dermat_accounts.view') ? <SampleChargesCard customerId={request.customerId ?? null} rdRequestId={request.id} rdCode={request.code} /> : null}
             </div>
           ) : null}
           {tab === 'trials' ? (

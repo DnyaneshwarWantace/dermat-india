@@ -78,7 +78,7 @@ export function DocLinkPage({ token }: { token: string }) {
             <Spinner />
           </div>
         ) : null}
-        {html ? <iframe title={doc?.title ?? 'Document'} srcDoc={withoutAutoPrint(html)} className="h-screen w-full rounded-lg border bg-white" /> : null}
+        {html ? <iframe title={doc?.title ?? 'Document'} sandbox="" srcDoc={withoutAutoPrint(html)} className="h-screen w-full rounded-lg border bg-white" /> : null}
         {doc?.kind === 'dispatch' && doc.dispatch ? <DispatchView token={token} dispatch={doc.dispatch} /> : null}
       </div>
     </main>

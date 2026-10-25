@@ -49,6 +49,11 @@ const UI_FEATURES = [
   'dermat_rnd.request',
   'dermat_rnd.manage',
   'catalog.products.manage',
+  'dermat_accounts.view',
+  'dermat_products.supplier',
+  'dermat_rnd.view',
+  'customers.activities.view',
+  'dermat_orders.full',
 ]
 
 let cache: Promise<Set<string>> | null = null

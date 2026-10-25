@@ -80,6 +80,7 @@ export type Stage = {
   openedAt: string | null
   completedAt: string | null
   completedByName: string | null
+  updatedAt?: string | null
   days: number | null
   reopen?: ReopenInfo
 }

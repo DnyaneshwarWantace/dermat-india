@@ -27,7 +27,7 @@ export function useStageAction(contextId: string) {
             withScopedApiRequestHeaders(buildOptimisticLockHeader(order.updatedAt), () =>
               apiCall<Order & { error?: string }>('/api/dermat_orders/orders/stage', {
                 method: 'POST',
-                headers: { 'content-type': 'application/json' },
+                headers: { 'content-type': 'application/json', ...(stage.updatedAt ? { 'x-dermat-stage-version': stage.updatedAt } : {}) },
                 body: JSON.stringify(body),
               }),
             ),

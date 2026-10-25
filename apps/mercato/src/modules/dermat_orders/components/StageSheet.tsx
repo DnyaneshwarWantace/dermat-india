@@ -134,7 +134,13 @@ export function StageWorkArea({ order, stage, people, canWork: canWorkProp, busy
   const [note, setNote] = React.useState('')
   const [party, setParty] = React.useState(HOLD_PARTIES[0])
   const [holdReason, setHoldReason] = React.useState('')
-  const setValue = React.useCallback((key: string, value: string) => setValues((prev) => ({ ...prev, [key]: value })), [])
+  const edited = React.useRef<{ stageKey: string | null; keys: Set<string> }>({ stageKey: null, keys: new Set() })
+  const valuesRef = React.useRef(values)
+  valuesRef.current = values
+  const setValue = React.useCallback((key: string, value: string) => {
+    edited.current.keys.add(key)
+    setValues((prev) => ({ ...prev, [key]: value }))
+  }, [])
   const [followUp, setFollowUp] = React.useState('')
 
   React.useEffect(() => {
@@ -149,6 +155,13 @@ export function StageWorkArea({ order, stage, people, canWork: canWorkProp, busy
         if (!next.payment_ref && advance.reference) next.payment_ref = advance.reference
       }
     }
+    if (edited.current.stageKey === stage.key) {
+      for (const key of Array.from(edited.current.keys)) {
+        const typed = valuesRef.current[key]
+        if (typed === undefined || typed === next[key]) edited.current.keys.delete(key)
+        else next[key] = typed
+      }
+    } else edited.current = { stageKey: stage.key, keys: new Set() }
     setValues(next)
     setMode('form')
     setNote('')
@@ -213,7 +226,7 @@ export function StageWorkArea({ order, stage, people, canWork: canWorkProp, busy
 
   const renderInput = (field: StageField) => {
     const value = values[field.key] ?? ''
-    const set = (next: string) => setValues((prev) => ({ ...prev, [field.key]: next }))
+    const set = (next: string) => setValue(field.key, next)
     if (field.type === 'select') {
       return (
         <Select value={value || '__none'} onValueChange={(next) => set(next === '__none' ? '' : next)}>
@@ -410,7 +423,10 @@ export function StageWorkArea({ order, stage, people, canWork: canWorkProp, busy
             <p className="col-span-2 font-medium text-muted-foreground">
               {t('dermat_orders.sheet.locked', 'Locked. You can look but not complete this stage yet.')}{' '}
               {t('dermat_orders.sheet.waiting', 'It opens when these are done: {stages}', {
-                stages: def.after.map((key) => stageDef(key)?.label ?? key).join(', '),
+                stages: [
+                  ...def.after.map((key) => stageDef(key)?.label ?? key),
+                  ...(def.afterSteps ?? []).map((entry) => `${stageDef(entry.stage)?.label ?? entry.stage}: ${stageDef(entry.stage)?.steps.find((step) => step.key === entry.step)?.label ?? entry.step}`),
+                ].join(', '),
               })}
             </p>
           ) : null}

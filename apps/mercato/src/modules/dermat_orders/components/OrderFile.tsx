@@ -61,7 +61,7 @@ export function useOrderFile(order: Order | null): OrderFileData | null {
   const [file, setFile] = React.useState<OrderFileData | null>(null)
   const version = order ? `${order.id}:${order.updatedAt ?? ''}:${order.stages.map((stage) => stage.status).join('')}` : ''
   React.useEffect(() => {
-    if (!order) return
+    if (!order || (order.access && !order.access.full)) return
     let cancelled = false
     void apiCall<OrderFileData>(`/api/dermat_orders/orders/file?id=${encodeURIComponent(order.id)}`).then((call) => {
       if (!cancelled && call.ok && call.result) setFile(call.result)

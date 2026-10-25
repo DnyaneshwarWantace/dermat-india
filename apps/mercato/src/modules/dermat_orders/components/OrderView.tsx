@@ -164,7 +164,7 @@ export function OrderView({ orderId }: { orderId: string }) {
   const [cancelBusy, setBusy] = React.useState(false)
   const busy = cancelBusy || stageRunner.busy
   const [cancelOpen, setCancelOpen] = React.useState(false)
-  const materials = useOrderMaterials(order)
+  const materials = useOrderMaterials(granted.ready && granted.has('dermat_boms.view') ? order : null)
   const file = useOrderFile(order)
   const [cancelReason, setCancelReason] = React.useState('')
   const [tab, setTab] = React.useState<OrderTab>('work')

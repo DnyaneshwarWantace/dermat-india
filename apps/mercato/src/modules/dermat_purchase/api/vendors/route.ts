@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { canSeeSuppliers } from '../../../dermat_products/lib/suppliers'
 import { z } from 'zod'
 import type { OpenApiRouteDoc } from '@open-mercato/shared/lib/openapi'
 import { resolveOrderContext } from '../../../dermat_orders/lib/server'
@@ -11,6 +12,7 @@ export const metadata = {
 const querySchema = z.object({ q: z.string().trim().max(120).optional(), id: z.string().uuid().optional() })
 
 async function GET(req: Request) {
+  if (!(await canSeeSuppliers(req))) return NextResponse.json({ error: 'Supplier names are only shown to people with the supplier right' }, { status: 403 })
   const ctx = await resolveOrderContext(req)
   if ('error' in ctx) return NextResponse.json({ error: ctx.error }, { status: ctx.status })
   const parsed = querySchema.safeParse(Object.fromEntries(new URL(req.url).searchParams))

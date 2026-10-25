@@ -179,6 +179,7 @@ export function StageQueue({ stageKey }: { stageKey: string }) {
             {stage?.currentCard ? (
               <span className="font-medium text-foreground">
                 {t('dermat_orders.queue.now', 'Now: {card}', { card: stage.currentCard.label })}
+                {stage.currentCard.waitingFor ? <span className="block font-normal text-status-warning-text">{stage.currentCard.waitingFor}</span> : null}
                 <span className="font-normal text-muted-foreground"> · {stage.currentCard.owners.join(' / ')}</span>
               </span>
             ) : null}
@@ -331,6 +332,7 @@ export function StageQueue({ stageKey }: { stageKey: string }) {
                     <span className="shrink-0 text-muted-foreground">{card.personName ?? card.owners.join(' / ')}</span>
                   </span>
                 ) : null}
+                {card?.waitingFor ? <span className="mt-1 block text-xs text-status-warning-text">{card.waitingFor}</span> : null}
               </Link>
             )
           })}

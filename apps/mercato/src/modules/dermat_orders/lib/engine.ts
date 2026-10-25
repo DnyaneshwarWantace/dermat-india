@@ -86,7 +86,11 @@ export function openReadyStages(stages: DermatOrderStage[]): string[] {
   for (const def of STAGES) {
     const stage = byKey.get(def.key)
     if (!stage || stage.status !== 'waiting') continue
-    if (def.after.every((key) => isFinished(byKey.get(key)?.status))) {
+    const stepsReady = (def.afterSteps ?? []).every((entry) => {
+      const source = byKey.get(entry.stage)
+      return isFinished(source?.status) || Boolean(stepStates(source?.data)[entry.step]?.done)
+    })
+    if (stepsReady && def.after.every((key) => isFinished(byKey.get(key)?.status))) {
       stage.status = 'open'
       stage.openedAt = new Date()
       opened.push(def.key)
@@ -130,6 +134,14 @@ async function afterOpened(ctx: OrderContext, order: DermatOrder, opened: string
       byName,
     })
     if (created) logEvent(ctx, order, 'qc_created', key, `${created} QC check${created > 1 ? 's' : ''} sent to QC`, null)
+    if (key === 'formulation') {
+      const boms = await approvedPackBoms(ctx, lines.map((line) => line.productId), order.id)
+      const stage = await ctx.em.findOne(DermatOrderStage, { orderId: order.id, stageKey: 'formulation' })
+      if (stage && lines.length && lines.every((line) => boms.get(line.productId))) {
+        stage.data = { ...(stage.data ?? {}), __steps: { ...stepStates(stage.data), bom_made: { done: true, at: new Date().toISOString(), by: 'R&D (BOM already made)' } } }
+        logEvent(ctx, order, 'step_done', 'formulation', 'BOM made for every product · already on the product', null, [], 'bom_made')
+      }
+    }
   }
 }
 
@@ -297,6 +309,18 @@ export async function applyStageAction(ctx: OrderContext, order: DermatOrder, in
       const field = def.fields.find((entry) => entry.key === key)
       if (!field) continue
       next[key] = typeof value === 'string' ? value.trim() : value
+      const given = next[key]
+      if (given !== null && given !== undefined && given !== '') {
+        if (field.type === 'number') {
+          const amount = typeof given === 'number' ? given : Number(String(given).replace(/,/g, ''))
+          if (!Number.isFinite(amount)) throw new OrderError(`${field.label}: enter a number`, 400, { missing: [key] })
+          if (amount < 0) throw new OrderError(`${field.label} cannot be below zero`, 400, { missing: [key] })
+          if (amount > 1_000_000_000) throw new OrderError(`${field.label} is too large`, 400, { missing: [key] })
+          next[key] = amount
+        }
+        if (field.type === 'date' && !/^\d{4}-\d{2}-\d{2}$/.test(String(given))) throw new OrderError(`${field.label}: enter a date`, 400, { missing: [key] })
+        if (typeof given === 'string' && given.length > 4000) throw new OrderError(`${field.label} is too long`, 400, { missing: [key] })
+      }
       const before = comparable((stage.data as Record<string, unknown> | null)?.[key])
       const after = comparable(next[key])
       if (String(before ?? '') !== String(after ?? '')) changed.push({ key, label: field.label, from: before, to: after })
@@ -455,15 +479,19 @@ export async function applyStageAction(ctx: OrderContext, order: DermatOrder, in
         const earlier = def.steps.slice(0, index).filter((entry) => stepRequired(def, entry, stage.data) && !current[entry.key]?.done)
         if (earlier.length) throw new OrderError(`Do these first: ${earlier.map((entry) => entry.label).join(', ')}`, 400, { steps: earlier.map((entry) => entry.key) })
       }
+      if (!done && !current[step.key]?.done) throw new OrderError(`${step.label} is not done`, 409)
       if (!done) {
         const later = def.steps.slice(index + 1).filter((entry) => current[entry.key]?.done)
         if (later.length) throw new OrderError(`Undo the later steps first: ${later.map((entry) => entry.label).join(', ')}`, 400)
+        const waiting = STAGES.filter((entry) => entry.afterSteps?.some((link) => link.stage === def.key && link.step === step.key))
+        const started = stages.filter((entry) => waiting.some((link) => link.key === entry.stageKey) && entry.status !== 'waiting')
+        if (started.length) throw new OrderError(`${started.map((entry) => stageDef(entry.stageKey)?.label ?? entry.stageKey).join(', ')} already started from this step`, 409)
       }
       if (done) {
         const own = new Set(cardFieldKeys(def, step.key))
         if (input.data) input.data = Object.fromEntries(Object.entries(input.data).filter(([key]) => own.has(key)))
         mergeData()
-        const empty = def.fields.filter((field) => own.has(field.key) && field.required && (stage.data?.[field.key] === undefined || stage.data?.[field.key] === null || String(stage.data?.[field.key]).trim() === ''))
+        const empty = def.fields.filter((field) => own.has(field.key) && (field.required || field.beforeDone) && (stage.data?.[field.key] === undefined || stage.data?.[field.key] === null || String(stage.data?.[field.key]).trim() === ''))
         if (empty.length) throw new OrderError(`Fill in: ${empty.map((field) => field.label).join(', ')}`, 400, { missing: empty.map((field) => field.key) })
         const orderValue = priceOrder((await ctx.em.find(DermatOrderLine, { orderId: order.id })).map(pricedLine), order.pricesIncludeGst).total
         const docs = (await missingDocuments(ctx, order.id, def.key, orderValue, overrides.get(def.key))).filter((doc) => documentCard(def, doc) === step.key)
@@ -492,7 +520,10 @@ export async function applyStageAction(ctx: OrderContext, order: DermatOrder, in
       stage.data = { ...(stage.data ?? {}), __steps: states }
       logEvent(ctx, order, done ? 'step_done' : 'step_undone', def.key, note ? `${step.label} · ${note}` : step.label, byName, done ? changed : [], step.key)
       if (done && stage.status === 'open' && !missingSteps(def, stage.data).length) await completeStage(false)
-      else assignDefaultCard(def, stage, overrides)
+      else {
+        assignDefaultCard(def, stage, overrides)
+        if (done) await progressStages(ctx, order, stages, byName)
+      }
       break
     }
     case 'pm_status': {
@@ -729,6 +760,7 @@ export function stageViews(stages: DermatOrderStage[], overrides?: StageOverride
       openedAt: stage?.openedAt ? stage.openedAt.toISOString() : null,
       completedAt: stage?.completedAt ? stage.completedAt.toISOString() : null,
       completedByName: stage?.completedByName ?? null,
+      updatedAt: stage?.updatedAt ? stage.updatedAt.toISOString() : null,
       days: opened == null ? null : Math.max(0, Math.round((((closed ?? now) - opened) / DAY_MS) * 10) / 10),
       reopen: order ? reopenInfo(order, stages, def.key, overrides) : { until: null, stockMoved: false, nextStarted: [], orderClosed: false },
     }

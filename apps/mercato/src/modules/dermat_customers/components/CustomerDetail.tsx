@@ -270,9 +270,8 @@ export function CustomerDetail({ customerId }: { customerId: string }) {
   const [editOpen, setEditOpen] = React.useState(false)
 
   const load = React.useCallback(async () => {
-    const [companyCall, addressCall, orderCall] = await Promise.all([
+    const [companyCall, orderCall] = await Promise.all([
       apiCall<{ items?: Row[] }>(`/api/customers/companies?id=${encodeURIComponent(customerId)}&pageSize=1`, undefined, { fallback: { items: [] } }),
-      apiCall<{ items?: Address[] }>(`/api/customers/addresses?entityId=${encodeURIComponent(customerId)}&pageSize=20`, { headers: { 'x-om-forbidden-redirect': '0' } }, { fallback: { items: [] } }),
       apiCall<{ items?: OrderRow[] }>(`/api/dermat_orders/orders?customerId=${encodeURIComponent(customerId)}&pageSize=100`, undefined, { fallback: { items: [] } }),
     ])
     const row = companyCall.result?.items?.[0]
@@ -281,13 +280,18 @@ export function CustomerDetail({ customerId }: { customerId: string }) {
       return
     }
     setCompany(row)
-    setAddresses(addressCall.result?.items ?? [])
     setOrders(orderCall.result?.items ?? [])
   }, [customerId, t])
 
   React.useEffect(() => {
     load()
   }, [load])
+
+  const seesAddresses = granted.ready && granted.has('customers.activities.view')
+  React.useEffect(() => {
+    if (!seesAddresses) return
+    apiCall<{ items?: Address[] }>(`/api/customers/addresses?entityId=${encodeURIComponent(customerId)}&pageSize=20`, { headers: { 'x-om-forbidden-redirect': '0' } }, { fallback: { items: [] } }).then((call) => setAddresses(call.result?.items ?? []))
+  }, [customerId, seesAddresses])
 
   if (loadError) {
     return (
@@ -494,15 +498,19 @@ export function CustomerDetail({ customerId }: { customerId: string }) {
               </CardContent>
             </Card>
 
-            <Card className="lg:col-span-8 lg:row-start-2">
-              <CardContent className="pt-4">
-                <CustomerStatement customerId={customerId} customerName={name} />
-              </CardContent>
-            </Card>
+            {granted.has('dermat_accounts.view') ? (
+              <>
+                <Card className="lg:col-span-8 lg:row-start-2">
+                  <CardContent className="pt-4">
+                    <CustomerStatement customerId={customerId} customerName={name} />
+                  </CardContent>
+                </Card>
 
-            <div className="lg:col-span-8">
-              <SampleChargesCard customerId={customerId} />
-            </div>
+                <div className="lg:col-span-8">
+                  <SampleChargesCard customerId={customerId} />
+                </div>
+              </>
+            ) : null}
 
             <div className="lg:col-span-12">
               <CustomerSamples customerId={customerId} />

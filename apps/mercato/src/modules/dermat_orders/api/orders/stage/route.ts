@@ -63,6 +63,11 @@ async function POST(req: Request) {
       const stockPostedBefore = new Set(before.filter((stage) => (stage.data as Record<string, unknown> | null)?.__stock_posted).map((stage) => stage.stageKey))
       let paused: string[] = []
       if (parsed.data.action !== 'assign' && parsed.data.action !== 'save') enforceOrderLock(order, req)
+      const stageVersion = req.headers.get('x-dermat-stage-version')
+      const stageNow = before.find((stage) => stage.stageKey === parsed.data.stageKey)
+      if (stageVersion && stageNow && ['save', 'step', 'checklist', 'pm_status', 'filling_check'].includes(parsed.data.action) && Math.abs(new Date(stageVersion).getTime() - stageNow.updatedAt.getTime()) > 1) {
+        return NextResponse.json({ error: 'Someone else just changed this stage. Reload to see their change, then save again.', conflict: true }, { status: 409 })
+      }
       return await runGuarded(ctx, req, { resourceId: order.id, operation: 'custom', payload: parsed.data }, async () => {
         await ctx.em.transactional(async (em) => {
           const txCtx = { ...ctx, em: em as EntityManager }

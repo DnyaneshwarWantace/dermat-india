@@ -117,6 +117,7 @@ export const stageSettingSchema = z.object({
         .max(10)
         .optional(),
       parallel: z.array(settingKey).max(20).optional(),
+      optional: z.array(settingKey).max(60).optional(),
     })
     .optional()
     .nullable(),

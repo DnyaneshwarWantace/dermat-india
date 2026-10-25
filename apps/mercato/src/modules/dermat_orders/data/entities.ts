@@ -306,6 +306,7 @@ export type CardSettings = {
   labels?: Record<string, string>
   extraSteps?: Array<{ key: string; label: string; after: string | null; optional?: boolean }>
   parallel?: string[]
+  optional?: string[]
 }
 
 @Entity({ tableName: 'dermat_stage_settings' })

@@ -8,7 +8,7 @@ import { useT } from '@open-mercato/shared/lib/i18n/context'
 import { Page, PageBody } from '@open-mercato/ui/backend/Page'
 import { apiCall } from '@open-mercato/ui/backend/utils/apiCall'
 import { ErrorMessage, LoadingMessage } from '@open-mercato/ui/backend/detail'
-import { stageDef } from '../lib/stages'
+import { stageDef, waitsOn } from '../lib/stages'
 import { StageWorkArea, type StageActionRequest } from './StageSheet'
 import { useOrderMaterials } from './useOrderMaterials'
 import { useStageAction } from './useStageAction'
@@ -76,7 +76,7 @@ export function StagePage({ orderId, stageKey }: { orderId: string; stageKey: st
   if (!order || !stage) return <Page><PageBody><LoadingMessage label={t('dermat_orders.loading', 'Loading order…')} /></PageBody></Page>
 
   const history = order.events.filter((event) => event.stageKey === stageKey)
-  const openedNext = order.stages.filter((entry) => stageDef(entry.key)?.after.includes(stageKey))
+  const openedNext = order.stages.filter((entry) => { const next = stageDef(entry.key); return next ? waitsOn(next).includes(stageKey) : false })
   const shortCount = materials ? materials.rows.filter((row) => row.quantity > row.onHand).length : null
 
   return (

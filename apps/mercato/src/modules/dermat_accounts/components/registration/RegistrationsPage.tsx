@@ -9,6 +9,7 @@ import { ErrorMessage, LoadingMessage } from '@open-mercato/ui/backend/detail'
 import { Button } from '@open-mercato/ui/primitives/button'
 import { Label } from '@open-mercato/ui/primitives/label'
 import { Textarea } from '@open-mercato/ui/primitives/textarea'
+import { Radio, RadioGroup } from '@open-mercato/ui/primitives/radio'
 import { StatusBadge } from '@open-mercato/ui/primitives/status-badge'
 import { SegmentedControl, SegmentedControlItem } from '@open-mercato/ui/primitives/segmented-control'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@open-mercato/ui/primitives/sheet'
@@ -229,17 +230,19 @@ export function RegistrationsPage() {
                   <section className="space-y-3 rounded-lg border bg-muted/30 p-3">
                     <fieldset className="space-y-1.5">
                       <legend className="text-sm font-semibold">{t('dermat_accounts.regs.setUp', 'Set up as')}</legend>
-                      <label className="flex items-center gap-2 text-sm">
-                        <input type="radio" name="reg-target" checked={target === 'new'} onChange={() => setTarget('new')} />
-                        {t('dermat_accounts.regs.newCustomer', 'A new customer')}
-                      </label>
-                      {matches.map((company) => (
-                        <label key={company.id} className="flex items-center gap-2 text-sm">
-                          <input type="radio" name="reg-target" checked={target === company.id} onChange={() => setTarget(company.id)} />
-                          {t('dermat_accounts.regs.addTo', 'Add to existing: {name}', { name: company.display_name ?? company.id })}
-                          {company.cf_gstin ? <span className="font-mono text-xs text-muted-foreground">{company.cf_gstin}</span> : null}
+                      <RadioGroup value={target} onValueChange={setTarget} aria-label={t('dermat_accounts.regs.setUp', 'Set up as')}>
+                        <label htmlFor="reg-target-new" className="flex items-center gap-2 text-sm">
+                          <Radio id="reg-target-new" value="new" />
+                          {t('dermat_accounts.regs.newCustomer', 'A new customer')}
                         </label>
-                      ))}
+                        {matches.map((company) => (
+                          <label key={company.id} htmlFor={`reg-target-${company.id}`} className="flex items-center gap-2 text-sm">
+                            <Radio id={`reg-target-${company.id}`} value={company.id} />
+                            {t('dermat_accounts.regs.addTo', 'Add to existing: {name}', { name: company.display_name ?? company.id })}
+                            {company.cf_gstin ? <span className="font-mono text-xs text-muted-foreground">{company.cf_gstin}</span> : null}
+                          </label>
+                        ))}
+                      </RadioGroup>
                     </fieldset>
                     <div className="space-y-1">
                       <Label htmlFor="reg-note" className="text-xs text-muted-foreground">{t('dermat_accounts.regs.note', 'Note (needed to reject)')}</Label>

@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { publicRateLimit } from '../../../lib/rateLimit'
 import { z } from 'zod'
 import type { EntityManager } from '@mikro-orm/postgresql'
 import type { OpenApiRouteDoc } from '@open-mercato/shared/lib/openapi'
@@ -27,6 +28,8 @@ function clientIp(req: Request): string | null {
 }
 
 async function GET(req: Request) {
+  const limited = publicRateLimit(req, 'artwork-approval')
+  if (limited) return limited
   const parsed = querySchema.safeParse(Object.fromEntries(new URL(req.url).searchParams))
   if (!parsed.success) return NextResponse.json({ error: 'This link is not valid' }, { status: 404 })
   const container = await createRequestContainer()
@@ -40,6 +43,8 @@ async function GET(req: Request) {
 }
 
 async function POST(req: Request) {
+  const limited = publicRateLimit(req, 'artwork-approval', 20)
+  if (limited) return limited
   const parsed = decisionSchema.safeParse(await req.json().catch(() => null))
   if (!parsed.success) return NextResponse.json({ error: parsed.error.issues[0]?.message ?? 'Please fill in the form' }, { status: 400 })
   const container = await createRequestContainer()

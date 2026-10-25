@@ -17,7 +17,7 @@ export type SheetStage = {
   responsibleName: string | null
   stepsDone: number
   stepsTotal: number
-  currentCard?: { key: string; label: string; owners: string[]; personName: string | null } | null
+  currentCard?: { key: string; label: string; owners: string[]; personName: string | null; waitingFor?: string | null } | null
   started: boolean
   reopen?: ReopenInfo
   fields: Record<string, string | number | null>

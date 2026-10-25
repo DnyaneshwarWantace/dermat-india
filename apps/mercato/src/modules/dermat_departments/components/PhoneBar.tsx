@@ -7,6 +7,7 @@ import { usePathname } from 'next/navigation'
 import { Bell, ClipboardList, ListTodo, Menu, Package, WifiOff } from 'lucide-react'
 import { useT } from '@open-mercato/shared/lib/i18n/context'
 import { cn } from '@open-mercato/shared/lib/utils'
+import { Button } from '@open-mercato/ui/primitives/button'
 
 export const PHONE_CSS = [
   '@media (max-width:767px){main.flex-1{padding-bottom:calc(4.5rem + env(safe-area-inset-bottom,0px))!important}}',
@@ -70,14 +71,14 @@ export function PhoneBar({ taskCount }: { taskCount: number | null }) {
           <Package className="h-5 w-5" aria-hidden="true" />
           <span className={label}>{t('dermat_departments.phone.stock', 'Stock')}</span>
         </Link>
-        <button type="button" className={item} onClick={() => clickHeaderButton((value) => /notification/i.test(value))}>
+        <Button type="button" variant="ghost" className={cn(item, 'h-auto rounded-none')} onClick={() => clickHeaderButton((value) => /notification/i.test(value))}>
           <Bell className="h-5 w-5" aria-hidden="true" />
           <span className={label}>{t('dermat_departments.phone.alerts', 'Alerts')}</span>
-        </button>
-        <button type="button" className={item} onClick={() => clickHeaderButton((value) => /menu/i.test(value))}>
+        </Button>
+        <Button type="button" variant="ghost" className={cn(item, 'h-auto rounded-none')} onClick={() => clickHeaderButton((value) => /menu/i.test(value))}>
           <Menu className="h-5 w-5" aria-hidden="true" />
           <span className={label}>{t('dermat_departments.phone.menu', 'Menu')}</span>
-        </button>
+        </Button>
       </nav>
     </>,
     document.body,

@@ -14,6 +14,7 @@ import { OWNER_NAMES, STAGES, isFinished, stageDef, stepStates } from '../../../
 import { paymentsFor, received } from '../../../../dermat_accounts/lib/service'
 import { withStageOverrides } from '../../../lib/stageSettings'
 import { cardPeople, openCards } from '../../../lib/tasks'
+import { storeBlocking } from '../../../../dermat_store/lib/service'
 
 export const metadata = {
   GET: { requireAuth: true, requireFeatures: ['dermat_orders.view'] },
@@ -103,6 +104,17 @@ async function GET(req: Request) {
     const pageLines = pageIds.flatMap((id) => linesOf.get(id) ?? [])
     const [customers, products] = await Promise.all([loadCustomers(ctx, orders.map((order) => order.customerId)), loadProducts(ctx, pageLines.map((line) => line.productId))])
 
+    const storeWaits = new Map<string, string>()
+    for (const id of pageIds) {
+      for (const stage of stagesOf.get(id) ?? []) {
+        if (!['manufacturing', 'filling', 'packing'].includes(stage.stageKey) || (stage.status !== 'open' && stage.status !== 'on_hold')) continue
+        const states = stepStates(stage.data)
+        const firstWork = stage.stageKey === 'packing' ? 'packed' : 'started'
+        if (states[firstWork]?.done) continue
+        const block = await storeBlocking(ctx, id, stage.stageKey)
+        if (block) storeWaits.set(`${id}:${stage.stageKey}`, block)
+      }
+    }
     const items = pageIds
       .map((id) => orders.find((order) => order.id === id))
       .filter((order): order is DermatOrder => Boolean(order))
@@ -164,7 +176,7 @@ async function GET(req: Request) {
                   currentCard: (() => {
                     if (!def || (view.status !== 'open' && view.status !== 'on_hold')) return null
                     const card = openCards(def, view.data)[0]
-                    return card ? { key: card.key, label: card.label, owners: card.owners.map((feature) => OWNER_NAMES[feature] ?? feature), personName: cardPeople(view.data)[card.key]?.name ?? null } : null
+                    return card ? { key: card.key, label: card.label, owners: card.owners.map((feature) => OWNER_NAMES[feature] ?? feature), personName: cardPeople(view.data)[card.key]?.name ?? null, waitingFor: storeWaits.get(`${order.id}:${view.key}`) ?? null } : null
                   })(),
                   fields: stageFields(view.key, view.data),
                 },

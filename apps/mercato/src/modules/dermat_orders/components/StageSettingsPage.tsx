@@ -27,12 +27,12 @@ type BaseStage = {
   dayLimit: number | null
   reopenHours: number
   steps: Array<{ key: string; label: string; optional?: boolean; locked: boolean; owners: string[] }>
-  fields: Array<{ key: string; label: string; type: string; required: boolean; shared: boolean; card: string }>
+  fields: Array<{ key: string; label: string; type: string; required: boolean; beforeDone?: boolean; shared: boolean; card: string }>
   documents: Array<{ key: string; label: string; required: 'always' | 'eway' | null; card: string }>
 }
 type ExtraStep = { key: string; label: string; after: string | null; optional?: boolean }
-type CardSettings = { owners?: Record<string, string[]>; people?: Record<string, { userId: string; name: string | null }>; fields?: Record<string, string>; documents?: Record<string, string>; labels?: Record<string, string>; extraSteps?: ExtraStep[]; parallel?: string[] }
-type Cards = { owners: Record<string, string[]>; people: Record<string, { userId: string; name: string | null }>; fields: Record<string, string>; documents: Record<string, string>; labels: Record<string, string>; extraSteps: ExtraStep[]; parallel: string[] }
+type CardSettings = { owners?: Record<string, string[]>; people?: Record<string, { userId: string; name: string | null }>; fields?: Record<string, string>; documents?: Record<string, string>; labels?: Record<string, string>; extraSteps?: ExtraStep[]; parallel?: string[]; optional?: string[] }
+type Cards = { owners: Record<string, string[]>; people: Record<string, { userId: string; name: string | null }>; fields: Record<string, string>; documents: Record<string, string>; labels: Record<string, string>; extraSteps: ExtraStep[]; parallel: string[]; optional: string[] }
 type CardStep = { key: string; label: string; optional?: boolean; locked: boolean; extra: boolean; defaultOwners: string[] }
 
 function cardSteps(stage: BaseStage, cards: Cards, hidden: string[], stageOwner: string[]): CardStep[] {
@@ -60,6 +60,7 @@ function cardsFor(stage: BaseStage, saved: CardSettings | null | undefined): Car
     labels: { ...(saved?.labels ?? {}) },
     extraSteps: [...(saved?.extraSteps ?? [])],
     parallel: [...(saved?.parallel ?? [])],
+    optional: [...(saved?.optional ?? [])],
   }
 }
 
@@ -77,6 +78,7 @@ function changedCards(stage: BaseStage, cards: Cards): CardSettings {
     labels: Object.fromEntries(Object.entries(cards.labels).filter(([key, value]) => value.trim() && value.trim() !== stage.steps.find((step) => step.key === key)?.label)),
     extraSteps: cards.extraSteps.map((step) => ({ ...step, label: step.label.trim() })),
     parallel: cards.parallel.filter((key) => cardsKnown(stage, cards).includes(key)),
+    optional: cards.optional.filter((key) => stage.fields.some((field) => field.key === key && field.beforeDone)),
   }
 }
 
@@ -363,13 +365,25 @@ export function StageSettingsPage() {
               <section className="rounded-lg border bg-card p-4">
                 <h2 className="mb-2 text-sm font-semibold">{t('dermat_orders.stageSettings.fields', 'Form fields')}</h2>
                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                  {stage.fields.map((field) => (
-                    <label key={field.key} htmlFor={`field-${field.key}`} className={cn('flex items-center gap-2 text-sm', field.required ? 'cursor-not-allowed text-muted-foreground' : 'cursor-pointer')}>
-                      <Checkbox id={`field-${field.key}`} checked={field.required || draft.requiredFields.includes(field.key)} disabled={field.required} onCheckedChange={(checked) => patch({ requiredFields: checked === true ? [...draft.requiredFields, field.key] : draft.requiredFields.filter((key) => key !== field.key) })} />
-                      <span className="flex-1">{field.label}</span>
-                      <span className="text-xs text-muted-foreground">{field.required ? t('dermat_orders.stageSettings.alwaysRequired', 'always required') : t('dermat_orders.stageSettings.required', 'required')}</span>
-                    </label>
-                  ))}
+                  {stage.fields.map((field) =>
+                    field.beforeDone && !field.required ? (
+                      <label key={field.key} htmlFor={`field-${field.key}`} className="flex cursor-pointer items-center gap-2 text-sm">
+                        <Checkbox
+                          id={`field-${field.key}`}
+                          checked={!draft.cards.optional.includes(field.key)}
+                          onCheckedChange={(checked) => patch({ cards: { ...draft.cards, optional: checked === true ? draft.cards.optional.filter((key) => key !== field.key) : [...draft.cards.optional, field.key] } })}
+                        />
+                        <span className="flex-1">{field.label}</span>
+                        <span className="text-xs text-muted-foreground">{t('dermat_orders.stageSettings.beforeDone', 'needed before its step is done')}</span>
+                      </label>
+                    ) : (
+                      <label key={field.key} htmlFor={`field-${field.key}`} className={cn('flex items-center gap-2 text-sm', field.required ? 'cursor-not-allowed text-muted-foreground' : 'cursor-pointer')}>
+                        <Checkbox id={`field-${field.key}`} checked={field.required || draft.requiredFields.includes(field.key)} disabled={field.required} onCheckedChange={(checked) => patch({ requiredFields: checked === true ? [...draft.requiredFields, field.key] : draft.requiredFields.filter((key) => key !== field.key) })} />
+                        <span className="flex-1">{field.label}</span>
+                        <span className="text-xs text-muted-foreground">{field.required ? t('dermat_orders.stageSettings.alwaysRequired', 'always required') : t('dermat_orders.stageSettings.required', 'required')}</span>
+                      </label>
+                    ),
+                  )}
                 </div>
                 <div className="mt-4 space-y-2 border-t pt-3">
                   <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{t('dermat_orders.stageSettings.shared', 'Shown to other departments')}</h3>

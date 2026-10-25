@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { withSupplierMask } from '../../../../dermat_products/lib/suppliers'
 import { z } from 'zod'
 import type { OpenApiRouteDoc } from '@open-mercato/shared/lib/openapi'
 import { hasFeatures, resolveOrderContext } from '../../../../dermat_orders/lib/server'
@@ -23,7 +24,7 @@ const rowSchema = z.object({
   files: z.number(),
 })
 
-async function GET(req: Request) {
+async function getUnmasked(req: Request) {
   const ctx = await resolveOrderContext(req)
   if ('error' in ctx) return NextResponse.json({ error: ctx.error }, { status: ctx.status })
   const parsed = querySchema.safeParse(Object.fromEntries(new URL(req.url).searchParams))
@@ -74,5 +75,7 @@ export const openApi: OpenApiRouteDoc = {
     },
   },
 }
+
+const GET = withSupplierMask(getUnmasked)
 
 export { GET }

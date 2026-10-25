@@ -7,6 +7,7 @@ export type StageField = {
   options?: string[]
   listKey?: string
   required?: boolean
+  beforeDone?: boolean
   placeholder?: string
   step?: string
 }
@@ -20,6 +21,7 @@ export type StageDef = {
   group: string
   hint: string
   after: string[]
+  afterSteps?: Array<{ stage: string; step: string }>
   canSkip?: boolean
   steps: StageStep[]
   fields: StageField[]
@@ -163,7 +165,7 @@ export const STAGES: StageDef[] = [
       { key: 'advance_received', label: 'Advance received in bank' },
     ],
     fields: [
-      { key: 'pi_number', label: 'Proforma invoice no.', type: 'text' },
+      { key: 'pi_number', label: 'Proforma invoice no.', type: 'text', beforeDone: true },
       { key: 'advance_percent', label: 'Advance %', type: 'number', placeholder: '40' },
       { key: 'advance_amount', label: 'Advance amount (₹)', type: 'number', required: true },
       { key: 'received_on', label: 'Received on (blank = today)', type: 'date' },
@@ -186,8 +188,8 @@ export const STAGES: StageDef[] = [
     ],
     fields: [
       { key: 'rd_number', label: 'R&D no.', type: 'text', required: true },
-      { key: 'sample_name', label: 'Sample name', type: 'text' },
-      { key: 'sample_sent_on', label: 'Sample sent on', type: 'date' },
+      { key: 'sample_name', label: 'Sample name', type: 'text', beforeDone: true },
+      { key: 'sample_sent_on', label: 'Sample sent on', type: 'date', beforeDone: true },
       { key: 'client_feedback', label: 'Client feedback', type: 'select', options: ['Approved', 'Changes needed', 'Waiting'], listKey: 'client_feedback', required: true },
       { key: 'remarks', label: 'Remarks', type: 'textarea' },
     ],
@@ -211,7 +213,7 @@ export const STAGES: StageDef[] = [
       { key: 'composition_text', label: 'Composition (ingredients, claims, directions, warnings)', type: 'textarea', placeholder: 'Type it here, or upload the Word file below' },
       { key: 'designer_status', label: 'Designer status', type: 'select', options: DESIGNER_STATUSES, listKey: 'designer_statuses', required: true },
       { key: 'status_note', label: 'Status note', type: 'text', placeholder: 'e.g. Artwork under process' },
-      { key: 'artwork_approved_on', label: 'Artwork approved on', type: 'date' },
+      { key: 'artwork_approved_on', label: 'Artwork approved on', type: 'date', beforeDone: true },
       { key: 'remarks', label: 'Remarks', type: 'textarea' },
     ],
   },
@@ -233,8 +235,9 @@ export const STAGES: StageDef[] = [
     label: 'Material planning',
     department: 'Planning',
     group: 'planning',
-    hint: 'Raw and packing material checked against stock; purchase raised for what is short; received material QC-approved. Runs in the formula arm, alongside artwork.',
+    hint: 'Raw and packing material checked against stock; purchase raised for what is short; received material QC-approved. Starts when the BOM is final and QA has finalised the artwork.',
     after: ['formulation'],
+    afterSteps: [{ stage: 'artwork', step: 'qa_final' }],
     steps: [
       { key: 'checked', label: 'Material checked against stock' },
       { key: 'reserved', label: 'Stock reserved for this order' },
@@ -243,8 +246,8 @@ export const STAGES: StageDef[] = [
     ],
     fields: [
       { key: 'material_status', label: 'Material status', type: 'select', options: ['All available', 'Purchase raised', 'Waiting for material'], listKey: 'material_status', required: true },
-      { key: 'planned_for', label: 'Manufacturing planned on', type: 'date' },
-      { key: 'planned_vessel', label: 'Planned vessel', type: 'text', listKey: 'vessels' },
+      { key: 'planned_for', label: 'Manufacturing planned on', type: 'date', beforeDone: true },
+      { key: 'planned_vessel', label: 'Planned vessel', type: 'text', listKey: 'vessels', beforeDone: true },
       { key: 'remarks', label: 'Remarks', type: 'textarea' },
     ],
   },
@@ -262,12 +265,12 @@ export const STAGES: StageDef[] = [
     fields: [
       { key: 'bulk_source', label: 'Bulk', type: 'select', options: ['Make a new batch', 'Use bulk already made'] },
       { key: 'batch_no', label: 'Batch no.', type: 'text', required: true },
-      { key: 'planned_kg', label: 'Planned (kg)', type: 'number' },
+      { key: 'planned_kg', label: 'Planned (kg)', type: 'number', beforeDone: true },
       { key: 'batch_size', label: 'Bulk made / taken (kg)', type: 'number', required: true },
       { key: 'mfg_date', label: 'Mfg. date', type: 'date', required: true },
-      { key: 'shift', label: 'Shift', type: 'select', options: ['A', 'B', 'C', 'General'], listKey: 'shifts' },
-      { key: 'machine', label: 'Vessel / machine', type: 'text', listKey: 'vessels' },
-      { key: 'operator', label: 'Operator', type: 'text', listKey: 'operators' },
+      { key: 'shift', label: 'Shift', type: 'select', options: ['A', 'B', 'C', 'General'], listKey: 'shifts', beforeDone: true },
+      { key: 'machine', label: 'Vessel / machine', type: 'text', listKey: 'vessels', beforeDone: true },
+      { key: 'operator', label: 'Operator', type: 'text', listKey: 'operators', beforeDone: true },
       { key: 'wastage_kg', label: 'Wastage (kg)', type: 'number' },
       { key: 'remarks', label: 'Remarks', type: 'textarea' },
     ],
@@ -289,10 +292,10 @@ export const STAGES: StageDef[] = [
       { key: 'rejected_units', label: 'Rejected units', type: 'number' },
       { key: 'count_type', label: 'How counted', type: 'select', options: ['Counted', 'Approximate (online line, no counter)'] },
       { key: 'handed_to_packing', label: 'Pieces handed to packing', type: 'number' },
-      { key: 'filling_date', label: 'Filling date', type: 'date' },
-      { key: 'shift', label: 'Shift', type: 'select', options: ['A', 'B', 'C', 'General'], listKey: 'shifts' },
-      { key: 'machine', label: 'Filling machine', type: 'text', listKey: 'filling_machines' },
-      { key: 'operator', label: 'Operator', type: 'text', listKey: 'operators' },
+      { key: 'filling_date', label: 'Filling date', type: 'date', beforeDone: true },
+      { key: 'shift', label: 'Shift', type: 'select', options: ['A', 'B', 'C', 'General'], listKey: 'shifts', beforeDone: true },
+      { key: 'machine', label: 'Filling machine', type: 'text', listKey: 'filling_machines', beforeDone: true },
+      { key: 'operator', label: 'Operator', type: 'text', listKey: 'operators', beforeDone: true },
       { key: 'remarks', label: 'Remarks', type: 'textarea' },
     ],
   },
@@ -311,10 +314,10 @@ export const STAGES: StageDef[] = [
     fields: [
       { key: 'packed_qty', label: 'Packed quantity (pcs)', type: 'number', required: true },
       { key: 'rejected_pcs', label: 'Rejected in packing (pcs)', type: 'number' },
-      { key: 'packed_on', label: 'Packed on', type: 'date' },
-      { key: 'pcs_per_shipper', label: 'Pieces per shipper', type: 'number' },
-      { key: 'shippers', label: 'Shipper boxes', type: 'number' },
-      { key: 'location', label: 'Kept at (factory location)', type: 'text', listKey: 'factory_locations' },
+      { key: 'packed_on', label: 'Packed on', type: 'date', beforeDone: true },
+      { key: 'pcs_per_shipper', label: 'Pieces per shipper', type: 'number', beforeDone: true },
+      { key: 'shippers', label: 'Shipper boxes', type: 'number', beforeDone: true },
+      { key: 'location', label: 'Kept at (factory location)', type: 'text', listKey: 'factory_locations', beforeDone: true },
       { key: 'remarks', label: 'Remarks', type: 'textarea' },
     ],
   },
@@ -336,9 +339,9 @@ export const STAGES: StageDef[] = [
     fields: [
       { key: 'qc_result', label: 'QA decision', type: 'select', options: ['Released', 'Rework', 'Rejected'], required: true },
       { key: 'released_on', label: 'Decision date', type: 'date', required: true },
-      { key: 'coa_no', label: 'COA no.', type: 'text', placeholder: 'e.g. COA/57001' },
-      { key: 'retention_qty', label: 'Retention sample (pcs)', type: 'number' },
-      { key: 'retention_location', label: 'Retention sample kept at', type: 'text', placeholder: 'e.g. QA retention cabinet R2' },
+      { key: 'coa_no', label: 'COA no.', type: 'text', placeholder: 'e.g. COA/57001', beforeDone: true },
+      { key: 'retention_qty', label: 'Retention sample (pcs)', type: 'number', beforeDone: true },
+      { key: 'retention_location', label: 'Retention sample kept at', type: 'text', placeholder: 'e.g. QA retention cabinet R2', beforeDone: true },
       { key: 'remarks', label: 'QA remarks', type: 'textarea' },
     ],
   },
@@ -373,13 +376,13 @@ export const STAGES: StageDef[] = [
     ],
     fields: [
       { key: 'dispatch_date', label: 'Dispatch date', type: 'date', required: true },
-      { key: 'transporter', label: 'Transporter', type: 'text', listKey: 'transporters' },
-      { key: 'lr_number', label: 'LR / docket no.', type: 'text' },
-      { key: 'vehicle_no', label: 'Vehicle no.', type: 'text', placeholder: 'MH 04 AB 1234' },
+      { key: 'transporter', label: 'Transporter', type: 'text', listKey: 'transporters', beforeDone: true },
+      { key: 'lr_number', label: 'LR / docket no.', type: 'text', beforeDone: true },
+      { key: 'vehicle_no', label: 'Vehicle no.', type: 'text', placeholder: 'MH 04 AB 1234', beforeDone: true },
       { key: 'eway_bill_no', label: 'E-way bill no.', type: 'text' },
       { key: 'eway_bill_date', label: 'E-way bill date', type: 'date' },
-      { key: 'packages', label: 'No. of boxes / shippers', type: 'number' },
-      { key: 'delivered_on', label: 'Delivered on', type: 'date' },
+      { key: 'packages', label: 'No. of boxes / shippers', type: 'number', beforeDone: true },
+      { key: 'delivered_on', label: 'Delivered on', type: 'date', beforeDone: true },
       { key: 'dispatch_override', label: 'Dispatch before full payment: reason', type: 'textarea', placeholder: 'Only if money is still due, e.g. owner approved, 30 days credit' },
       { key: 'remarks', label: 'Remarks', type: 'textarea' },
     ],
@@ -407,6 +410,7 @@ export type StageOverride = {
     labels?: Record<string, string>
     extraSteps?: Array<{ key: string; label: string; after: string | null; optional?: boolean }>
     parallel?: string[]
+    optional?: string[]
   } | null
 }
 
@@ -454,7 +458,7 @@ export function applyStageOverride(def: StageDef, override?: StageOverride | nul
     steps: withExtraSteps(def.steps, cards.extraSteps ?? [])
       .filter((step) => !hidden.has(step.key))
       .map((step) => ({ ...step, label: cards.labels?.[step.key]?.trim() || step.label, ...(cards.owners?.[step.key]?.length ? { owners: cards.owners[step.key] } : {}), ...(cards.parallel?.includes(step.key) ? { parallel: true } : {}) })),
-    fields: [...def.fields.map((field) => (required.has(field.key) && !field.required ? { ...field, required: true } : field)), ...extras].map((field) => (cards.fields?.[field.key] ? { ...field, step: cards.fields[field.key] } : field)),
+    fields: [...def.fields.map((field) => (required.has(field.key) && !field.required ? { ...field, required: true } : field)).map((field) => (field.beforeDone && cards.optional?.includes(field.key) ? { ...field, beforeDone: false } : field)), ...extras].map((field) => (cards.fields?.[field.key] ? { ...field, step: cards.fields[field.key] } : field)),
   }
 }
 
@@ -741,4 +745,8 @@ export function productionLimits(values: string[]): ProductionLimits {
     return fallback
   }
   return { yieldHigh: find(/yield above\s*(\d+(?:\.\d+)?)/i, 105), yieldLow: find(/yield below\s*(\d+(?:\.\d+)?)/i, 95), checkMinutes: find(/every\s*(\d+)\s*min/i, 15) }
+}
+
+export function waitsOn(def: StageDef): string[] {
+  return Array.from(new Set([...def.after, ...(def.afterSteps ?? []).map((entry) => entry.stage)]))
 }

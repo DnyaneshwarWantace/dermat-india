@@ -268,7 +268,7 @@ function CardBody({ stage, order, keys, fieldByKey, docs, active, renderInput }:
             <div key={field.key} className={cn('space-y-1.5', field.type === 'textarea' && 'sm:col-span-2')}>
               <Label className="text-xs text-muted-foreground">
                 {field.label}
-                {field.required ? ' *' : ''}
+                {field.required || field.beforeDone ? ' *' : ''}
               </Label>
               {renderInput(field)}
             </div>

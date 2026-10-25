@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { withFormulaMask } from '../../../dermat_products/lib/suppliers'
 import { resolveOrderContext } from '../../../dermat_orders/lib/server'
 import { syncFormulationSteps } from '../../../dermat_orders/lib/autoSteps'
 import { z } from 'zod'
@@ -41,7 +42,7 @@ type ListRow = {
   total_percent: string | null
 }
 
-async function GET(req: Request) {
+async function getUnmasked(req: Request) {
   const ctx = await resolveBomContext(req)
   if ('error' in ctx) return NextResponse.json({ error: ctx.error }, { status: ctx.status })
   const query = bomListQuerySchema.safeParse(Object.fromEntries(new URL(req.url).searchParams))
@@ -228,5 +229,7 @@ export const openApi: OpenApiRouteDoc = {
     },
   },
 }
+
+const GET = withFormulaMask(getUnmasked)
 
 export { GET, POST, PUT, DELETE }
