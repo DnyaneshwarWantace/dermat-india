@@ -1,5 +1,5 @@
 import { loadCustomers, hasFeatures, type OrderContext } from './server'
-import { MAIN_CARD, OWNER_NAMES, stageWorkFeatures, stepOwners, stepRequired, stepStates, type StageDef } from './stages'
+import { MAIN_CARD, OWNER_NAMES, completeOwners, stageWorkFeatures, stepOwners, stepRequired, stepStates, type StageDef } from './stages'
 import { effectiveStageDef, loadStageOverrides } from './stageSettings'
 
 const DAY_MS = 86400000
@@ -29,6 +29,7 @@ export function openCards(def: StageDef, data: Record<string, unknown> | null | 
     result.push({ key: step.key, label: step.label, owners: stepOwners(def.key, step) })
     sequentialGiven = true
   }
+  if (!result.length) result.push({ key: MAIN_CARD, label: `Complete ${def.label}`, owners: completeOwners(def, data) })
   return result
 }
 

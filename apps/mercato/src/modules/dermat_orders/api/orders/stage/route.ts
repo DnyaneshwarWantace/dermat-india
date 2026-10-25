@@ -9,7 +9,7 @@ import { currentUserName, findOrder, hasFeatures, resolveOrderContext } from '..
 import { notifyAssigned, notifyCardAssigned, notifyStagesOpened, notifyStagesPaused } from '../../../lib/notify'
 import { cardPeople } from '../../../lib/tasks'
 import { canSeeMoney } from '../../../lib/money'
-import { OWNER_NAMES, STOCK_STAGES, stageDef, stageWorkFeatures, stepOwners } from '../../../lib/stages'
+import { OWNER_NAMES, STOCK_STAGES, completeOwners, stageDef, stageWorkFeatures, stepOwners } from '../../../lib/stages'
 import { effectiveStageDef, loadStageOverrides } from '../../../lib/stageSettings'
 import { enforceOrderLock, orderErrorResponse, runGuarded } from '../../../lib/guard'
 import { STORE_STAGE_KEYS, consumeForStage, type StoreStage } from '../../../../dermat_store/lib/service'
@@ -36,6 +36,10 @@ async function POST(req: Request) {
     const cardOwners = card ? stepOwners(parsed.data.stageKey, card) : []
     let ownsCard = false
     for (const feature of cardOwners) if (!ownsCard && (await hasFeatures(ctx, [feature]))) ownsCard = true
+    if (parsed.data.action === 'complete' && effective && effective.steps.length) {
+      const current = await ctx.em.findOne(DermatOrderStage, { orderId: parsed.data.orderId, stageKey: parsed.data.stageKey, organizationId: ctx.organizationId, tenantId: ctx.tenantId })
+      for (const feature of completeOwners(effective, current?.data)) if (!ownsCard && (await hasFeatures(ctx, [feature]))) ownsCard = true
+    }
     if (parsed.data.action === 'filling_check' && !ownsCard && (await hasFeatures(ctx, ['dermat_orders.work.qa']))) ownsCard = true
     if (parsed.data.action === 'pm_status' && !ownsCard && effective?.steps.some((step) => step.key === 'pm_ordered')) {
       for (const feature of stepOwners(parsed.data.stageKey, { key: 'pm_ordered' })) if (!ownsCard && (await hasFeatures(ctx, [feature]))) ownsCard = true

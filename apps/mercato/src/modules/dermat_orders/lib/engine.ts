@@ -338,6 +338,8 @@ export async function applyStageAction(ctx: OrderContext, order: DermatOrder, in
     if (stage.status === 'on_hold') throw new OrderError(`${def.label} is on hold. Resume it first.`, 409)
     if (isFinished(stage.status)) throw new OrderError(`${def.label} is already finished`, 409)
     if (merge) mergeData()
+    const stepsLeft = missingSteps(def, stage.data)
+    if (stepsLeft.length) throw new OrderError(`Finish these steps first: ${stepsLeft.join(', ')}`, 400, { steps: stepsLeft })
     const missing = missingRequired(def, stage.data ?? {})
     if (missing.length) throw new OrderError(`Fill in: ${missing.join(', ')}`, 400, { missing })
     if (def.key === 'artwork') {
@@ -519,11 +521,8 @@ export async function applyStageAction(ctx: OrderContext, order: DermatOrder, in
       const states = { ...stepStates(stage.data), [step.key]: { done, at: done ? new Date().toISOString() : null, by: done ? byName : null } }
       stage.data = { ...(stage.data ?? {}), __steps: states }
       logEvent(ctx, order, done ? 'step_done' : 'step_undone', def.key, note ? `${step.label} · ${note}` : step.label, byName, done ? changed : [], step.key)
-      if (done && stage.status === 'open' && !missingSteps(def, stage.data).length) await completeStage(false)
-      else {
-        assignDefaultCard(def, stage, overrides)
-        if (done) await progressStages(ctx, order, stages, byName)
-      }
+      assignDefaultCard(def, stage, overrides)
+      if (done) await progressStages(ctx, order, stages, byName)
       break
     }
     case 'pm_status': {

@@ -8,7 +8,7 @@ import { cn } from '@open-mercato/shared/lib/utils'
 import { Button } from '@open-mercato/ui/primitives/button'
 import { Label } from '@open-mercato/ui/primitives/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@open-mercato/ui/primitives/select'
-import { MAIN_CARD, OWNER_NAMES, cardFieldKeys, documentCard, stageWorkFeatures, stepOwners, type StageDef, type StageField } from '../lib/stages'
+import { MAIN_CARD, OWNER_NAMES, cardFieldKeys, completeOwners, documentCard, stageWorkFeatures, stepOwners, type StageDef, type StageField } from '../lib/stages'
 import { useGranted } from '../../dermat_departments/components/useGranted'
 import { StageDocuments } from './StageDocuments'
 import { formatDate, formatDateTime, formatQty } from './format'
@@ -53,7 +53,7 @@ export function StepCards({ order, stage, def, editable, busy, fields, renderInp
   const ownersOf = (key: string) => (key === MAIN_CARD ? [] : stepOwners(def.key, def.steps.find((step) => step.key === key) ?? { key }))
   const canDo = (key: string) => {
     if (!editable) return false
-    if (key === MAIN_CARD) return stageWorkFeatures(def.key).some((feature) => granted.has(feature))
+    if (key === MAIN_CARD) return (def.steps.length ? completeOwners(def, stage.data) : stageWorkFeatures(def.key)).some((feature) => granted.has(feature))
     return ownersOf(key).some((feature) => granted.has(feature))
   }
   const ownerText = (key: string) => {
@@ -116,7 +116,6 @@ export function StepCards({ order, stage, def, editable, busy, fields, renderInp
           const mine = canDo(item.key)
           const hidden = levelOf(item.key) === 'none'
           const active = item.status === 'current' || (item.optional && item.status === 'pending' && working)
-          const isLast = index === items.length - 1 || items.slice(index + 1).every((next) => next.status === 'na' || next.optional || next.kind !== 'step')
           return (
             <Card
               key={item.key}
@@ -178,7 +177,7 @@ export function StepCards({ order, stage, def, editable, busy, fields, renderInp
                   ) : null}
                   <Button type="button" size="sm" className="h-11 flex-1 md:h-8 md:flex-none" disabled={busy} onClick={() => void onStep(item.key, true, payloadFor(keys))}>
                     <Check className="mr-1.5 h-4 w-4" aria-hidden="true" />
-                    {isLast ? t('dermat_orders.cards.doneLast', 'Done — finish {stage}', { stage: def.label }) : t('dermat_orders.cards.done', 'Done')}
+                    {t('dermat_orders.cards.done', 'Done')}
                   </Button>
                 </div>
               ) : null}
@@ -186,7 +185,53 @@ export function StepCards({ order, stage, def, editable, busy, fields, renderInp
           )
         })}
       </ol>
+      {onlyStep ? null : (
+        <CompleteCard
+          index={items.length + 1}
+          stage={stage}
+          def={def}
+          left={counted.filter((item) => item.status !== 'done').map((item) => item.label)}
+          canComplete={canDo(MAIN_CARD)}
+          busy={busy}
+          label={completeLabel}
+          onComplete={() => void onCompleteMain({})}
+        />
+      )}
     </div>
+  )
+}
+
+function CompleteCard({ index, stage, def, left, canComplete, busy, label, onComplete }: { index: number; stage: StepCardsProps['stage']; def: StageDef; left: string[]; canComplete: boolean; busy: boolean; label: string; onComplete: () => void }) {
+  const t = useT()
+  const finished = stage.status === 'done' || stage.status === 'skipped'
+  const working = stage.status === 'open'
+  const ready = working && left.length === 0
+  return (
+    <Card
+      index={index}
+      title={t('dermat_orders.cards.completeTitle', 'Complete {stage}', { stage: def.label })}
+      owner={def.department}
+      state={finished ? 'done' : ready ? 'current' : 'pending'}
+      stamp={finished ? [stage.completedByName, stage.completedAt ? formatDateTime(stage.completedAt) : null].filter(Boolean).join(' · ') : null}
+    >
+      {finished ? null : stage.status === 'on_hold' ? (
+        <p className="text-xs text-muted-foreground">{t('dermat_orders.cards.completeHold', 'This stage is on hold. Resume it to carry on.')}</p>
+      ) : !working ? (
+        <p className="text-xs text-muted-foreground">{t('dermat_orders.cards.completeWaiting', 'Opens after the stages before it are finished.')}</p>
+      ) : left.length ? (
+        <p className="text-xs text-muted-foreground">{t('dermat_orders.cards.completeLeft', 'Finish the steps above first: {steps}', { steps: left.join(', ') })}</p>
+      ) : canComplete ? (
+        <div className="sticky bottom-16 z-10 -mx-3 flex gap-2 border-t bg-card px-3 py-2 md:static md:mx-0 md:justify-end md:border-0 md:p-0">
+          <p className="hidden flex-1 self-center text-xs text-muted-foreground md:block">{t('dermat_orders.cards.completeReady', 'All steps are done. Check the details above, then complete the stage.')}</p>
+          <Button type="button" size="sm" className="h-11 flex-1 md:h-8 md:flex-none" disabled={busy} onClick={onComplete}>
+            <CheckCircle2 className="mr-1.5 h-4 w-4" aria-hidden="true" />
+            {label}
+          </Button>
+        </div>
+      ) : (
+        <p className="text-xs text-muted-foreground">{t('dermat_orders.cards.completeOther', 'All steps are done. {department} completes this stage.', { department: def.department })}</p>
+      )}
+    </Card>
   )
 }
 

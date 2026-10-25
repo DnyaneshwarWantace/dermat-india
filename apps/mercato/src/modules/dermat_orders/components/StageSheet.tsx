@@ -454,223 +454,225 @@ export function StageWorkArea({ order, stage, people, canWork: canWorkProp, busy
           </div>
         ) : null}
 
-        {stage.key === 'advance' ? (
-          <div className="space-y-2">
-            <Label className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <Wallet className="h-3.5 w-3.5" aria-hidden="true" />
-              {t('dermat_orders.sheet.advanceCheck', 'Check the advance')}
-            </Label>
-            {order.payments?.items.filter((payment) => !payment.voided).length ? (
-              <ul className="divide-y rounded-md border text-sm">
-                {order.payments.items
-                  .filter((payment) => !payment.voided)
-                  .map((payment) => (
-                    <li key={payment.id} className="flex items-center justify-between gap-2 px-3 py-2">
-                      <span className="min-w-0">
-                        <span className="block font-medium capitalize">{payment.kind}</span>
-                        <span className="block truncate text-xs text-muted-foreground">
-                          {formatDate(payment.paidOn)}
-                          {payment.reference ? ` · ${payment.reference}` : ''}
-                          {payment.byName ? ` · ${payment.byName}` : ''}
-                        </span>
-                      </span>
-                      <span className="shrink-0 font-semibold tabular-nums">{rupees(payment.amount)}</span>
-                    </li>
-                  ))}
-              </ul>
-            ) : (
-              <p className="rounded-md border border-dashed p-3 text-xs text-muted-foreground">
-                {t('dermat_orders.sheet.noAdvance', 'No payment recorded yet. Enter the advance below when it reaches the bank.')}
-              </p>
-            )}
-            <p className="text-xs text-muted-foreground">
-              {order.totals?.total
-                ? t('dermat_orders.sheet.advanceTotals', 'Order value {total} · received {received} · due {due}. Match the amount with the bank, correct it below if it differs, then verify.', {
-                    total: rupees(order.totals.total),
-                    received: rupees(order.payments?.received ?? 0),
-                    due: rupees(order.payments?.due ?? 0),
-                  })
-                : t('dermat_orders.sheet.advanceNoRates', 'No rates on this order yet, so the due amount is not known. Match the amount with the bank, then verify.')}
-            </p>
-          </div>
-        ) : null}
-
-        {stage.key === 'formulation' ? (
-          <div className="space-y-2">
-            <Label className="text-xs text-muted-foreground">{t('dermat_orders.sheet.boms', 'BOM of each product')}</Label>
-            <ul className="divide-y rounded-md border text-sm">
-              {order.lines.map((line) => (
-                <li key={line.id} className="flex items-center justify-between gap-2 px-3 py-2">
-                  <span className="min-w-0 truncate">{line.product?.title ?? '—'}</span>
-                  {line.bom && editable && !line.bom.orderId ? (
-                    <button type="button" className="shrink-0 text-xs text-primary hover:underline" onClick={() => onOrderCopy(line.productId)}>
-                      {t('dermat_orders.sheet.orderBom', 'Change for this order')}
-                    </button>
-                  ) : null}
-                  {line.bom?.orderId ? <span className="shrink-0 rounded-sm bg-status-info-bg px-1.5 py-0.5 text-xs text-status-info-text">{t('dermat_orders.sheet.orderBomTag', 'order BOM')}</span> : null}
-                  {line.bom ? (
-                    <Link href={`/backend/boms/${line.bom.id}`} className="shrink-0 hover:underline">
-                      <StatusBadge variant={line.bom.status === 'approved' ? 'success' : 'warning'}>
-                        {line.bom.status === 'approved'
-                          ? t('dermat_orders.sheet.bomOk', 'v{version} approved', { version: line.bom.version })
-                          : t('dermat_orders.sheet.bomDraft', 'v{version} draft', { version: line.bom.version })}
-                      </StatusBadge>
-                    </Link>
-                  ) : (
-                    <Link
-                      href={`/backend/boms/new?productId=${line.productId}`}
-                      className="inline-flex shrink-0 items-center gap-1 text-xs text-status-warning-text hover:underline"
-                    >
-                      <FileStack className="h-3.5 w-3.5" />
-                      {t('dermat_orders.sheet.makeBom', 'Make BOM')}
-                    </Link>
-                  )}
-                </li>
-              ))}
-            </ul>
-          </div>
-        ) : null}
-
-        {stage.key === 'planning' && shortCount !== null ? (
-          <p
-            className={
-              shortCount
-                ? 'rounded-md bg-status-warning-bg p-2 text-xs text-status-warning-text'
-                : 'rounded-md bg-status-success-bg p-2 text-xs text-status-success-text'
-            }
-          >
-            {shortCount
-              ? t('dermat_orders.sheet.short', '{count} materials are short for this order — see Materials below.', { count: shortCount })
-              : t('dermat_orders.sheet.allStock', 'All materials for this order are in stock.')}
-          </p>
-        ) : null}
-
-        {stage.key === 'planning' ? (
-          <div className="space-y-2">
-            <div className="flex items-center justify-between gap-2">
-              <Label className="text-xs text-muted-foreground">{t('dermat_orders.sheet.reserved', 'Stock reserved for this order')}</Label>
-              <Link href={`/backend/planning?orders=${order.id}`} className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline">
-                <Lock className="h-3.5 w-3.5" aria-hidden="true" />
-                {t('dermat_orders.sheet.openBoard', 'Plan and reserve')}
-              </Link>
-            </div>
-            {order.reservations?.length ? (
-              <ul className="divide-y rounded-md border text-sm">
-                {order.reservations.map((entry) => (
-                  <li key={entry.productId} className="flex items-center justify-between gap-2 px-3 py-2">
-                    <span className="min-w-0 truncate">{entry.title}</span>
-                    <span className="shrink-0 text-right text-xs tabular-nums">
-                      <span className="block font-medium">{formatQty(entry.quantity)} {entry.unit ?? ''}</span>
-                      <span className="text-muted-foreground">{t('dermat_orders.sheet.since', 'since {date}', { date: formatDate(entry.since) })}</span>
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="rounded-md border border-dashed p-3 text-xs text-muted-foreground">
-                {t('dermat_orders.sheet.noReservation', 'Nothing reserved yet. Open the planning board to reserve stock for this order; it stays held until the store issues it.')}
-              </p>
-            )}
-          </div>
-        ) : null}
-
-        {STORE_STAGES.includes(stage.key) && (stage.status !== 'waiting' || packingEarly) ? (
-          <div className="space-y-2">
-            <div className="flex items-center justify-between gap-2">
-              <Label className="text-xs text-muted-foreground">{t('dermat_orders.sheet.store', 'Material from the store')}</Label>
-              {editable || packingEarly ? (
-                <Link
-                  href={`/backend/store/requests/new?orderId=${order.id}&stageKey=${stage.key}`}
-                  className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
-                >
-                  <PackagePlus className="h-3.5 w-3.5" aria-hidden="true" />
-                  {t('dermat_orders.sheet.askStore', 'Ask the store')}
-                </Link>
-              ) : null}
-            </div>
-            {order.store?.[stage.key]?.length ? (
-              <ul className="divide-y rounded-md border text-sm">
-                {order.store[stage.key].map((request) => (
-                  <li key={request.id}>
-                    <Link href={`/backend/store/requests/${request.id}`} className="flex items-center justify-between gap-2 px-3 py-2 hover:bg-muted/40">
-                      <span className="min-w-0">
-                        <span className="block font-mono text-xs font-semibold">{request.code}</span>
-                        <span className="block text-xs text-muted-foreground">
-                          {request.store === 'rm' ? t('dermat_orders.sheet.rmStore', 'RM store') : t('dermat_orders.sheet.pmStore', 'PM store')} ·{' '}
-                          {t('dermat_orders.sheet.linesIssued', '{done}/{total} lines issued', { done: request.issuedLines, total: request.lineCount })}
-                        </span>
-                      </span>
-                      <StatusBadge variant={STORE_VARIANT[request.status]}>
-                        {request.awaitingReceipt && request.status !== 'requested' ? t('dermat_orders.sheet.storeAwaiting', 'Sent · confirm receipt') : STORE_LABEL[request.status]}
-                      </StatusBadge>
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="rounded-md border border-dashed p-3 text-xs text-muted-foreground">
-                {t('dermat_orders.sheet.storeEmpty', 'Nothing asked yet. This stage can be completed only after the material is received.')}
-              </p>
-            )}
-          </div>
-        ) : null}
-
-        {order.qc?.[stage.key]?.length ? (
-          <div className="space-y-2">
-            <Label className="text-xs text-muted-foreground">{t('dermat_orders.sheet.qc', 'Quality checks (must pass before this stage can be completed)')}</Label>
-            <ul className="divide-y rounded-md border text-sm">
-              {order.qc[stage.key].map((check) => (
-                <li key={check.id}>
-                  <Link href={`/backend/qc/checks/${check.id}`} className="flex items-center justify-between gap-2 px-3 py-2 hover:bg-muted/40">
-                    <span className="min-w-0 truncate">
-                      <span className="mr-1 font-mono text-xs text-muted-foreground">{check.arNo ?? check.code}{check.round > 1 ? ` · R${check.round}` : ''}</span>
-                      {check.productTitle}
-                    </span>
-                    <span className="flex shrink-0 items-center gap-1">
-                      {check.chemicalStatus !== 'na' ? (
-                        <StatusBadge variant={QC_PART_VARIANT[check.chemicalStatus]}>{t('dermat_orders.sheet.qcChemical', 'Chemical')}</StatusBadge>
-                      ) : null}
-                      {check.microStatus !== 'na' ? (
-                        <StatusBadge variant={QC_PART_VARIANT[check.microStatus]}>{t('dermat_orders.sheet.qcMicro', 'Micro')}</StatusBadge>
-                      ) : null}
-                    </span>
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </div>
-        ) : null}
-
-
-
-        {['manufacturing', 'filling', 'packing'].includes(stage.key) ? (
-          <ProductionRoundsPanel order={order} stage={stage} editable={editable} busy={busy} onRework={(action, text) => run({ action, note: text })} />
-        ) : null}
-
-
-        {stage.key === 'qc_qa' ? <QaReleaseReview order={order} /> : null}
-
-
-
-        {stage.key === 'dispatch' && stage.status === 'done' && (granted.has('dermat_orders.work.dispatch') || granted.has('dermat_orders.manage')) ? (
-          <DeliveredBox
-            deliveredOn={typeof stage.data?.delivered_on === 'string' ? stage.data.delivered_on : null}
-            busy={busy}
-            onMark={(date, receivedNote) => run({ action: 'delivered', data: { delivered_on: date }, note: receivedNote || undefined })}
-          />
-        ) : null}
         {!canWork && !ownsCard && granted.ready && canWorkProp && (stage.status === 'open' || stage.status === 'on_hold') ? (
           <p className="rounded-md border border-status-info-border bg-status-info-bg px-3 py-2 text-xs text-status-info-text">
             {t('dermat_orders.sheet.viewOnly', 'View only: {department} works on this stage. Your role can see it but not change it.', { department: def.department })}
           </p>
         ) : null}
-        {mode === 'form' ? <StageHistory events={order.events} stageKey={stage.key} /> : null}
         {mode === 'form' ? (
-          <div className="space-y-4">
+          <div className="space-y-5">
             {stepCards}
-            {stage.status !== 'waiting' ? (
-              <StageDocuments orderId={order.id} stageKey={stage.key} documents={[]} editable={editable} />
-            ) : null}
+            <div className="space-y-5 border-t pt-4">
+              {stage.key === 'advance' ? (
+                <div className="space-y-2">
+                  <Label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <Wallet className="h-3.5 w-3.5" aria-hidden="true" />
+                    {t('dermat_orders.sheet.advanceCheck', 'Check the advance')}
+                  </Label>
+                  {order.payments?.items.filter((payment) => !payment.voided).length ? (
+                    <ul className="divide-y rounded-md border text-sm">
+                      {order.payments.items
+                        .filter((payment) => !payment.voided)
+                        .map((payment) => (
+                          <li key={payment.id} className="flex items-center justify-between gap-2 px-3 py-2">
+                            <span className="min-w-0">
+                              <span className="block font-medium capitalize">{payment.kind}</span>
+                              <span className="block truncate text-xs text-muted-foreground">
+                                {formatDate(payment.paidOn)}
+                                {payment.reference ? ` · ${payment.reference}` : ''}
+                                {payment.byName ? ` · ${payment.byName}` : ''}
+                              </span>
+                            </span>
+                            <span className="shrink-0 font-semibold tabular-nums">{rupees(payment.amount)}</span>
+                          </li>
+                        ))}
+                    </ul>
+                  ) : (
+                    <p className="rounded-md border border-dashed p-3 text-xs text-muted-foreground">
+                      {t('dermat_orders.sheet.noAdvance', 'No payment recorded yet. Enter the advance below when it reaches the bank.')}
+                    </p>
+                  )}
+                  <p className="text-xs text-muted-foreground">
+                    {order.totals?.total
+                      ? t('dermat_orders.sheet.advanceTotals', 'Order value {total} · received {received} · due {due}. Match the amount with the bank, correct it below if it differs, then verify.', {
+                          total: rupees(order.totals.total),
+                          received: rupees(order.payments?.received ?? 0),
+                          due: rupees(order.payments?.due ?? 0),
+                        })
+                      : t('dermat_orders.sheet.advanceNoRates', 'No rates on this order yet, so the due amount is not known. Match the amount with the bank, then verify.')}
+                  </p>
+                </div>
+              ) : null}
+
+              {stage.key === 'formulation' ? (
+                <div className="space-y-2">
+                  <Label className="text-xs text-muted-foreground">{t('dermat_orders.sheet.boms', 'BOM of each product')}</Label>
+                  <ul className="divide-y rounded-md border text-sm">
+                    {order.lines.map((line) => (
+                      <li key={line.id} className="flex items-center justify-between gap-2 px-3 py-2">
+                        <span className="min-w-0 truncate">{line.product?.title ?? '—'}</span>
+                        {line.bom && editable && !line.bom.orderId ? (
+                          <button type="button" className="shrink-0 text-xs text-primary hover:underline" onClick={() => onOrderCopy(line.productId)}>
+                            {t('dermat_orders.sheet.orderBom', 'Change for this order')}
+                          </button>
+                        ) : null}
+                        {line.bom?.orderId ? <span className="shrink-0 rounded-sm bg-status-info-bg px-1.5 py-0.5 text-xs text-status-info-text">{t('dermat_orders.sheet.orderBomTag', 'order BOM')}</span> : null}
+                        {line.bom ? (
+                          <Link href={`/backend/boms/${line.bom.id}`} className="shrink-0 hover:underline">
+                            <StatusBadge variant={line.bom.status === 'approved' ? 'success' : 'warning'}>
+                              {line.bom.status === 'approved'
+                                ? t('dermat_orders.sheet.bomOk', 'v{version} approved', { version: line.bom.version })
+                                : t('dermat_orders.sheet.bomDraft', 'v{version} draft', { version: line.bom.version })}
+                            </StatusBadge>
+                          </Link>
+                        ) : (
+                          <Link
+                            href={`/backend/boms/new?productId=${line.productId}`}
+                            className="inline-flex shrink-0 items-center gap-1 text-xs text-status-warning-text hover:underline"
+                          >
+                            <FileStack className="h-3.5 w-3.5" />
+                            {t('dermat_orders.sheet.makeBom', 'Make BOM')}
+                          </Link>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+
+              {stage.key === 'planning' && shortCount !== null ? (
+                <p
+                  className={
+                    shortCount
+                      ? 'rounded-md bg-status-warning-bg p-2 text-xs text-status-warning-text'
+                      : 'rounded-md bg-status-success-bg p-2 text-xs text-status-success-text'
+                  }
+                >
+                  {shortCount
+                    ? t('dermat_orders.sheet.short', '{count} materials are short for this order — see Materials below.', { count: shortCount })
+                    : t('dermat_orders.sheet.allStock', 'All materials for this order are in stock.')}
+                </p>
+              ) : null}
+
+              {stage.key === 'planning' ? (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <Label className="text-xs text-muted-foreground">{t('dermat_orders.sheet.reserved', 'Stock reserved for this order')}</Label>
+                    <Link href={`/backend/planning?orders=${order.id}`} className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline">
+                      <Lock className="h-3.5 w-3.5" aria-hidden="true" />
+                      {t('dermat_orders.sheet.openBoard', 'Plan and reserve')}
+                    </Link>
+                  </div>
+                  {order.reservations?.length ? (
+                    <ul className="divide-y rounded-md border text-sm">
+                      {order.reservations.map((entry) => (
+                        <li key={entry.productId} className="flex items-center justify-between gap-2 px-3 py-2">
+                          <span className="min-w-0 truncate">{entry.title}</span>
+                          <span className="shrink-0 text-right text-xs tabular-nums">
+                            <span className="block font-medium">{formatQty(entry.quantity)} {entry.unit ?? ''}</span>
+                            <span className="text-muted-foreground">{t('dermat_orders.sheet.since', 'since {date}', { date: formatDate(entry.since) })}</span>
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="rounded-md border border-dashed p-3 text-xs text-muted-foreground">
+                      {t('dermat_orders.sheet.noReservation', 'Nothing reserved yet. Open the planning board to reserve stock for this order; it stays held until the store issues it.')}
+                    </p>
+                  )}
+                </div>
+              ) : null}
+
+              {STORE_STAGES.includes(stage.key) && (stage.status !== 'waiting' || packingEarly) ? (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <Label className="text-xs text-muted-foreground">{t('dermat_orders.sheet.store', 'Material from the store')}</Label>
+                    {editable || packingEarly ? (
+                      <Link
+                        href={`/backend/store/requests/new?orderId=${order.id}&stageKey=${stage.key}`}
+                        className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
+                      >
+                        <PackagePlus className="h-3.5 w-3.5" aria-hidden="true" />
+                        {t('dermat_orders.sheet.askStore', 'Ask the store')}
+                      </Link>
+                    ) : null}
+                  </div>
+                  {order.store?.[stage.key]?.length ? (
+                    <ul className="divide-y rounded-md border text-sm">
+                      {order.store[stage.key].map((request) => (
+                        <li key={request.id}>
+                          <Link href={`/backend/store/requests/${request.id}`} className="flex items-center justify-between gap-2 px-3 py-2 hover:bg-muted/40">
+                            <span className="min-w-0">
+                              <span className="block font-mono text-xs font-semibold">{request.code}</span>
+                              <span className="block text-xs text-muted-foreground">
+                                {request.store === 'rm' ? t('dermat_orders.sheet.rmStore', 'RM store') : t('dermat_orders.sheet.pmStore', 'PM store')} ·{' '}
+                                {t('dermat_orders.sheet.linesIssued', '{done}/{total} lines issued', { done: request.issuedLines, total: request.lineCount })}
+                              </span>
+                            </span>
+                            <StatusBadge variant={STORE_VARIANT[request.status]}>
+                              {request.awaitingReceipt && request.status !== 'requested' ? t('dermat_orders.sheet.storeAwaiting', 'Sent · confirm receipt') : STORE_LABEL[request.status]}
+                            </StatusBadge>
+                          </Link>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="rounded-md border border-dashed p-3 text-xs text-muted-foreground">
+                      {t('dermat_orders.sheet.storeEmpty', 'Nothing asked yet. This stage can be completed only after the material is received.')}
+                    </p>
+                  )}
+                </div>
+              ) : null}
+
+              {order.qc?.[stage.key]?.length ? (
+                <div className="space-y-2">
+                  <Label className="text-xs text-muted-foreground">{t('dermat_orders.sheet.qc', 'Quality checks (must pass before this stage can be completed)')}</Label>
+                  <ul className="divide-y rounded-md border text-sm">
+                    {order.qc[stage.key].map((check) => (
+                      <li key={check.id}>
+                        <Link href={`/backend/qc/checks/${check.id}`} className="flex items-center justify-between gap-2 px-3 py-2 hover:bg-muted/40">
+                          <span className="min-w-0 truncate">
+                            <span className="mr-1 font-mono text-xs text-muted-foreground">{check.arNo ?? check.code}{check.round > 1 ? ` · R${check.round}` : ''}</span>
+                            {check.productTitle}
+                          </span>
+                          <span className="flex shrink-0 items-center gap-1">
+                            {check.chemicalStatus !== 'na' ? (
+                              <StatusBadge variant={QC_PART_VARIANT[check.chemicalStatus]}>{t('dermat_orders.sheet.qcChemical', 'Chemical')}</StatusBadge>
+                            ) : null}
+                            {check.microStatus !== 'na' ? (
+                              <StatusBadge variant={QC_PART_VARIANT[check.microStatus]}>{t('dermat_orders.sheet.qcMicro', 'Micro')}</StatusBadge>
+                            ) : null}
+                          </span>
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+
+
+
+              {['manufacturing', 'filling', 'packing'].includes(stage.key) ? (
+                <ProductionRoundsPanel order={order} stage={stage} editable={editable} busy={busy} onRework={(action, text) => run({ action, note: text })} />
+              ) : null}
+
+
+              {stage.key === 'qc_qa' ? <QaReleaseReview order={order} /> : null}
+
+
+
+              {stage.key === 'dispatch' && stage.status === 'done' && (granted.has('dermat_orders.work.dispatch') || granted.has('dermat_orders.manage')) ? (
+                <DeliveredBox
+                  deliveredOn={typeof stage.data?.delivered_on === 'string' ? stage.data.delivered_on : null}
+                  busy={busy}
+                  onMark={(date, receivedNote) => run({ action: 'delivered', data: { delivered_on: date }, note: receivedNote || undefined })}
+                />
+              ) : null}
+              {stage.status !== 'waiting' ? (
+                <StageDocuments orderId={order.id} stageKey={stage.key} documents={[]} editable={editable} />
+              ) : null}
+              <StageHistory events={order.events} stageKey={stage.key} />
+            </div>
           </div>
         ) : (
           <div className="space-y-3 rounded-lg border p-3">

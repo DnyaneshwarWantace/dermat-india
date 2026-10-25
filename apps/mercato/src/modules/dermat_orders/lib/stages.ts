@@ -750,3 +750,8 @@ export function productionLimits(values: string[]): ProductionLimits {
 export function waitsOn(def: StageDef): string[] {
   return Array.from(new Set([...def.after, ...(def.afterSteps ?? []).map((entry) => entry.stage)]))
 }
+
+export function completeOwners(def: StageDef, data: Record<string, unknown> | null | undefined): string[] {
+  const last = [...def.steps].reverse().find((step) => !step.optional && stepRequired(def, step, data))
+  return Array.from(new Set([...stageWorkFeatures(def.key), ...(last ? stepOwners(def.key, last) : [])]))
+}
