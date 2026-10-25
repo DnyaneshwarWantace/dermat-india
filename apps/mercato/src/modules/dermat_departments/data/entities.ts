@@ -129,3 +129,43 @@ export class AccessLogEntry {
   @Property({ name: 'created_at', type: Date, onCreate: () => new Date() })
   createdAt: Date = new Date()
 }
+
+@Entity({ tableName: 'dermat_push_subscriptions' })
+@Unique({ name: 'dermat_push_subscriptions_endpoint_uq', properties: ['endpoint'] })
+@Index({ name: 'dermat_push_subscriptions_user_idx', properties: ['tenantId', 'userId'] })
+export class PushSubscriptionRecord {
+  [OptionalProps]?: 'userAgent' | 'lastSentAt' | 'createdAt' | 'updatedAt'
+
+  @PrimaryKey({ type: 'uuid', defaultRaw: 'gen_random_uuid()' })
+  id!: string
+
+  @Property({ name: 'organization_id', type: 'uuid' })
+  organizationId!: string
+
+  @Property({ name: 'tenant_id', type: 'uuid' })
+  tenantId!: string
+
+  @Property({ name: 'user_id', type: 'uuid' })
+  userId!: string
+
+  @Property({ type: 'text' })
+  endpoint!: string
+
+  @Property({ type: 'text' })
+  p256dh!: string
+
+  @Property({ type: 'text' })
+  auth!: string
+
+  @Property({ name: 'user_agent', type: 'text', nullable: true })
+  userAgent?: string | null
+
+  @Property({ name: 'last_sent_at', type: Date, nullable: true })
+  lastSentAt?: Date | null
+
+  @Property({ name: 'created_at', type: Date, onCreate: () => new Date() })
+  createdAt: Date = new Date()
+
+  @Property({ name: 'updated_at', type: Date, onCreate: () => new Date(), onUpdate: () => new Date() })
+  updatedAt: Date = new Date()
+}

@@ -7,6 +7,12 @@ export const notificationChannels: NotificationChannelDefinition[] = [
     descriptionKey: 'dermat_departments.whatsapp.channelHint',
     order: 40,
   },
+  {
+    id: 'phone',
+    labelKey: 'dermat_departments.push.channel',
+    descriptionKey: 'dermat_departments.push.channelHint',
+    order: 45,
+  },
 ]
 
 export default notificationChannels

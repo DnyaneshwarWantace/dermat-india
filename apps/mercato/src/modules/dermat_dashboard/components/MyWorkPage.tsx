@@ -15,6 +15,7 @@ import { ExportButton } from '../../dermat_products/components/ExportButton'
 import { downloadCsv } from '../../dermat_products/lib/csvExport'
 import { TaskSheet } from '../../dermat_orders/components/TaskSheet'
 import type { TaskItem } from '../../dermat_orders/lib/tasks'
+import { PhoneAlertsButton } from '../../dermat_departments/components/PhoneAlertsButton'
 
 type WorkItem = {
   orderId: string
@@ -169,6 +170,7 @@ export function MyWorkPage() {
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
+              <PhoneAlertsButton />
               <SegmentedControl value={scope} onValueChange={(value) => setScope(value as typeof scope)} aria-label={t('dermat_dashboard.my.scope', 'Whose work')}>
                 <SegmentedControlItem value="department">{t('dermat_dashboard.my.department', 'My department')}</SegmentedControlItem>
                 <SegmentedControlItem value="mine">{t('dermat_dashboard.my.mine', 'Assigned to me')}</SegmentedControlItem>
