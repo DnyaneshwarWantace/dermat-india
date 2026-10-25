@@ -8,6 +8,7 @@ import { useT } from '@open-mercato/shared/lib/i18n/context'
 import type { InjectionWidgetModule } from '@open-mercato/shared/modules/widgets/injection'
 import { SHEET_CSS, applySheetMode, readSheetMode, setSheetMode, useSheetMode } from '../../../components/sheetMode'
 import { PHONE_CSS, PhoneBar } from '../../../components/PhoneBar'
+import { OutboxSync } from '../../../../dermat_orders/components/OutboxSync'
 
 const ICON = '/api/dermat_departments/app/icon'
 
@@ -72,6 +73,7 @@ function AppChrome() {
   return (
     <span className="flex items-center gap-1.5">
       <PhoneBar taskCount={tasks?.count ?? null} />
+      <OutboxSync />
       {tasks ? (
         <Link
           href="/backend/my-work"

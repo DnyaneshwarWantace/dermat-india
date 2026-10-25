@@ -9,6 +9,7 @@ import { flash } from '@open-mercato/ui/backend/FlashMessages'
 import type { StageActionRequest } from './StageSheet'
 import { stageDef } from '../lib/stages'
 import type { Order, Stage } from './types'
+import { QUEUEABLE, addToOutbox, isOffline } from './outbox'
 
 export function useStageAction(contextId: string) {
   const t = useT()
@@ -17,6 +18,15 @@ export function useStageAction(contextId: string) {
 
   const run = React.useCallback(
     async (order: Order, stage: Stage, request: StageActionRequest): Promise<{ order: Order | null; conflict: boolean }> => {
+      const queue = () => {
+        if (!QUEUEABLE.includes(request.action)) return false
+        const step = stageDef(stage.key)?.steps.find((entry) => entry.key === request.stepKey)
+        const label = request.action === 'filling_check' ? t('dermat_orders.outbox.check', 'Filling check') : request.action === 'checklist' ? t('dermat_orders.outbox.checklist', 'QA checklist tick') : `${step?.label ?? stage.label}${request.action === 'step' ? (request.done === false ? ' (undo)' : ' — Done') : ' — Save'}`
+        if (!addToOutbox({ orderId: order.id, orderNo: order.orderNo, stageKey: stage.key, label, request })) return false
+        flash(t('dermat_orders.outbox.queued', 'No signal. "{label}" is kept on this phone and will be sent when the signal is back.', { label }), 'warning')
+        return true
+      }
+      if (isOffline() && queue()) return { order: null, conflict: false }
       setBusy(true)
       try {
         const body = { orderId: order.id, stageKey: stage.key, ...request }
@@ -68,6 +78,7 @@ export function useStageAction(contextId: string) {
         }
         return { order: next, conflict: false }
       } catch {
+        if (queue()) return { order: null, conflict: false }
         flash(t('dermat_orders.errors.stage', 'Could not update the stage.'), 'error')
         return { order: null, conflict: false }
       } finally {

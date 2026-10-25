@@ -44,6 +44,14 @@ export const orderInputSchema = z.object({
   lines: z.array(orderLineInputSchema).min(1).max(50),
 })
 
+export const quickRepeatSchema = z.object({
+  repeatFrom: z.string().uuid(),
+  deliveryDate: isoDate.optional().nullable(),
+  customerPoRef: optionalText(120),
+  lines: z.array(z.object({ lineId: z.string().uuid(), quantity: z.coerce.number().min(0).max(100_000_000) })).min(1).max(50),
+  advanceReceived: z.object({ amount: z.coerce.number().positive().max(100_000_000), receivedOn: isoDate.optional().nullable(), reference: optionalText(120) }).optional().nullable(),
+})
+
 export const orderUpdateSchema = orderInputSchema.extend({ id: z.string().uuid(), revisionNote: optionalText(500) })
 
 export const stageActionSchema = z.object({

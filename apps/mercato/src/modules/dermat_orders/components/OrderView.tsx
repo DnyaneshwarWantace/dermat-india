@@ -31,6 +31,7 @@ import { subStageProgress } from './subStages'
 import { useStageAction } from './useStageAction'
 import { useOrderMaterials } from './useOrderMaterials'
 import { OrderMoneyCard } from './OrderMoneyCard'
+import { QuickRepeatDialog } from './QuickRepeatDialog'
 import { AttentionList, DocumentsOverview, orderAttention, type OrderTab } from './OrderPanels'
 import type { Order, Stage } from './types'
 import { ExportButton } from '../../dermat_products/components/ExportButton'
@@ -343,6 +344,7 @@ export function OrderView({ orderId }: { orderId: string }) {
                 </Link>
               </Button>
               ) : null}
+              {granted.has('dermat_orders.manage') && order.status !== 'cancelled' ? <QuickRepeatDialog order={order} /> : null}
               {order.status !== 'cancelled' && order.status !== 'completed' && granted.has('dermat_orders.manage') ? (
                 <>
                   <Button type="button" variant="destructive-ghost" size="sm" onClick={() => setCancelOpen(true)}>

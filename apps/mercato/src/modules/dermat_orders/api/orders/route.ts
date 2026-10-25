@@ -4,7 +4,7 @@ import { z } from 'zod'
 import type { EntityManager } from '@mikro-orm/postgresql'
 import type { OpenApiRouteDoc } from '@open-mercato/shared/lib/openapi'
 import { DermatOrder, DermatOrderLine, DermatOrderStage } from '../../data/entities'
-import { orderInputSchema, orderListQuerySchema, orderUpdateSchema, type OrderInput } from '../../data/validators'
+import { orderInputSchema, orderListQuerySchema, orderUpdateSchema, quickRepeatSchema, type OrderInput } from '../../data/validators'
 import { createStages, logEvent, progressStages, serializeOrder, stageViews } from '../../lib/engine'
 import { recordAdvanceFromStage } from '../../../dermat_accounts/lib/service'
 import { linkPiToOrder } from '../../../dermat_accounts/lib/documents'
@@ -248,10 +248,65 @@ async function GET(req: Request) {
   })
 }
 
+async function repeatInput(ctx: Exclude<Awaited<ReturnType<typeof resolveOrderContext>>, { error: string }>, quick: z.infer<typeof quickRepeatSchema>) {
+  const source = await findOrder(ctx, quick.repeatFrom)
+  const sourceLines = await ctx.em.find(DermatOrderLine, { orderId: source.id }, { orderBy: { position: 'asc' } })
+  const wanted = new Map(quick.lines.map((line) => [line.lineId, line.quantity]))
+  const lines = sourceLines
+    .filter((line) => (wanted.get(line.id) ?? 0) > 0)
+    .map((line) => ({
+      productId: line.productId,
+      brandName: line.brandName ?? null,
+      packSize: line.packSize ?? null,
+      mrp: line.mrp == null ? null : Number(line.mrp),
+      quantity: wanted.get(line.id) ?? 0,
+      rate: line.rate == null ? null : Number(line.rate),
+      gstPercent: Number(line.gstPercent ?? 18),
+      discountPercent: Number(line.discountPercent ?? 0),
+      sampleNeeded: false,
+      sameAsProductId: line.sameAsProductId ?? null,
+      rdNumber: line.rdNumber ?? null,
+      specs: (line.specs ?? undefined) as OrderInput['lines'][number]['specs'],
+    }))
+  if (!lines.length) throw new OrderError('Enter a quantity for at least one product', 400)
+  return {
+    orderDate: new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }),
+    deliveryDate: quick.deliveryDate ?? null,
+    customerId: source.customerId,
+    customerPoRef: quick.customerPoRef ?? null,
+    orderType: 'repeat',
+    sourceOrderId: source.id,
+    salesManager: source.salesManager ?? null,
+    coordinator: source.coordinator ?? null,
+    advanceReceived: quick.advanceReceived ?? null,
+    paymentTerms: source.paymentTerms ?? null,
+    paymentRemarks: source.paymentRemarks ?? null,
+    productRemarks: source.productRemarks ?? null,
+    billingRemarks: source.billingRemarks ?? null,
+    packingRemarks: source.packingRemarks ?? null,
+    pricesIncludeGst: Boolean(source.pricesIncludeGst),
+    priority: source.priority ?? 'normal',
+    billingAddress: source.billingAddress ?? null,
+    shippingAddress: source.shippingAddress ?? null,
+    lines,
+  }
+}
+
 async function POST(req: Request) {
   const ctx = await resolveOrderContext(req)
   if ('error' in ctx) return NextResponse.json({ error: ctx.error }, { status: ctx.status })
-  const parsed = orderInputSchema.safeParse(await req.json().catch(() => null))
+  const raw = (await req.json().catch(() => null)) as Record<string, unknown> | null
+  let body: unknown = raw
+  if (raw && typeof raw === 'object' && 'repeatFrom' in raw) {
+    const quick = quickRepeatSchema.safeParse(raw)
+    if (!quick.success) return NextResponse.json({ error: 'Check the quantities', details: quick.error.flatten() }, { status: 400 })
+    try {
+      body = await repeatInput(ctx, quick.data)
+    } catch (error) {
+      return orderErrorResponse(error)
+    }
+  }
+  const parsed = orderInputSchema.safeParse(body)
   if (!parsed.success) return NextResponse.json({ error: 'Invalid order', details: parsed.error.flatten() }, { status: 400 })
   const input = parsed.data
   try {
