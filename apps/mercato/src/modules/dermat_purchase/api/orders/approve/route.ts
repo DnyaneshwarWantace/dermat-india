@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import type { OpenApiRouteDoc } from '@open-mercato/shared/lib/openapi'
 import { enforceCommandOptimisticLock } from '@open-mercato/shared/lib/crud/optimistic-lock-command'
-import { resolveOrderContext } from '../../../../dermat_orders/lib/server'
+import { hasFeatures, resolveOrderContext } from '../../../../dermat_orders/lib/server'
 import { poActionSchema } from '../../../data/validators'
 import { approvePo, findPo, poView } from '../../../lib/service'
 import { purchaseErrorResponse, runGuarded } from '../../../lib/server'
@@ -20,7 +20,7 @@ async function POST(req: Request) {
     const po = await findPo(ctx, parsed.data.id)
     enforceCommandOptimisticLock({ resourceKind: 'dermat_purchase.order', resourceId: po.id, current: po.updatedAt, request: req })
     return await runGuarded(ctx, req, { resourceKind: 'dermat_purchase.order', resourceId: po.id, operation: 'custom', payload: parsed.data }, async () => {
-      await approvePo(ctx, po, parsed.data.note ?? null)
+      await approvePo(ctx, po, parsed.data.note ?? null, await hasFeatures(ctx, ['dermat_purchase.approve_own']))
       return NextResponse.json(await poView(ctx, po))
     })
   } catch (error) {

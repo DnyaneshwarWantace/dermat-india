@@ -61,10 +61,13 @@ export async function createIndent(ctx: OrderContext, input: IndentInput): Promi
   return indent
 }
 
-export async function actOnIndent(ctx: OrderContext, indent: PurchaseIndent, action: 'approve' | 'reject' | 'cancel', note: string | null) {
+export async function actOnIndent(ctx: OrderContext, indent: PurchaseIndent, action: 'approve' | 'reject' | 'cancel', note: string | null, approveOwn = false) {
   const byName = await currentUserName(ctx)
   if (action === 'approve') {
     if (indent.status !== 'submitted') throw new PurchaseError('Only a submitted indent can be approved', 409)
+    if (!approveOwn && indent.requestedByName && byName && indent.requestedByName.trim().toLowerCase() === byName.trim().toLowerCase()) {
+      throw new PurchaseError('You raised this indent, so someone else must approve it. An admin can give you the "Approve purchase orders they raised themselves" right.', 403)
+    }
     indent.status = 'approved'
     indent.approvedByName = byName
     indent.approvedAt = new Date()

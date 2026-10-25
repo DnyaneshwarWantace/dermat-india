@@ -18,6 +18,7 @@ import { canSeeMoney, isMoneyEvent, isMoneyStageField, withoutMoneyFields } from
 import { documentCounts, documentStatus, missingDocuments } from './stageDocuments'
 import { packingCodeIssues, packingCodeMessage, packingSets } from './packingCodes'
 import { cardPeople, openCards } from './tasks'
+import { weightLimits, type FillingCheck } from './bpr'
 
 function pricedLine(line: DermatOrderLine) {
   return { quantity: Number(line.quantity), rate: line.rate == null ? null : Number(line.rate), gstPercent: Number(line.gstPercent ?? 18), discountPercent: Number(line.discountPercent ?? 0) }
@@ -544,22 +545,39 @@ export async function applyStageAction(ctx: OrderContext, order: DermatOrder, in
       const states = stepStates(stage.data)
       if (!states.started?.done) throw new OrderError('Start filling first', 409)
       if (states.filled?.done) throw new OrderError('Filling is already finished', 409)
-      const weightOk = input.data?.weight_ok === 'ok'
-      const leakOk = input.data?.leak_ok === 'ok'
-      if (!['ok', 'not_ok'].includes(String(input.data?.weight_ok)) || !['ok', 'not_ok'].includes(String(input.data?.leak_ok))) throw new OrderError('Tick the weight and the leak test')
-      if ((!weightOk || !leakOk) && !note) throw new OrderError('Write what was wrong and what was done')
-      const grams = input.data?.weight_g === null || input.data?.weight_g === undefined || input.data?.weight_g === '' ? null : Number(input.data.weight_g)
+      const reading = (value: unknown, label: string, max: number): number | null => {
+        if (value === null || value === undefined || value === '') return null
+        const parsed = Number(value)
+        if (!Number.isFinite(parsed) || parsed < 0 || parsed > max) throw new OrderError(`${label}: enter a number from 0 to ${max}`)
+        return parsed
+      }
+      const okOf = (value: unknown, label: string): boolean => {
+        if (!['ok', 'not_ok'].includes(String(value))) throw new OrderError(`Tick ${label}`)
+        return value === 'ok'
+      }
+      const raw = [input.data?.w1, input.data?.w2, input.data?.w3, input.data?.w4, input.data?.weight_g]
+      const weights = raw.slice(0, 4).map((value, index) => reading(value, `Weight ${index + 1}`, 100000)).filter((value): value is number => value !== null)
+      const limits = weightLimits(stage.data)
+      const avg = weights.length ? Math.round((weights.reduce((sum, value) => sum + value, 0) / weights.length) * 100) / 100 : null
+      const weightOk = limits && weights.length ? weights.every((value) => value >= limits.min && value <= limits.max) : okOf(input.data?.weight_ok, 'the weight')
+      const bottleOk = input.data?.bottle_ok === undefined ? true : okOf(input.data?.bottle_ok, 'the bottle / tube quality')
+      const capOk = input.data?.cap_ok === undefined ? true : okOf(input.data?.cap_ok, 'the capping / crimping')
+      const leakOk = input.data?.leak_ok === undefined ? undefined : okOf(input.data?.leak_ok, 'the leak test')
+      const allOk = weightOk && bottleOk && capOk && leakOk !== false
+      if (!allOk && !note) throw new OrderError('Write what was wrong and what was done')
+      const check: FillingCheck = { at: new Date().toISOString(), by: byName, weights, avg, temp: reading(input.data?.temp, 'Area temperature', 80), rh: reading(input.data?.rh, 'Humidity', 100), weightOk, bottleOk, capOk, ...(leakOk === undefined ? {} : { leakOk }), weightG: avg, note }
       const checks = Array.isArray(stage.data?.__checks) ? (stage.data?.__checks as unknown[]) : []
-      stage.data = { ...(stage.data ?? {}), __checks: [...checks, { at: new Date().toISOString(), by: byName, weightOk, leakOk, weightG: Number.isFinite(grams) ? grams : null, note }] }
-      logEvent(ctx, order, 'filling_check', def.key, `Weight ${weightOk ? 'OK' : 'NOT OK'}${Number.isFinite(grams) && grams !== null ? ` (${grams} g)` : ''} · leak ${leakOk ? 'OK' : 'NOT OK'}${note ? ` · ${note}` : ''}`, byName)
-      if (!weightOk || !leakOk) {
+      stage.data = { ...(stage.data ?? {}), __checks: [...checks, check] }
+      const summary = [`Weight ${weightOk ? 'OK' : 'NOT OK'}${avg !== null ? ` (avg ${avg} g)` : ''}`, `bottle ${bottleOk ? 'OK' : 'NOT OK'}`, `capping ${capOk ? 'OK' : 'NOT OK'}`, ...(leakOk === undefined ? [] : [`leak ${leakOk ? 'OK' : 'NOT OK'}`])].join(' · ')
+      logEvent(ctx, order, 'filling_check', def.key, `${summary}${note ? ` · ${note}` : ''}`, byName)
+      if (!allOk) {
         try {
           await resolveNotificationService(ctx.container as unknown as { resolve: (name: string) => unknown }).createForFeature(
             {
               type: 'dermat_orders.stage.paused',
               requiredFeature: 'dermat_orders.work.qa',
               title: `${order.orderNo}: filling check NOT OK`,
-              body: `Weight ${weightOk ? 'OK' : 'NOT OK'} · leak ${leakOk ? 'OK' : 'NOT OK'}${note ? ` · ${note}` : ''} · ${byName ?? ''}`,
+              body: `${summary}${note ? ` · ${note}` : ''} · ${byName ?? ''}`,
               severity: 'warning',
               sourceModule: 'dermat_orders',
               sourceEntityType: 'dermat_orders:order',

@@ -22,7 +22,7 @@ async function POST(req: Request) {
     const indent = await findIndent(ctx, parsed.data.id)
     enforceCommandOptimisticLock({ resourceKind: 'dermat_purchase.indent', resourceId: indent.id, current: indent.updatedAt, request: req })
     const result = await runGuarded(ctx, req, { resourceKind: 'dermat_purchase.indent', resourceId: indent.id, operation: 'update', payload: parsed.data as Record<string, unknown> }, async () => {
-      await actOnIndent(ctx, indent, parsed.data.action, parsed.data.note ?? null)
+      await actOnIndent(ctx, indent, parsed.data.action, parsed.data.note ?? null, parsed.data.action === 'approve' && (await hasFeatures(ctx, ['dermat_purchase.approve_own'])))
       return (await indentViews(ctx, [indent]))[0]
     })
     if (result instanceof Response) return result

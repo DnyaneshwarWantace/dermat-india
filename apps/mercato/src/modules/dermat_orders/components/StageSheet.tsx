@@ -334,6 +334,15 @@ export function StageWorkArea({ order, stage, people, canWork: canWorkProp, busy
               ),
             }
           : {}),
+        ...(['filling', 'packing', 'qc_qa'].includes(stage.key) && order.lines.find((line) => line.batchNo)?.batchNo
+          ? {
+              [stage.key === 'filling' ? 'started' : stage.key === 'packing' ? 'sample' : 'documents']: (
+                <Link href={`/backend/production/batches/${encodeURIComponent(order.lines.find((line) => line.batchNo)?.batchNo ?? '')}#batch-bpr`} className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline">
+                  {t('dermat_orders.bpr.open', 'Batch packing record (cleaning, leak test, QA verify) →')}
+                </Link>
+              ),
+            }
+          : {}),
         ...(stage.key === 'dispatch' ? { dispatched: <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border p-3 text-sm"><span>{t('dermat_orders.dispatch.sendHint', 'Send the dispatch details and the bilty to the client.')}</span><SendDocButton kind="dispatch" recordId={order.id} label={t('dermat_orders.dispatch.send', 'Send to client')} /></div> } : {}),
         ...(stage.key === 'sampling' ? { client_ok: <SampleRoundsPanel orderId={order.id} stage={stage} editable={editable} busy={busy} onNewRound={(text) => run({ action: 'new_round', note: text })} /> } : {}),
         ...(stage.key === 'manufacturing' || stage.key === 'filling'

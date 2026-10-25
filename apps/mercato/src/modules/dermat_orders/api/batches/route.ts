@@ -4,6 +4,9 @@ import type { OpenApiRouteDoc } from '@open-mercato/shared/lib/openapi'
 import { resolveOrderContext } from '../../lib/server'
 import { orderErrorResponse } from '../../lib/guard'
 import { batchFile, batchRegister } from '../../lib/batches'
+import { resolveOrderAccess } from '../../lib/visibility'
+import { canSeeMoney } from '../../lib/money'
+import { loadStageOverrides } from '../../lib/stageSettings'
 
 export const metadata = {
   GET: { requireAuth: true, requireFeatures: ['dermat_orders.view'] },
@@ -21,7 +24,7 @@ async function GET(req: Request) {
   const parsed = querySchema.safeParse(Object.fromEntries(new URL(req.url).searchParams))
   if (!parsed.success) return NextResponse.json({ error: 'Invalid query' }, { status: 400 })
   try {
-    if (parsed.data.no) return NextResponse.json(await batchFile(ctx, parsed.data.no))
+    if (parsed.data.no) return NextResponse.json(await batchFile(ctx, parsed.data.no, { access: await resolveOrderAccess(ctx), overrides: await loadStageOverrides(ctx), money: await canSeeMoney(ctx) }))
     return NextResponse.json(await batchRegister(ctx, { q: parsed.data.q, status: parsed.data.status }))
   } catch (error) {
     return orderErrorResponse(error)

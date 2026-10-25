@@ -159,9 +159,12 @@ export async function submitPo(ctx: OrderContext, po: PurchaseOrder) {
   await notifyApprovers(ctx, { type: 'dermat_purchase.po.submitted', title: `PO ${po.code} needs approval`, body: `${po.vendorName}${byName ? ` · raised by ${byName}` : ''}`, href: `/backend/purchase/orders/${po.id}`, sourceId: po.id })
 }
 
-export async function approvePo(ctx: OrderContext, po: PurchaseOrder, note: string | null) {
+export async function approvePo(ctx: OrderContext, po: PurchaseOrder, note: string | null, approveOwn: boolean) {
   if (po.status !== 'pending_approval') throw new PurchaseError('This PO is not waiting for approval', 409)
   const byName = await currentUserName(ctx)
+  if (!approveOwn && po.createdByName && byName && po.createdByName.trim().toLowerCase() === byName.trim().toLowerCase()) {
+    throw new PurchaseError('You raised this PO, so someone else must approve it. An admin can give you the "Approve purchase orders they raised themselves" right.', 403)
+  }
   po.status = 'approved'
   po.approvedByName = byName
   po.approvedAt = new Date()
