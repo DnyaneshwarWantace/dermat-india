@@ -8,6 +8,7 @@ import { enforceOrderLock, orderErrorResponse, runGuarded } from '../../../lib/g
 import { OrderError, currentUserName, findOrder, resolveOrderContext } from '../../../lib/server'
 import { LINE_SPEC_SECTIONS } from '../../../lib/specs'
 import { isFinished } from '../../../lib/stages'
+import { canSeeMoney } from '../../../lib/money'
 
 export const metadata = {
   POST: { requireAuth: true, requireFeatures: ['dermat_orders.manage'] },
@@ -59,6 +60,9 @@ async function POST(req: Request) {
   if (!parsed.success) return NextResponse.json({ error: 'Invalid cell', details: parsed.error.flatten() }, { status: 400 })
   const input = parsed.data
   try {
+    if (input.target === 'line' && ['rate', 'gstPercent', 'discountPercent'].includes(input.field) && !(await canSeeMoney(ctx))) {
+      return NextResponse.json({ error: 'Only people who can see prices can change them' }, { status: 403 })
+    }
     const order = await findOrder(ctx, input.orderId)
     if (order.status === 'cancelled' || order.status === 'completed') throw new OrderError('This order is closed and can no longer be changed', 409)
     enforceOrderLock(order, req)

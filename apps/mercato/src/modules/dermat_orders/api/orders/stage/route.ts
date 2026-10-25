@@ -9,7 +9,7 @@ import { currentUserName, findOrder, hasFeatures, resolveOrderContext } from '..
 import { notifyAssigned, notifyCardAssigned, notifyStagesOpened, notifyStagesPaused } from '../../../lib/notify'
 import { cardPeople } from '../../../lib/tasks'
 import { canSeeMoney } from '../../../lib/money'
-import { OWNER_NAMES, STOCK_STAGES, completeOwners, stageDef, stageWorkFeatures, stepOwners } from '../../../lib/stages'
+import { OWNER_NAMES, STOCK_STAGES, completeOwners, fieldCard, stageDef, stageWorkFeatures, stepOwners } from '../../../lib/stages'
 import { effectiveStageDef, loadStageOverrides } from '../../../lib/stageSettings'
 import { enforceOrderLock, orderErrorResponse, runGuarded } from '../../../lib/guard'
 import { STORE_STAGE_KEYS, consumeForStage, type StoreStage } from '../../../../dermat_store/lib/service'
@@ -30,6 +30,12 @@ async function POST(req: Request) {
     if (!parsed.success) return NextResponse.json({ error: 'Invalid stage action', details: parsed.error.flatten() }, { status: 400 })
     const money = await canSeeMoney(ctx)
     const reopenAnyTime = parsed.data.action === 'revert' && (await hasFeatures(ctx, ['dermat_orders.reopen']))
+    const effectiveForSave = parsed.data.action === 'save' && !parsed.data.stepKey && parsed.data.data && Object.keys(parsed.data.data).length ? effectiveStageDef(parsed.data.stageKey, await loadStageOverrides(ctx)) : null
+    if (effectiveForSave?.steps.length) {
+      const owners = new Set(Object.keys(parsed.data.data ?? {}).map((key) => fieldCard(effectiveForSave, key)))
+      if (owners.size !== 1) return NextResponse.json({ error: 'Save the details of one step at a time' }, { status: 400 })
+      parsed.data.stepKey = Array.from(owners)[0]
+    }
     const cardKey = parsed.data.action === 'step' || parsed.data.action === 'save' ? parsed.data.stepKey : parsed.data.action === 'checklist' ? 'qa_final' : parsed.data.action === 'pm_status' ? 'pm_ok' : parsed.data.action === 'delivered' ? 'delivered' : parsed.data.action === 'filling_check' ? 'filled' : undefined
     const effective = effectiveStageDef(parsed.data.stageKey, await loadStageOverrides(ctx))
     const card = cardKey ? effective?.steps.find((step) => step.key === cardKey) : undefined

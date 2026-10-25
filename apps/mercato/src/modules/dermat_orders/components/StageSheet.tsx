@@ -797,15 +797,17 @@ export function StageWorkArea({ order, stage, people, canWork: canWorkProp, busy
           ) : null}
           {stage.status === 'on_hold' ? (
             <>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => run({ action: 'save', data: dataPayload() })}
-                disabled={busy}
-              >
-                {t('dermat_orders.sheet.save', 'Save')}
-              </Button>
+              {def.steps.length ? null : (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => run({ action: 'save', data: dataPayload() })}
+                  disabled={busy}
+                >
+                  {t('dermat_orders.sheet.save', 'Save')}
+                </Button>
+              )}
               <Button type="button" size="sm" onClick={() => run({ action: 'resume' })} disabled={busy}>
                 <CirclePlay className="mr-1.5 h-4 w-4" />
                 {t('dermat_orders.sheet.resume', 'Resume')}

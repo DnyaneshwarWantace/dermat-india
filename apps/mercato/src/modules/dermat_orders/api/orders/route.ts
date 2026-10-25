@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { canSeeMoney } from '../../lib/money'
 import { z } from 'zod'
 import type { EntityManager } from '@mikro-orm/postgresql'
 import type { OpenApiRouteDoc } from '@open-mercato/shared/lib/openapi'
@@ -312,6 +313,7 @@ async function PUT(req: Request) {
   if (!parsed.success) return NextResponse.json({ error: 'Invalid order', details: parsed.error.flatten() }, { status: 400 })
   const input = parsed.data
   try {
+    const money = await canSeeMoney(ctx)
     const order = await findOrder(ctx, input.id)
     if (order.status === 'cancelled' || order.status === 'completed') throw new OrderError('This order can no longer be changed', 409)
     const stages = await ctx.em.find(DermatOrderStage, { orderId: order.id })
@@ -326,6 +328,13 @@ async function PUT(req: Request) {
         const txCtx = { ...ctx, em: em as EntityManager }
         const fresh = await findOrder(txCtx, order.id)
         const oldLines = await em.find(DermatOrderLine, { orderId: fresh.id })
+        if (!money) {
+          const priced = new Map(oldLines.map((line) => [line.productId, line]))
+          input.lines = input.lines.map((line) => {
+            const old = priced.get(line.productId)
+            return { ...line, rate: old?.rate == null ? null : Number(old.rate), gstPercent: old ? Number(old.gstPercent) : line.gstPercent, discountPercent: old ? Number(old.discountPercent) : 0 }
+          })
+        }
         const before = {
           header: { deliveryDate: fresh.deliveryDate, customerPoRef: fresh.customerPoRef, salesManager: fresh.salesManager, coordinator: fresh.coordinator, paymentTerms: fresh.paymentTerms, paymentRemarks: fresh.paymentRemarks, priority: fresh.priority, shippingAddress: fresh.shippingAddress, billingAddress: fresh.billingAddress, productRemarks: fresh.productRemarks, packingRemarks: fresh.packingRemarks, billingRemarks: fresh.billingRemarks },
           lines: oldLines.map((line) => ({ productId: line.productId, quantity: Number(line.quantity), rate: line.rate == null ? null : Number(line.rate) })),

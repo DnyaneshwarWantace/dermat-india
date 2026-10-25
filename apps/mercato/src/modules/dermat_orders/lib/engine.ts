@@ -303,6 +303,7 @@ export async function applyStageAction(ctx: OrderContext, order: DermatOrder, in
   const changed: FieldChange[] = []
   const mergeData = () => {
     if (!input.data) return
+    if (def.steps.length && input.action !== 'step' && input.action !== 'save') return
     if (options.money === false) input.data = withoutMoneyFields(def.key, input.data) as typeof input.data
     const next: Record<string, unknown> = { ...(stage.data ?? {}) }
     for (const [key, value] of Object.entries(input.data)) {
@@ -642,6 +643,10 @@ export async function applyStageAction(ctx: OrderContext, order: DermatOrder, in
       markStarted()
       if (stage.status === 'waiting') throw new OrderError(`${def.label} has not started yet`, 409)
       if (isFinished(stage.status)) throw new OrderError(`${def.label} is finished. Reopen it to change it.`, 409)
+      if (def.steps.length && input.data && Object.keys(input.data).length) {
+        if (!input.stepKey || !def.steps.some((entry) => entry.key === input.stepKey)) throw new OrderError('Save the details of one step at a time', 400)
+        if (stepStates(stage.data)[input.stepKey]?.done) throw new OrderError('This step is already done. Undo it first to change its details.', 409)
+      }
       if (input.stepKey && input.data) {
         const own = new Set(cardFieldKeys(def, input.stepKey))
         input.data = Object.fromEntries(Object.entries(input.data).filter(([key]) => own.has(key)))
