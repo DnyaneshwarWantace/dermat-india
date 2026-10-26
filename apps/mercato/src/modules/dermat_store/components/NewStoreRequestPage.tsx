@@ -202,7 +202,7 @@ export function NewStoreRequestPage() {
                 </span>
                 <div className="space-y-1">
                   <h1 className="text-2xl font-bold tracking-tight">{t('dermat_store.new.title', 'Ask the store for material')}</h1>
-                  <p className="text-sm text-muted-foreground">{STAGE_WHAT[stageKey] ?? ''}</p>
+                  <p data-sheet-keep className="text-sm text-muted-foreground">{STAGE_WHAT[stageKey] ?? ''}</p>
                 </div>
               </div>
               <StockRoute store={stageKey === 'manufacturing' ? 'rm' : 'pm'} />

@@ -162,7 +162,7 @@ export function PaymentsPage() {
           </div>
 
           {data ? (
-            <div className="flex items-center gap-3 rounded-lg border bg-card p-4 shadow-xs">
+            <div data-sheet-compact className="flex items-center gap-3 rounded-lg border bg-card p-4 shadow-xs">
               <span className="flex h-10 w-10 items-center justify-center rounded-full bg-status-success-bg text-status-success-icon">
                 <IndianRupee className="h-4 w-4" aria-hidden="true" />
               </span>

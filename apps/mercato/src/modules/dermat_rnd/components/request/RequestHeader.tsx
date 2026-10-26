@@ -51,7 +51,7 @@ export function RequestHeader({ request, canRequest, canManage, busy, backHref, 
             ) : null}
           </div>
           <h1 className="text-2xl font-bold tracking-tight">{[request.productName, request.brand].filter(Boolean).join(' · ')}</h1>
-          <p className="text-sm text-muted-foreground">{facts.join(' · ')}</p>
+          <p data-sheet-keep className="text-sm text-muted-foreground">{facts.join(' · ')}</p>
         </div>
         <div className="flex flex-wrap gap-2">
           {canRequest && request.status !== 'dropped' ? (

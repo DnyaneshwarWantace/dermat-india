@@ -648,7 +648,7 @@ export function OrderForm({ orderId, copyFrom, customerId, fromPi }: { orderId?:
                       : t('dermat_orders.form.newTitle', 'Book a new order')}
                 </h1>
                 <p className="text-xs text-muted-foreground">
-                  {t('dermat_orders.form.subtitle', 'The order number is given when you save. It then waits at "Advance received" until Accounts verifies the advance.')}
+                  {t('dermat_orders.form.subtitle', 'The order number is given when you save. It then waits at "Advance pending" until Accounts verifies the advance.')}
                 </p>
               </div>
             </div>
