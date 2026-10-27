@@ -69,7 +69,7 @@ export class OrderPayment {
 @Entity({ tableName: 'dermat_company_profiles' })
 @Index({ name: 'dermat_company_profiles_scope_idx', properties: ['organizationId', 'tenantId'] })
 export class CompanyProfile {
-  [OptionalProps]?: 'legalName' | 'gstin' | 'pan' | 'address' | 'phone' | 'email' | 'website' | 'bankName' | 'bankBranch' | 'bankAccount' | 'bankIfsc' | 'upiId' | 'signatory' | 'piTerms' | 'invoiceTerms' | 'piValidityDays' | 'grnOverPercent' | 'numberSeries' | 'createdAt' | 'updatedAt'
+  [OptionalProps]?: 'legalName' | 'gstin' | 'pan' | 'address' | 'phone' | 'email' | 'website' | 'bankName' | 'bankBranch' | 'bankAccount' | 'bankIfsc' | 'upiId' | 'signatory' | 'piTerms' | 'invoiceTerms' | 'piValidityDays' | 'grnOverPercent' | 'numberSeries' | 'formOptions' | 'createdAt' | 'updatedAt'
 
   @PrimaryKey({ type: 'uuid', defaultRaw: 'gen_random_uuid()' })
   id!: string
@@ -136,6 +136,9 @@ export class CompanyProfile {
 
   @Property({ name: 'number_series', type: 'json', nullable: true })
   numberSeries?: Record<string, { prefix: string; suffix: string; pad: number; startAt: number }> | null
+
+  @Property({ name: 'form_options', type: 'json', nullable: true })
+  formOptions?: { askCountry?: boolean } | null
 
   @Property({ name: 'created_at', type: Date, onCreate: () => new Date() })
   createdAt: Date = new Date()

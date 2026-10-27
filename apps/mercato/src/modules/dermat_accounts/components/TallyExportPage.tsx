@@ -199,7 +199,7 @@ export function TallyExportPage() {
 
           {summary ? (
             <section className="space-y-3">
-              <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
+              <div data-sheet-compact className="grid grid-cols-2 gap-3 md:grid-cols-5">
                 {['Sales', 'Credit Note', 'Receipt', 'Purchase', 'Payment'].map((type) => (
                   <div key={type} className="rounded-lg border bg-card p-3">
                     <p className="text-xs text-muted-foreground">{type}</p>
@@ -229,7 +229,7 @@ export function TallyExportPage() {
                     <tbody className="divide-y">
                       {summary.preview.map((voucher) => (
                         <tr key={`${voucher.type}-${voucher.number}`} className="align-top">
-                          <td className="px-3 py-2 tabular-nums">{voucher.date}</td>
+                          <td className="whitespace-nowrap px-3 py-2 tabular-nums">{new Date(`${voucher.date}T00:00:00`).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
                           <td className="px-3 py-2">{voucher.type}</td>
                           <td className="px-3 py-2 font-mono text-xs">{voucher.number}</td>
                           <td className="px-3 py-2">{voucher.party}</td>

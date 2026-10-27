@@ -15,6 +15,7 @@ import { SegmentedControl, SegmentedControlItem } from '@open-mercato/ui/primiti
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@open-mercato/ui/primitives/sheet'
 import { apiCall, withScopedApiRequestHeaders } from '@open-mercato/ui/backend/utils/apiCall'
 import { useGuardedMutation } from '@open-mercato/ui/backend/injection/useGuardedMutation'
+import { Switch } from '@open-mercato/ui/primitives/switch'
 import { buildOptimisticLockHeader } from '@open-mercato/ui/backend/utils/optimisticLock'
 import { flash } from '@open-mercato/ui/backend/FlashMessages'
 import { useGranted } from '../../../dermat_departments/components/useGranted'
@@ -52,6 +53,34 @@ export function RegistrationsPage() {
   const granted = useGranted()
   const canApprove = granted.has('dermat_accounts.record')
   const { runMutation } = useGuardedMutation({ contextId: 'dermat-registrations' })
+  const [askCountry, setAskCountry] = React.useState<boolean | null>(null)
+  const [savingOption, setSavingOption] = React.useState(false)
+
+  React.useEffect(() => {
+    apiCall<{ askCountry?: boolean }>('/api/dermat_accounts/registrations/options', undefined, { fallback: {} }).then((call) => {
+      if (call.ok) setAskCountry(Boolean(call.result?.askCountry))
+    })
+  }, [])
+
+  const saveAskCountry = async (next: boolean) => {
+    setSavingOption(true)
+    try {
+      const body = { askCountry: next }
+      const call = await runMutation({
+        context: { action: 'registration_options' },
+        mutationPayload: body,
+        operation: () => apiCall<{ askCountry?: boolean; error?: string }>('/api/dermat_accounts/registrations/options', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }),
+      })
+      if (!call.ok) {
+        flash(call.result?.error ?? t('dermat_accounts.regs.optionError', 'Could not save the form option.'), 'error')
+        return
+      }
+      setAskCountry(Boolean(call.result?.askCountry))
+      flash(next ? t('dermat_accounts.regs.countryOn', 'The form now asks for the country.') : t('dermat_accounts.regs.countryOff', 'The form is for customers in India only.'), 'success')
+    } finally {
+      setSavingOption(false)
+    }
+  }
   const [view, setView] = React.useState<View>('submitted')
   const [rows, setRows] = React.useState<Registration[] | null>(null)
   const [error, setError] = React.useState<string | null>(null)
@@ -124,7 +153,15 @@ export function RegistrationsPage() {
               <h1 className="text-2xl font-bold tracking-tight">{t('dermat_accounts.regs.title', 'Customer registrations')}</h1>
               <p className="max-w-3xl text-sm text-muted-foreground">{t('dermat_accounts.regs.lede', 'Send a new customer the registration link instead of the Word form. What they fill comes here; check it and approve to set up the customer with contacts and addresses.')}</p>
             </div>
-            <SendRegistrationButton variant="default" onMade={() => void load()} />
+            <div className="flex flex-wrap items-center gap-3">
+              {canApprove && askCountry !== null ? (
+                <label htmlFor="reg-ask-country" className="flex items-center gap-2 text-sm">
+                  <Switch id="reg-ask-country" checked={askCountry} disabled={savingOption} onCheckedChange={(checked) => void saveAskCountry(checked)} />
+                  {t('dermat_accounts.regs.askCountry', 'Ask the country (customers outside India)')}
+                </label>
+              ) : null}
+              <SendRegistrationButton variant="default" onMade={() => void load()} />
+            </div>
           </header>
 
           <SegmentedControl value={view} onValueChange={(value) => setView(value as View)} aria-label={t('dermat_accounts.regs.show', 'Show')}>

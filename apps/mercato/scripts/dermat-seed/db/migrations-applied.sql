@@ -287,6 +287,7 @@ COPY public.mikro_orm_migrations_dermat_accounts (id, name, executed_at) FROM st
 7	Migration20260927045904_dermat_accounts	2026-09-27 04:59:22.923416+00
 8	Migration20261018140000_dermat_accounts	2026-10-18 14:00:00+00
 9	Migration20261019130000_dermat_accounts	2026-10-19 13:00:00+00
+10	Migration20261026090000_dermat_accounts	2026-10-26 09:00:00+00
 \.
 
 

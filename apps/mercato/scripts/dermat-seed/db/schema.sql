@@ -2140,7 +2140,8 @@ CREATE TABLE public.dermat_company_profiles (
     created_at timestamp with time zone NOT NULL,
     updated_at timestamp with time zone NOT NULL,
     grn_over_percent integer DEFAULT 0 NOT NULL,
-    number_series jsonb
+    number_series jsonb,
+    form_options jsonb
 );
 
 

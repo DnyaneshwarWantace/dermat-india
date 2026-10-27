@@ -415,6 +415,16 @@
           "collation": null,
           "enumItems": [],
           "mappedType": "text"
+        },
+        "form_options": {
+          "name": "form_options",
+          "type": "jsonb",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": true,
+          "length": null,
+          "mappedType": "json"
         }
       },
       "indexes": [

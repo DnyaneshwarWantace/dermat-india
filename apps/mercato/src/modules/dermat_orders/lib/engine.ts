@@ -770,7 +770,7 @@ export function stageViews(stages: DermatOrderStage[], overrides?: StageOverride
     const closed = stage?.completedAt ? stage.completedAt.getTime() : null
     return {
       key: def.key,
-      label: def.key === 'advance' && def.label === 'Advance received' && !isFinished(stage?.status) ? 'Advance pending' : def.label,
+      label: def.key === 'advance' && (def.label === 'Advance payment' || def.label === 'Advance received') ? (isFinished(stage?.status) ? 'Advance received' : 'Advance pending') : def.label,
       department: def.department,
       hint: def.hint,
       status: stage?.status ?? 'waiting',

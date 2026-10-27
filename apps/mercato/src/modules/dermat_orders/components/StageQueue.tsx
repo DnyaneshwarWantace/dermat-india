@@ -140,13 +140,9 @@ export function StageQueue({ stageKey }: { stageKey: string }) {
     {
       id: 'order',
       header: t('dermat_orders.list.order', 'Order'),
-      cell: ({ row }) => (
-        <span>
-          <span className="font-mono text-xs font-semibold">{row.original.orderNo}</span>
-          <span className="block text-xs text-muted-foreground">{formatDate(row.original.orderDate)}</span>
-        </span>
-      ),
+      cell: ({ row }) => <span className="whitespace-nowrap font-mono text-xs font-semibold">{row.original.orderNo}</span>,
     },
+    { id: 'ordered', header: t('dermat_orders.queue.ordered', 'Ordered'), cell: ({ row }) => <span className="whitespace-nowrap text-xs">{formatDate(row.original.orderDate)}</span> },
     { id: 'customer', header: t('dermat_orders.list.customer', 'Customer'), cell: ({ row }) => <span className="font-medium">{row.original.customerName || '—'}</span> },
     {
       id: 'products',
@@ -170,28 +166,22 @@ export function StageQueue({ stageKey }: { stageKey: string }) {
         const stage = row.original.stages[stageKey]
         const state = sheetWorkState(stage)
         const current = row.original.current.find((entry) => entry.key === stageKey)
+        const who = [
+          current?.status === 'on_hold' ? current.holdParty : null,
+          stage?.responsibleName ?? (tab === 'done' ? stage?.completedByName : t('dermat_orders.rail.unassigned', 'Not assigned')),
+          stage?.days != null && tab !== 'waiting' ? `${formatQty(stage.days, 1)} d` : null,
+        ]
+          .filter(Boolean)
+          .join(' · ')
+        const steps = stage?.stepsTotal ? t('dermat_orders.queue.steps', '{done}/{total} steps', { done: stage.stepsDone, total: stage.stepsTotal }) : null
+        const full = [steps, stage?.currentCard ? t('dermat_orders.queue.now', 'Now: {card}', { card: stage.currentCard.label }) : null, stage?.currentCard?.waitingFor ?? null, stage?.currentCard?.owners.join(' / ') ?? null, who].filter(Boolean).join(' · ')
         return (
-          <span className="flex flex-col gap-0.5 text-xs">
-            <span className="flex items-center gap-1.5">
-              <StatePill state={state} />
-              {stage?.stepsTotal ? <span className="tabular-nums text-muted-foreground">{t('dermat_orders.queue.steps', '{done}/{total} steps', { done: stage.stepsDone, total: stage.stepsTotal })}</span> : null}
-            </span>
-            {stage?.currentCard ? (
-              <span className="font-medium text-foreground">
-                {t('dermat_orders.queue.now', 'Now: {card}', { card: stage.currentCard.label })}
-                {stage.currentCard.waitingFor ? <span className="block font-normal text-status-warning-text">{stage.currentCard.waitingFor}</span> : null}
-                <span className="font-normal text-muted-foreground"> · {stage.currentCard.owners.join(' / ')}</span>
-              </span>
-            ) : null}
-            <span className="text-muted-foreground">
-              {[
-                current?.status === 'on_hold' ? current.holdParty : null,
-                stage?.responsibleName ?? (tab === 'done' ? stage?.completedByName : t('dermat_orders.rail.unassigned', 'Not assigned')),
-                stage?.days != null && tab !== 'waiting' ? `${formatQty(stage.days, 1)} d` : null,
-              ]
-                .filter(Boolean)
-                .join(' · ')}
-            </span>
+          <span className="flex min-w-72 max-w-md items-center gap-1.5 whitespace-nowrap text-xs" title={full}>
+            <StatePill state={state} />
+            {steps ? <span className="shrink-0 tabular-nums text-muted-foreground">{stage?.stepsDone}/{stage?.stepsTotal}</span> : null}
+            {stage?.currentCard ? <span className="min-w-0 truncate font-medium text-foreground">{stage.currentCard.label}</span> : null}
+            {stage?.currentCard?.waitingFor ? <span className="min-w-0 truncate text-status-warning-text">{stage.currentCard.waitingFor}</span> : null}
+            {who ? <span className="shrink-0 text-muted-foreground">{who}</span> : null}
           </span>
         )
       },

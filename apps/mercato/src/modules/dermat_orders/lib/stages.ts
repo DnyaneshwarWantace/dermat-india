@@ -155,7 +155,7 @@ export const STAGES: StageDef[] = [
   },
   {
     key: 'advance',
-    label: 'Advance received',
+    label: 'Advance payment',
     department: 'Accounts',
     group: 'accounts',
     hint: 'The order becomes official the day the advance arrives.',

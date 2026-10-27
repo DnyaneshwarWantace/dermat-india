@@ -5,13 +5,12 @@ import { CheckCircle2 } from 'lucide-react'
 import { useT } from '@open-mercato/shared/lib/i18n/context'
 import { Button } from '@open-mercato/ui/primitives/button'
 import { Input } from '@open-mercato/ui/primitives/input'
-import { Label } from '@open-mercato/ui/primitives/label'
 import { Textarea } from '@open-mercato/ui/primitives/textarea'
 import { Spinner } from '@open-mercato/ui/primitives/spinner'
 import { apiCall } from '@open-mercato/ui/backend/utils/apiCall'
-import { REGISTRATION_FIELDS, REGISTRATION_GROUPS, registrationProblems } from '../../lib/registrationFields'
+import { REGISTRATION_GROUPS, registrationProblems, visibleRegistrationFields, type RegistrationOptions } from '../../lib/registrationFields'
 
-type View = { status: 'open' | 'submitted'; customerName: string | null; submittedAt: string | null }
+type View = { status: 'open' | 'submitted'; customerName: string | null; submittedAt: string | null; options?: RegistrationOptions }
 
 const QUIET = { 'x-om-forbidden-redirect': '0' }
 
@@ -19,7 +18,7 @@ export function RegistrationFormPage({ token }: { token: string }) {
   const t = useT()
   const [view, setView] = React.useState<View | null>(null)
   const [error, setError] = React.useState<string | null>(null)
-  const [answers, setAnswers] = React.useState<Record<string, string>>({ country: 'India' })
+  const [answers, setAnswers] = React.useState<Record<string, string>>({})
   const [website, setWebsite] = React.useState('')
   const [problems, setProblems] = React.useState<string[]>([])
   const [busy, setBusy] = React.useState(false)
@@ -29,6 +28,7 @@ export function RegistrationFormPage({ token }: { token: string }) {
     apiCall<View & { error?: string }>(`/api/dermat_accounts/registrations/public?token=${encodeURIComponent(token)}`, { headers: QUIET }).then((call) => {
       if (call.ok && call.result) {
         setView(call.result)
+        if (call.result.options?.askCountry) setAnswers((prev) => ({ country: 'India', ...prev }))
         if (call.result.customerName) setAnswers((prev) => ({ ...prev, customer_name: prev.customer_name || call.result?.customerName || '' }))
       } else setError(call.result?.error ?? t('dermat_accounts.reg.invalid', 'This link is not valid.'))
     })
@@ -81,33 +81,41 @@ export function RegistrationFormPage({ token }: { token: string }) {
               if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') void submit()
             }}
           >
-            <p className="text-sm text-muted-foreground">{t('dermat_accounts.reg.lede', 'Please fill your company details once. Fields with * are needed. Customers outside India can give the PAN or VAT number instead of GST.')}</p>
-            {REGISTRATION_GROUPS.map((group) => (
-              <section key={group} className="space-y-3 rounded-lg border bg-card p-4">
-                <h2 className="text-sm font-semibold">{group}</h2>
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  {REGISTRATION_FIELDS.filter((field) => field.group === group).map((field) => (
-                    <div key={field.key} className={field.kind === 'address' ? 'space-y-1 sm:col-span-2' : 'space-y-1'}>
-                      <Label htmlFor={`reg-${field.key}`} className="text-xs text-muted-foreground">
-                        {field.label}
-                        {field.required ? ' *' : ''}
-                      </Label>
-                      {field.kind === 'address' ? (
-                        <Textarea id={`reg-${field.key}`} rows={2} value={answers[field.key] ?? ''} onChange={(event) => set(field.key, event.target.value)} />
-                      ) : (
-                        <Input
-                          id={`reg-${field.key}`}
-                          type={field.kind ?? 'text'}
-                          value={answers[field.key] ?? ''}
-                          className={field.key === 'gst_no' || field.key === 'pan_no' ? 'uppercase' : undefined}
-                          onChange={(event) => set(field.key, event.target.value)}
-                        />
-                      )}
+            <p className="text-sm text-muted-foreground">{t('dermat_accounts.reg.ledeSimple', 'Please fill your company details once. Only the customer name is needed; fill the rest if you have it.')}</p>
+            <section className="divide-y rounded-lg border bg-card">
+              {REGISTRATION_GROUPS.map((group) => {
+                const fields = visibleRegistrationFields(view.options ?? { askCountry: false }).filter((field) => field.group === group)
+                if (!fields.length) return null
+                const several = fields.length > 1
+                return (
+                  <div key={group} className="grid grid-cols-1 gap-2 px-4 py-3 sm:grid-cols-3 sm:gap-4">
+                    <span className="text-sm font-medium sm:pt-2">
+                      {group}
+                      {fields.some((field) => field.required) ? ' *' : ''}
+                    </span>
+                    <div className={several ? 'grid grid-cols-1 gap-2 sm:col-span-2 sm:grid-cols-3' : 'sm:col-span-2'}>
+                      {fields.map((field) => {
+                        const label = several ? field.label : group
+                        return field.kind === 'address' ? (
+                          <Textarea key={field.key} id={`reg-${field.key}`} aria-label={label} rows={2} value={answers[field.key] ?? ''} onChange={(event) => set(field.key, event.target.value)} />
+                        ) : (
+                          <Input
+                            key={field.key}
+                            id={`reg-${field.key}`}
+                            aria-label={label}
+                            placeholder={several ? field.label : undefined}
+                            type={field.kind ?? 'text'}
+                            value={answers[field.key] ?? ''}
+                            className={field.key === 'gst_no' || field.key === 'pan_no' ? 'uppercase' : undefined}
+                            onChange={(event) => set(field.key, event.target.value)}
+                          />
+                        )
+                      })}
                     </div>
-                  ))}
-                </div>
-              </section>
-            ))}
+                  </div>
+                )
+              })}
+            </section>
             <div className="sr-only" aria-hidden="true">
               <label htmlFor="reg-website">Website</label>
               <input id="reg-website" tabIndex={-1} autoComplete="off" value={website} onChange={(event) => setWebsite(event.target.value)} />

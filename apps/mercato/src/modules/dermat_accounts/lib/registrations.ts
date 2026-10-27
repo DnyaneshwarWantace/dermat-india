@@ -11,7 +11,8 @@ import { CustomerRegistration } from '../data/entities'
 import { stateFromGstin } from './gstStates'
 import { loadCustomers, type OrderContext } from '../../dermat_orders/lib/server'
 import { AccountsError } from './service'
-import { REGISTRATION_FIELDS, normalizePhone, registrationProblems } from './registrationFields'
+import { normalizePhone, registrationProblems, visibleRegistrationFields, type RegistrationOptions } from './registrationFields'
+import { CompanyProfile } from '../data/entities'
 
 const logger = createLogger('dermat_accounts')
 const MIN_FILL_MS = 4000
@@ -84,14 +85,13 @@ async function setUpCustomer(ctx: OrderContext, req: Request, answers: Record<st
     request: req,
   }
   const commandBus = ctx.container.resolve('commandBus') as CommandBus
-  const india = !answers.country || answers.country.toLowerCase() === 'india'
   let customerId = target
   if (target === 'new') {
     const input = companyCreateSchema.parse({ ...scope, displayName: answers.customer_name, primaryEmail: answers.purchase_email || undefined, primaryPhone: answers.purchase_phone || undefined })
     const customFields = {
       customer_type_category: 'business',
       legal_trade_name: answers.bill_to || answers.customer_name,
-      gst_registration_type: answers.gst_no ? 'registered' : india ? 'unregistered' : 'overseas',
+      gst_registration_type: answers.gst_no ? 'registered' : !answers.country || answers.country.toLowerCase() === 'india' ? 'unregistered' : 'overseas',
       gstin: answers.gst_no || null,
       payment_terms: 'due_on_delivery',
       default_currency: 'INR',
@@ -115,13 +115,13 @@ async function setUpCustomer(ctx: OrderContext, req: Request, answers: Record<st
   const country = answers.country || 'India'
   const address = (purpose: string, name: string, line: string, isPrimary: boolean) =>
     commandBus.execute('customers.addresses.create', { input: addressCreateSchema.parse({ ...scope, entityId: customerId, purpose, name, addressLine1: line.slice(0, 300), region, country, isPrimary }), ctx: commandCtx })
-  await address('billing', answers.bill_to || 'Billing', answers.billing_address, target === 'new')
+  if (answers.billing_address) await address('billing', answers.bill_to || 'Billing', answers.billing_address, target === 'new')
   if (answers.ship_to && answers.ship_to !== answers.billing_address) await address('shipping', 'Shipping', answers.ship_to, false)
   if (answers.correspondence_address && answers.correspondence_address !== answers.billing_address) await address('correspondence', 'Correspondence', answers.correspondence_address, false)
   const contact = (name: string, phone?: string, email?: string) =>
     commandBus.execute('customers.contacts.create', { input: contactCreateSchema.parse({ ...scope, entityId: customerId, name, phone: phone || undefined, email: email || undefined }), ctx: commandCtx })
-  await contact(answers.purchase_name, answers.purchase_phone, answers.purchase_email)
-  if (answers.partner_name) await contact(answers.partner_name, answers.partner_phone, answers.partner_email)
+  if (answers.purchase_name || answers.purchase_phone || answers.purchase_email) await contact(answers.purchase_name || answers.purchase_email || answers.purchase_phone || 'Purchase', answers.purchase_phone, answers.purchase_email)
+  if (answers.partner_name || answers.partner_phone || answers.partner_email) await contact(answers.partner_name || answers.partner_email || answers.partner_phone || 'Partner', answers.partner_phone, answers.partner_email)
   await ensureCustomerNumber(ctx.em, scope, customerId)
   return customerId
 }
@@ -144,17 +144,22 @@ export async function registrationByToken(em: EntityManager, token: string) {
   return row
 }
 
+export async function registrationOptions(em: EntityManager, scope: { tenantId: string; organizationId: string }): Promise<RegistrationOptions> {
+  const profile = await em.findOne(CompanyProfile, { tenantId: scope.tenantId, organizationId: scope.organizationId })
+  return { askCountry: Boolean(profile?.formOptions?.askCountry) }
+}
+
 export async function publicRegistration(em: EntityManager, row: CustomerRegistration) {
   const scope = { em, tenantId: row.tenantId, organizationId: row.organizationId } as unknown as OrderContext
   const customer = row.customerId ? (await loadCustomers(scope, [row.customerId])).get(row.customerId) : null
-  return { status: row.status === 'open' ? 'open' : 'submitted', customerName: customer?.name ?? null, submittedAt: row.submittedAt ? row.submittedAt.toISOString() : null }
+  return { status: row.status === 'open' ? 'open' : 'submitted', customerName: customer?.name ?? null, submittedAt: row.submittedAt ? row.submittedAt.toISOString() : null, options: await registrationOptions(em, row) }
 }
 
 export async function submitRegistration(em: EntityManager, container: unknown, row: CustomerRegistration, input: { answers: Record<string, string>; website?: string; startedAt: number }, ip: string | null) {
   if (row.status !== 'open') throw new AccountsError('This form is already filled. Thank you!', 409)
   if (input.website?.trim() || Date.now() - input.startedAt < MIN_FILL_MS) throw new AccountsError('Please fill the form again', 400)
   const answers: Record<string, string> = {}
-  for (const field of REGISTRATION_FIELDS) {
+  for (const field of visibleRegistrationFields(await registrationOptions(em, row))) {
     const value = input.answers[field.key]?.trim()
     if (value) answers[field.key] = value.slice(0, field.kind === 'address' ? 600 : 200)
   }
