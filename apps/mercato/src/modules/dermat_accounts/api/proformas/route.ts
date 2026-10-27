@@ -5,7 +5,7 @@ import type { OpenApiRouteDoc } from '@open-mercato/shared/lib/openapi'
 import { enforceCommandOptimisticLock } from '@open-mercato/shared/lib/crud/optimistic-lock-command'
 import { currentUserName, resolveOrderContext } from '../../../dermat_orders/lib/server'
 import { piCreateSchema, piListSchema, piUpdateSchema } from '../../data/validators'
-import { createPi, findPi, piView, refreshPiLines } from '../../lib/documents'
+import { createPi, createStandalonePi, findPi, freeLines, piView, refreshPiLines } from '../../lib/documents'
 import { AccountsError } from '../../lib/service'
 import { accountsErrorResponse, runGuarded } from '../../lib/server'
 
@@ -32,6 +32,12 @@ async function GET(req: Request) {
     where.push('order_id = ?')
     params.push(query.orderId)
   }
+  if (query.customerId) {
+    where.push('customer_id = ?')
+    params.push(query.customerId)
+  }
+  if (query.linked === 'with_order') where.push('order_id is not null')
+  if (query.linked === 'without_order') where.push('order_id is null')
   if (query.status) {
     where.push('status = ?')
     params.push(query.status)
@@ -59,11 +65,15 @@ async function POST(req: Request) {
   const parsed = piCreateSchema.safeParse(await req.json().catch(() => null))
   if (!parsed.success) return NextResponse.json({ error: 'Check the proforma details', details: parsed.error.flatten() }, { status: 400 })
   try {
-    return await runGuarded(ctx, req, parsed.data.orderId, parsed.data, async () => {
+    const input = parsed.data
+    if (!input.orderId && (!input.customerId || !input.lines?.length)) throw new AccountsError('Pick the customer and add at least one line')
+    return await runGuarded(ctx, req, input.orderId ?? input.customerId ?? 'proforma', input, async () => {
       const byName = await currentUserName(ctx)
       const pi = await ctx.em.transactional(async (em) => {
         const txCtx = { ...ctx, em: em as EntityManager }
-        const created = await createPi(txCtx, parsed.data, byName)
+        const created = input.orderId
+          ? await createPi(txCtx, { ...input, orderId: input.orderId }, byName)
+          : await createStandalonePi(txCtx, { ...input, customerId: input.customerId as string, lines: input.lines ?? [] }, byName)
         await em.flush()
         return created
       })
@@ -93,6 +103,13 @@ async function PUT(req: Request) {
       if (input.bankDetails !== undefined) pi.bankDetails = input.bankDetails?.trim() || null
       if (input.notes !== undefined) pi.notes = input.notes?.trim() || null
       if (input.refreshLines) await refreshPiLines(ctx, pi, byName)
+      if (input.lines && !pi.orderId) {
+        if (!input.lines.length) throw new AccountsError('Add at least one line')
+        if (input.pricesIncludeGst !== undefined) pi.pricesIncludeGst = input.pricesIncludeGst
+        const priced = await freeLines(ctx, input.lines, pi.pricesIncludeGst)
+        pi.lines = priced.lines
+        pi.totals = priced.totals
+      }
       pi.history = [...(pi.history ?? []), { action: 'edited', by: byName, at: new Date().toISOString(), note: null }]
       pi.updatedAt = new Date()
       await ctx.em.flush()
@@ -108,7 +125,7 @@ export const openApi: OpenApiRouteDoc = {
   summary: 'Proforma invoices',
   methods: {
     GET: { summary: 'Proforma invoices (newest first), or one by id', tags: ['Dermat Accounts'], query: piListSchema, responses: [{ status: 200, description: 'Proformas', schema: z.object({}).passthrough() }] },
-    POST: { summary: 'Make a proforma invoice from an order (number DI/PI/<FY>/<n>)', tags: ['Dermat Accounts'], requestBody: { schema: piCreateSchema }, responses: [{ status: 201, description: 'Created', schema: z.object({ id: z.string() }).passthrough() }] },
+    POST: { summary: 'Make a proforma invoice from an order, or before any order from a customer and free lines (number DI/PI/<FY>/<n>)', tags: ['Dermat Accounts'], requestBody: { schema: piCreateSchema }, responses: [{ status: 201, description: 'Created', schema: z.object({ id: z.string() }).passthrough() }] },
     PUT: { summary: 'Edit dates, advance %, terms, bank details, notes; refresh lines from the order', tags: ['Dermat Accounts'], requestBody: { schema: piUpdateSchema }, responses: [{ status: 200, description: 'Saved', schema: z.object({ id: z.string() }).passthrough() }] },
   },
 }

@@ -10,7 +10,7 @@ export const metadata = {
 }
 
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/)
-const querySchema = z.object({ view: z.enum(['ready', 'done', 'all']).default('all'), q: z.string().trim().max(200).optional(), from: isoDate.optional(), to: isoDate.optional() })
+const querySchema = z.object({ view: z.enum(['coming', 'ready', 'done', 'all']).default('all'), q: z.string().trim().max(200).optional(), from: isoDate.optional(), to: isoDate.optional() })
 
 async function GET(req: Request) {
   const ctx = await resolveOrderContext(req)

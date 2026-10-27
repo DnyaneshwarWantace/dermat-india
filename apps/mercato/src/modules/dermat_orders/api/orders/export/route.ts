@@ -11,16 +11,18 @@ import { orderListQuerySchema } from '../../../data/validators'
 import { priceOrder } from '../../../lib/pricing'
 import { paymentsFor, received } from '../../../../dermat_accounts/lib/service'
 import { loadStageOverrides, withStageOverrides } from '../../../lib/stageSettings'
+import { buildXlsx } from '../../../lib/xlsx'
 
 export const metadata = {
   GET: { requireAuth: true, requireFeatures: ['dermat_orders.view'] },
 }
 
 const querySchema = orderListQuerySchema
-  .pick({ search: true, status: true, stage: true, customerId: true, productId: true })
+  .pick({ search: true, status: true, stage: true, customerId: true, productId: true, from: true, to: true, pm: true, similarTo: true })
   .extend({
     orderId: z.string().uuid().optional(),
     stageStatus: z.enum(['active', 'waiting', 'done', 'all']).default('all'),
+    format: z.enum(['csv', 'xlsx']).default('csv'),
   })
 
 const STATUS_WORD: Record<string, string> = { waiting: 'Coming', open: 'In progress', on_hold: 'On hold', done: 'Done', skipped: 'Skipped' }
@@ -104,6 +106,15 @@ async function GET(req: Request) {
       const priced = money ? ((stage.data as Record<string, unknown>) ?? {}) : withoutMoneyFields(key, (stage.data as Record<string, unknown>) ?? {})
       return Object.assign(Object.create(Object.getPrototypeOf(stage)) as DermatOrderStage, stage, { data: visibleStageData(access, key, priced, overrides) })
     }
+    const pmState = (orderId: string): { set: number; ok: number } => {
+      const raw = stages.find((entry) => entry.orderId === orderId && entry.stageKey === 'artwork')?.data?.__pm
+      const items = raw && typeof raw === 'object' ? Object.values(raw as Record<string, { status?: string }>) : []
+      return { set: items.length, ok: items.filter((item) => item.status === 'PM OK').length }
+    }
+    const pmText = (orderId: string) => {
+      const state = pmState(orderId)
+      return !state.set ? '' : state.ok === state.set ? 'PM complete' : `${state.ok} of ${state.set} PM OK`
+    }
     let rows: unknown[][]
     let name: string
 
@@ -168,7 +179,7 @@ async function GET(req: Request) {
     } else {
       name = 'order-book'
       rows = [
-        ['Order', 'Order date', 'Delivery', 'Customer', 'Customer PO', 'Order status', 'Products', 'Pieces', 'Total (₹)', 'Received (₹)', 'Due (₹)', 'Now at', ...stageList().flatMap((def) => [`${def.label}: status`, `${def.label}: done on`, `${def.label}: days`])],
+        ['Order', 'Order date', 'Delivery', 'Customer', 'Customer PO', 'Order status', 'Products', 'Pieces', 'Total (₹)', 'Received (₹)', 'Due (₹)', 'Now at', 'Packing material', ...stageList().flatMap((def) => [`${def.label}: status`, `${def.label}: done on`, `${def.label}: days`])],
         ...orders.map((order) => {
           const own = lines.filter((line) => line.orderId === order.id)
           const total = priceOrder(
@@ -190,6 +201,7 @@ async function GET(req: Request) {
             paid,
             Math.round((total - paid) * 100) / 100,
             now,
+            pmText(order.id),
             ...stageList().flatMap((def) => {
               const stage = stageOf(order.id, def.key)
               return [STATUS_WORD[stage?.status ?? 'waiting'], day(stage?.completedAt), days(stage)]
@@ -199,6 +211,21 @@ async function GET(req: Request) {
       ]
     }
     if (!money && !query.orderId && !query.stage) rows = rows.map((row) => [...row.slice(0, 8), ...row.slice(11)])
+    if (query.format === 'xlsx') {
+      const greenRows = new Set<number>()
+      if (!query.orderId) orders.forEach((order, index) => {
+        const state = pmState(order.id)
+        if (state.set && state.ok === state.set) greenRows.add(index + 1)
+      })
+      const headerRows = query.orderId ? 3 : 1
+      const file = buildXlsx([{ name: query.orderId ? 'Order file' : name.replace(/-/g, ' '), rows: rows as Array<Array<string | number | null>>, headerRows, greenRows }])
+      return new NextResponse(new Uint8Array(file), {
+        headers: {
+          'content-type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          'content-disposition': `attachment; filename="${name}-${new Date().toISOString().slice(0, 10)}.xlsx"`,
+        },
+      })
+    }
     return new NextResponse(csv(rows), {
       headers: {
         'content-type': 'text/csv; charset=utf-8',
@@ -210,13 +237,13 @@ async function GET(req: Request) {
 
 export const openApi: OpenApiRouteDoc = {
   tag: 'Dermat Orders',
-  summary: 'Export orders as CSV (Excel)',
+  summary: 'Export orders as Excel (.xlsx) or CSV',
   methods: {
     GET: {
       summary: 'Order book with every stage (default), one stage with all its fields and steps (stage=), or one order file stage by stage (orderId=)',
       tags: ['Dermat Orders'],
       query: querySchema,
-      responses: [{ status: 200, description: 'CSV file', schema: z.string() }],
+      responses: [{ status: 200, description: 'Excel or CSV file; orders with all packing material OK are green in Excel', schema: z.string() }],
     },
   },
 }

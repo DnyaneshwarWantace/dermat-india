@@ -86,3 +86,26 @@ export type BomListItem = {
   approvedByName: string | null
   updatedAt: string
 }
+
+export type PackagingPart = {
+  productId: string
+  qty: number
+  name: string
+  code: string | null
+  kind: string | null
+  unit: string | null
+  onHand: number
+}
+
+export type PackagingCodeView = {
+  id: string
+  code: string
+  name: string
+  kind: 'tube' | 'jar' | 'bottle' | 'other'
+  size: string | null
+  specs: string | null
+  notes: string | null
+  printedItems: string[]
+  components: PackagingPart[]
+  updatedAt: string
+}

@@ -41,6 +41,11 @@ const systemEntities: CustomEntitySpec[] = [
         listVisible: true,
       }),
       cf.text('sales_manager', { label: 'Sales Manager', listVisible: true }),
+      cf.text('pan_no', { label: 'PAN no.' }),
+      cf.text('vat_no', { label: 'VAT no.' }),
+      cf.text('transporter', { label: 'Transporter / delivery type' }),
+      cf.text('insurance_policy_no', { label: 'Undertaking / insurance policy no.' }),
+      cf.multiline('dispatch_instructions', { label: 'Special dispatch instructions' }),
     ],
   },
 ]

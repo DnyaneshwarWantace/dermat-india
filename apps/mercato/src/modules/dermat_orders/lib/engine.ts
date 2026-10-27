@@ -1,9 +1,11 @@
+import { createLogger } from '@open-mercato/shared/lib/logger'
+import { resolveNotificationService } from '@open-mercato/core/modules/notifications/lib/notificationService'
 import { canReadStage, resolveOrderAccess, trimEvents, trimStages } from './visibility'
 import { RdRequest } from '../../dermat_rnd/data/entities'
 import { DermatOrder, DermatOrderEvent, DermatOrderLine, DermatOrderStage, type FieldChange } from '../data/entities'
 import type { StageActionInput } from '../data/validators'
 import { activeOptions } from '../../dermat_lists/lib/service'
-import { orderHeadline, QA_ARTWORK_CHECKS, STAGES, STOCK_STAGES, applyReopenHours, applyStageOverride, isFinished, missingRequired, missingSteps, reopenBlock, stageDef, stageReopenHours, stepStates, type ReopenInfo } from './stages'
+import { documentRecordId, orderHeadline, qaChecksFrom, STAGES, STOCK_STAGES, applyReopenHours, applyStageOverride, cardFieldKeys, documentCard, isFinished, missingRequired, missingSteps, reopenBlock, stageDef, stageReopenHours, stepRequired, stepStates, type ReopenInfo, type StageDef } from './stages'
 import { effectiveStageDef, loadStageOverrides, type StageOverrides } from './stageSettings'
 import { blockingChecks, checksForOrder, closeFailedChecks, ensureChecksForStage, retireStageChecks, type StageQcSummary } from '../../dermat_quality/lib/service'
 import { requestsForOrder, storeBlocking } from '../../dermat_store/lib/service'
@@ -11,8 +13,12 @@ import { reservationsForOrder } from '../../dermat_planning/lib/service'
 import { USE_EXISTING_BULK, existingBulkProblem, packItems } from './productionStock'
 import { paymentView, paymentsFor, received, recordAdvanceFromStage } from '../../dermat_accounts/lib/service'
 import { priceLine, priceOrder } from './pricing'
+import { paymentTermDays, paymentTermLabel } from '../../dermat_lists/lib/paymentTerms'
 import { canSeeMoney, isMoneyEvent, isMoneyStageField, withoutMoneyFields } from './money'
 import { documentCounts, documentStatus, missingDocuments } from './stageDocuments'
+import { packingCodeIssues, packingCodeMessage, packingSets } from './packingCodes'
+import { cardPeople, openCards } from './tasks'
+import { weightLimits, type FillingCheck } from './bpr'
 
 function pricedLine(line: DermatOrderLine) {
   return { quantity: Number(line.quantity), rate: line.rate == null ? null : Number(line.rate), gstPercent: Number(line.gstPercent ?? 18), discountPercent: Number(line.discountPercent ?? 0) }
@@ -37,13 +43,16 @@ function comparable(value: unknown): string | number | null {
   return text === '' ? null : text
 }
 
-export function logEvent(ctx: OrderContext, order: DermatOrder, action: string, stageKey: string | null, note: string | null, byName: string | null, changes: FieldChange[] = []) {
+const engineLogger = createLogger('dermat_orders')
+
+export function logEvent(ctx: OrderContext, order: DermatOrder, action: string, stageKey: string | null, note: string | null, byName: string | null, changes: FieldChange[] = [], stepKey: string | null = null) {
   ctx.em.persist(
     ctx.em.create(DermatOrderEvent, {
       organizationId: ctx.organizationId,
       tenantId: ctx.tenantId,
       orderId: order.id,
       stageKey,
+      stepKey,
       action,
       note,
       byName,
@@ -78,7 +87,11 @@ export function openReadyStages(stages: DermatOrderStage[]): string[] {
   for (const def of STAGES) {
     const stage = byKey.get(def.key)
     if (!stage || stage.status !== 'waiting') continue
-    if (def.after.every((key) => isFinished(byKey.get(key)?.status))) {
+    const stepsReady = (def.afterSteps ?? []).every((entry) => {
+      const source = byKey.get(entry.stage)
+      return isFinished(source?.status) || Boolean(stepStates(source?.data)[entry.step]?.done)
+    })
+    if (stepsReady && def.after.every((key) => isFinished(byKey.get(key)?.status))) {
       stage.status = 'open'
       stage.openedAt = new Date()
       opened.push(def.key)
@@ -122,11 +135,99 @@ async function afterOpened(ctx: OrderContext, order: DermatOrder, opened: string
       byName,
     })
     if (created) logEvent(ctx, order, 'qc_created', key, `${created} QC check${created > 1 ? 's' : ''} sent to QC`, null)
+    if (key === 'formulation') {
+      const boms = await approvedPackBoms(ctx, lines.map((line) => line.productId), order.id)
+      const stage = await ctx.em.findOne(DermatOrderStage, { orderId: order.id, stageKey: 'formulation' })
+      if (stage && lines.length && lines.every((line) => boms.get(line.productId))) {
+        stage.data = { ...(stage.data ?? {}), __steps: { ...stepStates(stage.data), bom_made: { done: true, at: new Date().toISOString(), by: 'R&D (BOM already made)' } } }
+        logEvent(ctx, order, 'step_done', 'formulation', 'BOM made for every product · already on the product', null, [], 'bom_made')
+      }
+    }
+  }
+}
+
+function todayIst(): string {
+  return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' })
+}
+
+async function autoPassStages(ctx: OrderContext, order: DermatOrder, stages: DermatOrderStage[], opened: string[]): Promise<boolean> {
+  const byKey = new Map(stages.map((stage) => [stage.stageKey, stage]))
+  let changed = false
+  const advance = byKey.get('advance')
+  if (opened.includes('advance') && advance?.status === 'open' && (paymentTermDays(order.paymentTerms) ?? 0) > 0) {
+    advance.status = 'done'
+    advance.completedAt = new Date()
+    advance.completedByName = null
+    advance.data = { ...(advance.data ?? {}), __credit: true, received_on: todayIst() }
+    logEvent(ctx, order, 'completed', 'advance', `Credit customer (${paymentTermLabel(order.paymentTerms)}): no advance needed`, null)
+    changed = true
+  }
+  const sampling = byKey.get('sampling')
+  if (opened.includes('sampling') && sampling?.status === 'open') {
+    const lines = await ctx.em.find(DermatOrderLine, { orderId: order.id })
+    if (lines.length && lines.every((line) => !line.sampleNeeded)) {
+      sampling.status = 'skipped'
+      sampling.completedAt = new Date()
+      sampling.completedByName = null
+      const reason = order.orderType === 'repeat'
+        ? 'Repeat order: no new sample needed'
+        : lines.some((line) => line.sameAsProductId)
+          ? 'Same formula as an existing product: no new sample needed'
+          : 'No product on this order needs a sample'
+      logEvent(ctx, order, 'skipped', 'sampling', reason, null)
+      changed = true
+    }
+  }
+  return changed
+}
+
+export function assignDefaultCard(def: StageDef, stage: DermatOrderStage, overrides: StageOverrides): void {
+  if (stage.status !== 'open' && stage.status !== 'on_hold') return
+  const card = openCards(def, stage.data)[0]
+  if (!card) return
+  const people = cardPeople(stage.data)
+  if (people[card.key]) return
+  const person = overrides.get(def.key)?.cardSettings?.people?.[card.key]
+  if (!person) return
+  stage.data = { ...(stage.data ?? {}), __people: { ...people, [card.key]: person } }
+}
+
+export async function progressStages(ctx: OrderContext, order: DermatOrder, stages: DermatOrderStage[], byName: string | null): Promise<void> {
+  const overrides = await loadStageOverrides(ctx)
+  for (let round = 0; round < 6; round += 1) {
+    const opened = openReadyStages(stages)
+    if (!opened.length) return
+    for (const key of opened) {
+      const def = effectiveStageDef(key, overrides)
+      const stage = stages.find((entry) => entry.stageKey === key)
+      if (def && stage) assignDefaultCard(def, stage, overrides)
+      if (key === 'artwork' && stage && order.sourceOrderId && !stage.data?.composition_text) {
+        const source = await ctx.em.findOne(DermatOrderStage, { orderId: order.sourceOrderId, stageKey: 'artwork' })
+        const text = typeof source?.data?.composition_text === 'string' ? source.data.composition_text : ''
+        if (text.trim()) {
+          stage.data = { ...(stage.data ?? {}), composition_text: text }
+          logEvent(ctx, order, 'saved', 'artwork', 'Composition copied from the earlier order; QA to confirm', null)
+        }
+      }
+    }
+    await afterOpened(ctx, order, opened, byName)
+    if (!(await autoPassStages(ctx, order, stages, opened))) return
   }
 }
 
 async function assertSubStageOrder(ctx: OrderContext, orderId: string, stageKey: string, stepKey: string, data: Record<string, unknown>) {
-  const needsMaterial = (stageKey === 'manufacturing' && stepKey === 'manufactured' && data.bulk_source !== USE_EXISTING_BULK) || (stageKey === 'filling' && stepKey === 'filled')
+  if ((stageKey === 'filling' || stageKey === 'packing') && stepKey === 'pm_asked') {
+    const asked = ((await requestsForOrder(ctx, orderId))[stageKey] ?? []).some((request) => request.status !== 'cancelled')
+    if (!asked && (await storeBlocking(ctx, orderId, stageKey))) throw new OrderError('Ask the store first: use "Ask the store" on this step', 400, { store: true })
+  }
+  if (stageKey === 'formulation' && (stepKey === 'bom_made' || stepKey === 'bom_approved')) {
+    const lines = await ctx.em.find(DermatOrderLine, { orderId })
+    const boms = await approvedPackBoms(ctx, lines.map((line) => line.productId), orderId)
+    const products = await loadProducts(ctx, lines.map((line) => line.productId))
+    const missing = lines.filter((line) => (stepKey === 'bom_made' ? !boms.get(line.productId) : boms.get(line.productId)?.status !== 'approved')).map((line) => products.get(line.productId)?.title ?? 'a product')
+    if (missing.length) throw new OrderError(stepKey === 'bom_made' ? `Make the BOM first for: ${missing.join(', ')}` : `Approve the BOM first for: ${missing.join(', ')}`, 400)
+  }
+  const needsMaterial = (stageKey === 'manufacturing' && (stepKey === 'started' || stepKey === 'manufactured') && data.bulk_source !== USE_EXISTING_BULK) || (stageKey === 'filling' && (stepKey === 'started' || stepKey === 'filled'))
   if (needsMaterial) {
     const block = await storeBlocking(ctx, orderId, stageKey)
     if (block) throw new OrderError(`Stage 1 first: ${block}`, 400, { store: true })
@@ -203,12 +304,25 @@ export async function applyStageAction(ctx: OrderContext, order: DermatOrder, in
   const changed: FieldChange[] = []
   const mergeData = () => {
     if (!input.data) return
+    if (def.steps.length && input.action !== 'step' && input.action !== 'save') return
     if (options.money === false) input.data = withoutMoneyFields(def.key, input.data) as typeof input.data
     const next: Record<string, unknown> = { ...(stage.data ?? {}) }
     for (const [key, value] of Object.entries(input.data)) {
       const field = def.fields.find((entry) => entry.key === key)
       if (!field) continue
       next[key] = typeof value === 'string' ? value.trim() : value
+      const given = next[key]
+      if (given !== null && given !== undefined && given !== '') {
+        if (field.type === 'number') {
+          const amount = typeof given === 'number' ? given : Number(String(given).replace(/,/g, ''))
+          if (!Number.isFinite(amount)) throw new OrderError(`${field.label}: enter a number`, 400, { missing: [key] })
+          if (amount < 0) throw new OrderError(`${field.label} cannot be below zero`, 400, { missing: [key] })
+          if (amount > 1_000_000_000) throw new OrderError(`${field.label} is too large`, 400, { missing: [key] })
+          next[key] = amount
+        }
+        if (field.type === 'date' && !/^\d{4}-\d{2}-\d{2}$/.test(String(given))) throw new OrderError(`${field.label}: enter a date`, 400, { missing: [key] })
+        if (typeof given === 'string' && given.length > 4000) throw new OrderError(`${field.label} is too long`, 400, { missing: [key] })
+      }
       const before = comparable((stage.data as Record<string, unknown> | null)?.[key])
       const after = comparable(next[key])
       if (String(before ?? '') !== String(after ?? '')) changed.push({ key, label: field.label, from: before, to: after })
@@ -218,6 +332,104 @@ export async function applyStageAction(ctx: OrderContext, order: DermatOrder, in
   const markStarted = () => {
     if ((stage.data as Record<string, unknown> | null)?.__started) return
     stage.data = { ...(stage.data ?? {}), __started: { at: new Date().toISOString(), by: byName } }
+  }
+
+  const completeStage = async (merge: boolean): Promise<void> => {
+    markStarted()
+    if (stage.status === 'waiting') throw new OrderError(`${def.label} has not started yet`, 409)
+    if (stage.status === 'on_hold') throw new OrderError(`${def.label} is on hold. Resume it first.`, 409)
+    if (isFinished(stage.status)) throw new OrderError(`${def.label} is already finished`, 409)
+    if (merge) mergeData()
+    const stepsLeft = missingSteps(def, stage.data)
+    if (stepsLeft.length) throw new OrderError(`Finish these steps first: ${stepsLeft.join(', ')}`, 400, { steps: stepsLeft })
+    const missing = missingRequired(def, stage.data ?? {})
+    if (missing.length) throw new OrderError(`Fill in: ${missing.join(', ')}`, 400, { missing })
+    if (def.key === 'artwork') {
+      const codeIssues = await packingCodeIssues(ctx, order.id)
+      if (codeIssues.length) throw new OrderError(packingCodeMessage(codeIssues), 400, { packingCodes: codeIssues.map((issue) => issue.lineId) })
+    }
+    const orderValue = priceOrder((await ctx.em.find(DermatOrderLine, { orderId: order.id })).map(pricedLine), order.pricesIncludeGst).total
+    const missingDocs = await missingDocuments(ctx, order.id, def.key, orderValue, overrides.get(def.key))
+    if (missingDocs.length) throw new OrderError(`Upload: ${missingDocs.map((doc) => doc.label).join(', ')}`, 400, { documents: missingDocs.map((doc) => doc.key) })
+    if (def.key === 'sampling' && stage.data?.client_feedback !== 'Approved') {
+      throw new OrderError('The client has not approved the sample. Set feedback to Approved, or start another round with their changes.', 400)
+    }
+    if (def.key === 'qc_qa' && stage.data?.qc_result !== 'Released') {
+      throw new OrderError(
+        stage.data?.qc_result === 'Rework'
+          ? 'QA decided Rework: send it back to the production stage to redo, then QA reviews again'
+          : stage.data?.qc_result === 'Rejected'
+            ? 'QA rejected the batch: it cannot be billed or dispatched. Reopen Manufacturing for a new batch.'
+            : 'Choose the QA decision',
+        400,
+      )
+    }
+    if (def.key === 'artwork') {
+      const items = await packItems(ctx, order.id)
+      const statuses = (stage.data?.__pm as Record<string, { status?: string }> | undefined) ?? {}
+      const notReady = items.filter((item) => !['PM OK', 'Half PM OK'].includes(statuses[item.productId]?.status ?? ''))
+      if (notReady.length) {
+        throw new OrderError(`Packing material not ready: ${notReady.map((item) => `${item.title} (${statuses[item.productId]?.status ?? 'no status'})`).join(', ')}`, 400, { pm: notReady.map((item) => item.productId) })
+      }
+    }
+    const reusingBulk = def.key === 'manufacturing' && stage.data?.bulk_source === USE_EXISTING_BULK
+    if (reusingBulk) {
+      const problem = await existingBulkProblem(ctx, order.id, String(stage.data?.batch_no ?? '').trim())
+      if (problem) throw new OrderError(problem, 400, { bulk: true })
+      await retireStageChecks(ctx, order.id, def.key, `Bulk taken from batch ${String(stage.data?.batch_no ?? '')}, already QC-approved`)
+    }
+    const storeBlock = reusingBulk ? null : await storeBlocking(ctx, order.id, def.key)
+    if (storeBlock) throw new OrderError(storeBlock, 400, { store: true })
+    const openSteps = missingSteps(def, stage.data)
+    if (openSteps.length) throw new OrderError(`Tick these steps first: ${openSteps.join(', ')}`, 400, { steps: openSteps })
+    const qcBlocking = reusingBulk ? [] : await blockingChecks(ctx, order.id, def.key)
+    if (qcBlocking.length) {
+      throw new OrderError(`QC has not passed yet: ${qcBlocking.map((check) => `${check.code} (${check.status})`).join(', ')}`, 400, { qc: qcBlocking.map((check) => check.id) })
+    }
+    if (def.key === 'formulation') {
+      const lines = await ctx.em.find(DermatOrderLine, { orderId: order.id })
+      const boms = await approvedPackBoms(
+        ctx,
+        lines.map((line) => line.productId),
+        order.id,
+      )
+      const products = await loadProducts(
+        ctx,
+        lines.map((line) => line.productId),
+      )
+      const without = lines.filter((line) => boms.get(line.productId)?.status !== 'approved').map((line) => products.get(line.productId)?.title ?? 'a product')
+      if (without.length) throw new OrderError(`Approve the BOM first for: ${without.join(', ')}`, 400)
+    }
+    if (def.key === 'dispatch') {
+      const orderLines = await ctx.em.find(DermatOrderLine, { orderId: order.id })
+      const totals = priceOrder(orderLines.map(pricedLine), order.pricesIncludeGst)
+      const paid = received(await paymentsFor(ctx, [order.id]))
+      const due = Math.round((totals.total - paid) * 100) / 100
+      const override = String(stage.data?.dispatch_override ?? '').trim()
+      if (due > 0.5 && !override) {
+        throw new OrderError(
+          options.money === false
+            ? 'Payment is not complete for this order. Ask Accounts to record the payment, or write a reason under "Dispatch before full payment".'
+            : `₹${due.toLocaleString('en-IN')} is still due on this order. Record the payment in Accounts, or write a reason under "Dispatch before full payment".`,
+          400,
+          options.money === false ? {} : { due },
+        )
+      }
+      if (due > 0.5) logEvent(ctx, order, 'payment_override', def.key, `Dispatched with ₹${due.toLocaleString('en-IN')} due: ${override}`, byName)
+    }
+    stage.status = 'done'
+    stage.completedAt = new Date()
+    stage.completedByName = byName
+    stage.holdReason = null
+    stage.holdParty = null
+    logEvent(ctx, order, 'completed', def.key, note, byName, changed)
+    if (def.key === 'sampling') await linkSampleApproval(ctx, order, stage.data ?? {}, byName)
+    if (def.key === 'manufacturing') stage.data = { ...(stage.data ?? {}), __bom_used: await bomsInUse(ctx, order.id, byName) }
+    if (def.key === 'advance' && !stage.data?.received_on) stage.data = { ...(stage.data ?? {}), received_on: todayIst() }
+    if (def.key === 'advance' && (await recordAdvanceFromStage(ctx, order, stage.data ?? {}, byName))) {
+      logEvent(ctx, order, 'payment', def.key, `Advance ₹${Number(stage.data?.advance_amount).toLocaleString('en-IN')} recorded in Accounts`, byName)
+    }
+    await progressStages(ctx, order, stages, byName)
   }
 
   switch (input.action) {
@@ -237,13 +449,24 @@ export async function applyStageAction(ctx: OrderContext, order: DermatOrder, in
       const steps = { ...((stage.data?.__steps as Record<string, unknown> | undefined) ?? {}), delivered: { done: true, at: new Date().toISOString(), by: byName } }
       stage.data = { ...(stage.data ?? {}), delivered_on: deliveredOn, __steps: steps }
       order.updatedAt = new Date()
-      logEvent(ctx, order, 'delivered', def.key, [`Delivered on ${deliveredOn}`, note].filter(Boolean).join(' · '), byName)
+      logEvent(ctx, order, 'delivered', def.key, [`Delivered on ${deliveredOn}`, note].filter(Boolean).join(' · '), byName, [], 'delivered')
       break
     }
     case 'assign': {
       const userId = input.responsibleUserId ?? null
+      const name = userId ? ((await userNames(ctx, [userId])).get(userId) ?? null) : null
+      if (input.stepKey) {
+        const step = def.steps.find((entry) => entry.key === input.stepKey)
+        if (!step) throw new OrderError('Unknown step')
+        const people = { ...cardPeople(stage.data) }
+        if (userId) people[step.key] = { userId, name }
+        else delete people[step.key]
+        stage.data = { ...(stage.data ?? {}), __people: people }
+        logEvent(ctx, order, 'assigned', def.key, `${step.label}: ${name ?? 'Nobody'}`, byName, [], step.key)
+        break
+      }
       stage.responsibleUserId = userId
-      stage.responsibleName = userId ? ((await userNames(ctx, [userId])).get(userId) ?? null) : null
+      stage.responsibleName = name
       logEvent(ctx, order, 'assigned', def.key, stage.responsibleName ?? 'Nobody', byName)
       break
     }
@@ -255,23 +478,53 @@ export async function applyStageAction(ctx: OrderContext, order: DermatOrder, in
       const done = input.done !== false
       const index = def.steps.findIndex((entry) => entry.key === step.key)
       const current = stepStates(stage.data)
-      if (done && !step.optional) {
-        const earlier = def.steps.slice(0, index).filter((entry) => !entry.optional && !current[entry.key]?.done)
+      if (done && current[step.key]?.done) throw new OrderError(`${step.label} is already done`, 409)
+      if (done && !step.optional && !step.parallel) {
+        const earlier = def.steps.slice(0, index).filter((entry) => stepRequired(def, entry, stage.data) && !current[entry.key]?.done)
         if (earlier.length) throw new OrderError(`Do these first: ${earlier.map((entry) => entry.label).join(', ')}`, 400, { steps: earlier.map((entry) => entry.key) })
       }
+      if (!done && !current[step.key]?.done) throw new OrderError(`${step.label} is not done`, 409)
       if (!done) {
         const later = def.steps.slice(index + 1).filter((entry) => current[entry.key]?.done)
         if (later.length) throw new OrderError(`Undo the later steps first: ${later.map((entry) => entry.label).join(', ')}`, 400)
+        const waiting = STAGES.filter((entry) => entry.afterSteps?.some((link) => link.stage === def.key && link.step === step.key))
+        const started = stages.filter((entry) => waiting.some((link) => link.key === entry.stageKey) && entry.status !== 'waiting')
+        if (started.length) throw new OrderError(`${started.map((entry) => stageDef(entry.stageKey)?.label ?? entry.stageKey).join(', ')} already started from this step`, 409)
+      }
+      if (done) {
+        const own = new Set(cardFieldKeys(def, step.key))
+        if (input.data) input.data = Object.fromEntries(Object.entries(input.data).filter(([key]) => own.has(key)))
+        mergeData()
+        const empty = def.fields.filter((field) => own.has(field.key) && (field.required || field.beforeDone) && (stage.data?.[field.key] === undefined || stage.data?.[field.key] === null || String(stage.data?.[field.key]).trim() === ''))
+        if (empty.length) throw new OrderError(`Fill in: ${empty.map((field) => field.label).join(', ')}`, 400, { missing: empty.map((field) => field.key) })
+        const orderValue = priceOrder((await ctx.em.find(DermatOrderLine, { orderId: order.id })).map(pricedLine), order.pricesIncludeGst).total
+        const docs = (await missingDocuments(ctx, order.id, def.key, orderValue, overrides.get(def.key))).filter((doc) => documentCard(def, doc) === step.key)
+        if (docs.length) throw new OrderError(`Upload: ${docs.map((doc) => doc.label).join(', ')}`, 400, { documents: docs.map((doc) => doc.key) })
+      }
+      if (done && def.key === 'artwork' && step.key === 'composition') {
+        const typed = String(stage.data?.composition_text ?? '').trim()
+        const files = (await documentCounts(ctx, order.id)).get(documentRecordId(order.id, 'artwork', 'composition_file')) ?? 0
+        if (!typed && !files) throw new OrderError('Type the composition or upload the composition sheet first', 400, { missing: ['composition_text'] })
       }
       if (done && def.key === 'artwork' && step.key === 'qa_final') {
         const ticked = ((stage.data?.__qa_art as Record<string, { done?: boolean }> | undefined) ?? {})
-        const open = QA_ARTWORK_CHECKS.filter((check) => !ticked[check.key]?.done)
+        const open = qaChecksFrom(await activeOptions(ctx, 'qa_artwork_checks')).filter((check) => !ticked[check.key]?.done)
         if (open.length) throw new OrderError(`QA artwork checklist first: ${open.map((check) => check.label).join('; ')}`, 400)
       }
       if (done) await assertSubStageOrder(ctx, order.id, def.key, step.key, stage.data ?? {})
+      if (done && def.key === 'manufacturing' && step.key === 'manufactured') {
+        const planned = Number(stage.data?.planned_kg)
+        const made = Number(stage.data?.batch_size)
+        stage.data = { ...(stage.data ?? {}), yield_percent: planned > 0 && made > 0 ? Math.round((made / planned) * 1000) / 10 : null }
+      }
+      if (done && def.key === 'filling' && step.key === 'filled' && (stage.data?.handed_to_packing === undefined || stage.data?.handed_to_packing === null || stage.data?.handed_to_packing === '')) {
+        stage.data = { ...(stage.data ?? {}), handed_to_packing: Math.max(0, (Number(stage.data?.filled_units) || 0) - (Number(stage.data?.rejected_units) || 0)) }
+      }
       const states = { ...stepStates(stage.data), [step.key]: { done, at: done ? new Date().toISOString() : null, by: done ? byName : null } }
       stage.data = { ...(stage.data ?? {}), __steps: states }
-      logEvent(ctx, order, done ? 'step_done' : 'step_undone', def.key, step.label, byName)
+      logEvent(ctx, order, done ? 'step_done' : 'step_undone', def.key, note ? `${step.label} · ${note}` : step.label, byName, done ? changed : [], step.key)
+      assignDefaultCard(def, stage, overrides)
+      if (done) await progressStages(ctx, order, stages, byName)
       break
     }
     case 'pm_status': {
@@ -283,25 +536,78 @@ export async function applyStageAction(ctx: OrderContext, order: DermatOrder, in
       if (!item) throw new OrderError('That packing item is not on this order', 404)
       const current = (stage.data?.__pm as Record<string, unknown> | undefined) ?? {}
       stage.data = { ...(stage.data ?? {}), __pm: { ...current, [item.productId]: { status: input.pmStatus, note: note ?? null, at: new Date().toISOString(), by: byName } } }
-      logEvent(ctx, order, 'pm_status', def.key, `${item.title}: ${input.pmStatus}${note ? ` (${note})` : ''}`, byName)
+      logEvent(ctx, order, 'pm_status', def.key, `${item.title}: ${input.pmStatus}${note ? ` (${note})` : ''}`, byName, [], 'pm_ok')
+      break
+    }
+    case 'filling_check': {
+      if (def.key !== 'filling') throw new OrderError('Filling checks belong to the Filling stage')
+      if (stage.status !== 'open' && stage.status !== 'on_hold') throw new OrderError('Filling is not in progress', 409)
+      const states = stepStates(stage.data)
+      if (!states.started?.done) throw new OrderError('Start filling first', 409)
+      if (states.filled?.done) throw new OrderError('Filling is already finished', 409)
+      const reading = (value: unknown, label: string, max: number): number | null => {
+        if (value === null || value === undefined || value === '') return null
+        const parsed = Number(value)
+        if (!Number.isFinite(parsed) || parsed < 0 || parsed > max) throw new OrderError(`${label}: enter a number from 0 to ${max}`)
+        return parsed
+      }
+      const okOf = (value: unknown, label: string): boolean => {
+        if (!['ok', 'not_ok'].includes(String(value))) throw new OrderError(`Tick ${label}`)
+        return value === 'ok'
+      }
+      const raw = [input.data?.w1, input.data?.w2, input.data?.w3, input.data?.w4, input.data?.weight_g]
+      const weights = raw.slice(0, 4).map((value, index) => reading(value, `Weight ${index + 1}`, 100000)).filter((value): value is number => value !== null)
+      const limits = weightLimits(stage.data)
+      const avg = weights.length ? Math.round((weights.reduce((sum, value) => sum + value, 0) / weights.length) * 100) / 100 : null
+      const weightOk = limits && weights.length ? weights.every((value) => value >= limits.min && value <= limits.max) : okOf(input.data?.weight_ok, 'the weight')
+      const bottleOk = input.data?.bottle_ok === undefined ? true : okOf(input.data?.bottle_ok, 'the bottle / tube quality')
+      const capOk = input.data?.cap_ok === undefined ? true : okOf(input.data?.cap_ok, 'the capping / crimping')
+      const leakOk = input.data?.leak_ok === undefined ? undefined : okOf(input.data?.leak_ok, 'the leak test')
+      const allOk = weightOk && bottleOk && capOk && leakOk !== false
+      if (!allOk && !note) throw new OrderError('Write what was wrong and what was done')
+      const check: FillingCheck = { at: new Date().toISOString(), by: byName, weights, avg, temp: reading(input.data?.temp, 'Area temperature', 80), rh: reading(input.data?.rh, 'Humidity', 100), weightOk, bottleOk, capOk, ...(leakOk === undefined ? {} : { leakOk }), weightG: avg, note }
+      const checks = Array.isArray(stage.data?.__checks) ? (stage.data?.__checks as unknown[]) : []
+      stage.data = { ...(stage.data ?? {}), __checks: [...checks, check] }
+      const summary = [`Weight ${weightOk ? 'OK' : 'NOT OK'}${avg !== null ? ` (avg ${avg} g)` : ''}`, `bottle ${bottleOk ? 'OK' : 'NOT OK'}`, `capping ${capOk ? 'OK' : 'NOT OK'}`, ...(leakOk === undefined ? [] : [`leak ${leakOk ? 'OK' : 'NOT OK'}`])].join(' · ')
+      logEvent(ctx, order, 'filling_check', def.key, `${summary}${note ? ` · ${note}` : ''}`, byName)
+      if (!allOk) {
+        try {
+          await resolveNotificationService(ctx.container as unknown as { resolve: (name: string) => unknown }).createForFeature(
+            {
+              type: 'dermat_orders.stage.paused',
+              requiredFeature: 'dermat_orders.work.qa',
+              title: `${order.orderNo}: filling check NOT OK`,
+              body: `${summary}${note ? ` · ${note}` : ''} · ${byName ?? ''}`,
+              severity: 'warning',
+              sourceModule: 'dermat_orders',
+              sourceEntityType: 'dermat_orders:order',
+              sourceEntityId: order.id,
+              linkHref: `/backend/orders/${order.id}/stages/filling`,
+            },
+            { tenantId: ctx.tenantId, organizationId: ctx.organizationId },
+          )
+        } catch (error) {
+          engineLogger.error('Failed to notify QA of a failed filling check', { err: error })
+        }
+      }
       break
     }
     case 'checklist': {
       if (def.key !== 'artwork') throw new OrderError('The QA artwork checklist belongs to Artwork & packaging')
       if (stage.status !== 'open' && stage.status !== 'on_hold') throw new OrderError(`${def.label} is not in progress`, 409)
-      const check = QA_ARTWORK_CHECKS.find((entry) => entry.key === input.stepKey)
+      const check = qaChecksFrom(await activeOptions(ctx, 'qa_artwork_checks')).find((entry) => entry.key === input.stepKey)
       if (!check) throw new OrderError('Unknown checklist item')
       if (stepStates(stage.data).qa_final?.done) throw new OrderError('QA already finalised the artwork. Untick it first.', 409)
       markStarted()
       const done = input.done !== false
       const current = (stage.data?.__qa_art as Record<string, unknown> | undefined) ?? {}
       stage.data = { ...(stage.data ?? {}), __qa_art: { ...current, [check.key]: { done, at: done ? new Date().toISOString() : null, by: done ? byName : null, note: note ?? null } } }
-      logEvent(ctx, order, done ? 'qa_check' : 'qa_uncheck', def.key, `${check.label}${note ? ` — ${note}` : ''}`, byName)
+      logEvent(ctx, order, done ? 'qa_check' : 'qa_uncheck', def.key, `${check.label}${note ? ` — ${note}` : ''}`, byName, [], 'qa_final')
       break
     }
     case 'rework':
     case 'reject_batch': {
-      const resets: Record<string, string[]> = { manufacturing: ['manufactured'], filling: ['filled'], packing: ['sample', 'packed'] }
+      const resets: Record<string, string[]> = { manufacturing: ['started', 'manufactured'], filling: ['started', 'filled'], packing: ['sample', 'packed'] }
       const reset = resets[def.key]
       if (!reset) throw new OrderError('Only manufacturing, filling and packing can be reworked')
       if (input.action === 'reject_batch' && def.key !== 'manufacturing') throw new OrderError('Only a manufacturing batch can be rejected; filling and packing are reworked')
@@ -348,106 +654,27 @@ export async function applyStageAction(ctx: OrderContext, order: DermatOrder, in
       const steps = { ...stepStates(stage.data) }
       for (const key of ['sample_made', 'sample_sent', 'client_ok']) steps[key] = { done: false, at: null, by: null }
       stage.data = { ...(stage.data ?? {}), client_feedback: null, __steps: steps, __rounds: [...rounds, { round: rounds.length + 1, feedback: note, at: new Date().toISOString(), by: byName }] }
-      logEvent(ctx, order, 'sample_round', def.key, `Round ${rounds.length + 2}: ${note}`, byName)
+      logEvent(ctx, order, 'sample_round', def.key, `Round ${rounds.length + 2}: ${note}`, byName, [], 'client_ok')
       break
     }
     case 'save': {
       markStarted()
       if (stage.status === 'waiting') throw new OrderError(`${def.label} has not started yet`, 409)
       if (isFinished(stage.status)) throw new OrderError(`${def.label} is finished. Reopen it to change it.`, 409)
+      if (def.steps.length && input.data && Object.keys(input.data).length) {
+        if (!input.stepKey || !def.steps.some((entry) => entry.key === input.stepKey)) throw new OrderError('Save the details of one step at a time', 400)
+        if (stepStates(stage.data)[input.stepKey]?.done) throw new OrderError('This step is already done. Undo it first to change its details.', 409)
+      }
+      if (input.stepKey && input.data) {
+        const own = new Set(cardFieldKeys(def, input.stepKey))
+        input.data = Object.fromEntries(Object.entries(input.data).filter(([key]) => own.has(key)))
+      }
       mergeData()
-      logEvent(ctx, order, 'saved', def.key, note, byName, changed)
+      logEvent(ctx, order, 'saved', def.key, note, byName, changed, input.stepKey ?? null)
       break
     }
     case 'complete': {
-      markStarted()
-      if (stage.status === 'waiting') throw new OrderError(`${def.label} has not started yet`, 409)
-      if (stage.status === 'on_hold') throw new OrderError(`${def.label} is on hold. Resume it first.`, 409)
-      if (isFinished(stage.status)) throw new OrderError(`${def.label} is already finished`, 409)
-      mergeData()
-      const missing = missingRequired(def, stage.data ?? {})
-      if (missing.length) throw new OrderError(`Fill in: ${missing.join(', ')}`, 400, { missing })
-      const orderValue = priceOrder((await ctx.em.find(DermatOrderLine, { orderId: order.id })).map(pricedLine), order.pricesIncludeGst).total
-      const missingDocs = await missingDocuments(ctx, order.id, def.key, orderValue, overrides.get(def.key))
-      if (missingDocs.length) throw new OrderError(`Upload: ${missingDocs.map((doc) => doc.label).join(', ')}`, 400, { documents: missingDocs.map((doc) => doc.key) })
-      if (def.key === 'sampling' && stage.data?.client_feedback !== 'Approved') {
-        throw new OrderError('The client has not approved the sample. Set feedback to Approved, or start another round with their changes.', 400)
-      }
-      if (def.key === 'qc_qa' && stage.data?.qc_result !== 'Released') {
-        throw new OrderError(
-          stage.data?.qc_result === 'Rework'
-            ? 'QA decided Rework: send it back to the production stage to redo, then QA reviews again'
-            : stage.data?.qc_result === 'Rejected'
-              ? 'QA rejected the batch: it cannot be billed or dispatched. Reopen Manufacturing for a new batch.'
-              : 'Choose the QA decision',
-          400,
-        )
-      }
-      if (def.key === 'artwork') {
-        const items = await packItems(ctx, order.id)
-        const statuses = (stage.data?.__pm as Record<string, { status?: string }> | undefined) ?? {}
-        const notReady = items.filter((item) => !['PM OK', 'Half PM OK'].includes(statuses[item.productId]?.status ?? ''))
-        if (notReady.length) {
-          throw new OrderError(`Packing material not ready: ${notReady.map((item) => `${item.title} (${statuses[item.productId]?.status ?? 'no status'})`).join(', ')}`, 400, { pm: notReady.map((item) => item.productId) })
-        }
-      }
-      const reusingBulk = def.key === 'manufacturing' && stage.data?.bulk_source === USE_EXISTING_BULK
-      if (reusingBulk) {
-        const problem = await existingBulkProblem(ctx, order.id, String(stage.data?.batch_no ?? '').trim())
-        if (problem) throw new OrderError(problem, 400, { bulk: true })
-        await retireStageChecks(ctx, order.id, def.key, `Bulk taken from batch ${String(stage.data?.batch_no ?? '')}, already QC-approved`)
-      }
-      const storeBlock = reusingBulk ? null : await storeBlocking(ctx, order.id, def.key)
-      if (storeBlock) throw new OrderError(storeBlock, 400, { store: true })
-      const openSteps = missingSteps(def, stage.data)
-      if (openSteps.length) throw new OrderError(`Tick these steps first: ${openSteps.join(', ')}`, 400, { steps: openSteps })
-      const qcBlocking = reusingBulk ? [] : await blockingChecks(ctx, order.id, def.key)
-      if (qcBlocking.length) {
-        throw new OrderError(`QC has not passed yet: ${qcBlocking.map((check) => `${check.code} (${check.status})`).join(', ')}`, 400, { qc: qcBlocking.map((check) => check.id) })
-      }
-      if (def.key === 'formulation') {
-        const lines = await ctx.em.find(DermatOrderLine, { orderId: order.id })
-        const boms = await approvedPackBoms(
-          ctx,
-          lines.map((line) => line.productId),
-          order.id,
-        )
-        const products = await loadProducts(
-          ctx,
-          lines.map((line) => line.productId),
-        )
-        const without = lines.filter((line) => boms.get(line.productId)?.status !== 'approved').map((line) => products.get(line.productId)?.title ?? 'a product')
-        if (without.length) throw new OrderError(`Approve the BOM first for: ${without.join(', ')}`, 400)
-      }
-      if (def.key === 'dispatch') {
-        const orderLines = await ctx.em.find(DermatOrderLine, { orderId: order.id })
-        const totals = priceOrder(orderLines.map(pricedLine), order.pricesIncludeGst)
-        const paid = received(await paymentsFor(ctx, [order.id]))
-        const due = Math.round((totals.total - paid) * 100) / 100
-        const override = String(stage.data?.dispatch_override ?? '').trim()
-        if (due > 0.5 && !override) {
-          throw new OrderError(
-            options.money === false
-              ? 'Payment is not complete for this order. Ask Accounts to record the payment, or write a reason under "Dispatch before full payment".'
-              : `₹${due.toLocaleString('en-IN')} is still due on this order. Record the payment in Accounts, or write a reason under "Dispatch before full payment".`,
-            400,
-            options.money === false ? {} : { due },
-          )
-        }
-        if (due > 0.5) logEvent(ctx, order, 'payment_override', def.key, `Dispatched with ₹${due.toLocaleString('en-IN')} due: ${override}`, byName)
-      }
-      stage.status = 'done'
-      stage.completedAt = new Date()
-      stage.completedByName = byName
-      stage.holdReason = null
-      stage.holdParty = null
-      logEvent(ctx, order, 'completed', def.key, note, byName, changed)
-      if (def.key === 'sampling') await linkSampleApproval(ctx, order, stage.data ?? {}, byName)
-      if (def.key === 'manufacturing') stage.data = { ...(stage.data ?? {}), __bom_used: await bomsInUse(ctx, order.id, byName) }
-      if (def.key === 'advance' && (await recordAdvanceFromStage(ctx, order, stage.data ?? {}, byName))) {
-        logEvent(ctx, order, 'payment', def.key, `Advance ₹${Number(stage.data?.advance_amount).toLocaleString('en-IN')} recorded in Accounts`, byName)
-      }
-      await afterOpened(ctx, order, openReadyStages(stages), byName)
+      await completeStage(true)
       break
     }
     case 'skip': {
@@ -457,7 +684,7 @@ export async function applyStageAction(ctx: OrderContext, order: DermatOrder, in
       stage.completedAt = new Date()
       stage.completedByName = byName
       logEvent(ctx, order, 'skipped', def.key, note, byName)
-      await afterOpened(ctx, order, openReadyStages(stages), byName)
+      await progressStages(ctx, order, stages, byName)
       break
     }
     case 'hold': {
@@ -543,7 +770,7 @@ export function stageViews(stages: DermatOrderStage[], overrides?: StageOverride
     const closed = stage?.completedAt ? stage.completedAt.getTime() : null
     return {
       key: def.key,
-      label: def.label,
+      label: def.key === 'advance' && (def.label === 'Advance payment' || def.label === 'Advance received') ? (isFinished(stage?.status) ? 'Advance received' : 'Advance pending') : def.label,
       department: def.department,
       hint: def.hint,
       status: stage?.status ?? 'waiting',
@@ -555,6 +782,7 @@ export function stageViews(stages: DermatOrderStage[], overrides?: StageOverride
       openedAt: stage?.openedAt ? stage.openedAt.toISOString() : null,
       completedAt: stage?.completedAt ? stage.completedAt.toISOString() : null,
       completedByName: stage?.completedByName ?? null,
+      updatedAt: stage?.updatedAt ? stage.updatedAt.toISOString() : null,
       days: opened == null ? null : Math.max(0, Math.round((((closed ?? now) - opened) / DAY_MS) * 10) / 10),
       reopen: order ? reopenInfo(order, stages, def.key, overrides) : { until: null, stockMoved: false, nextStarted: [], orderClosed: false },
     }
@@ -595,6 +823,7 @@ export async function serializeOrder(ctx: OrderContext, order: DermatOrder) {
     orderType: order.orderType,
     sourceOrderId: order.sourceOrderId ?? null,
     salesManager: order.salesManager ?? null,
+    coordinator: order.coordinator ?? null,
     paymentTerms: order.paymentTerms ?? null,
     paymentRemarks: order.paymentRemarks ?? null,
     productRemarks: order.productRemarks ?? null,
@@ -629,6 +858,7 @@ export async function serializeOrder(ctx: OrderContext, order: DermatOrder) {
       price: priceLine(pricedLine(line), order.pricesIncludeGst),
       batchNo: line.batchNo ?? null,
       sampleNeeded: line.sampleNeeded,
+      sameAsProductId: line.sameAsProductId ?? null,
       rdNumber: line.rdNumber ?? null,
       specs: line.specs ?? {},
     })),
@@ -650,9 +880,12 @@ export async function serializeOrder(ctx: OrderContext, order: DermatOrder) {
     store,
     reservations,
     packItems: await packItems(ctx, order.id),
+    packingCodeIssues: await packingCodeIssues(ctx, order.id),
+    packingSets: await packingSets(ctx, order.id),
     events: events.map((event) => ({
       id: event.id,
       stageKey: event.stageKey ?? null,
+      stepKey: event.stepKey ?? null,
       action: event.action,
       note: event.note ?? null,
       byName: event.byName ?? null,
@@ -672,8 +905,8 @@ export async function serializeOrder(ctx: OrderContext, order: DermatOrder) {
         stages: view.stages.map((stage) => ({ ...stage, data: withoutMoneyFields(stage.key, stage.data) })),
         events: view.events.map((event) => ({ ...event, note: isMoneyEvent(event.action) ? null : event.note, changes: event.changes.filter((change) => !event.stageKey || !isMoneyStageField(event.stageKey, change.key)) })),
       }
-  const accessView = { full: access.full, stages: Array.from(access.stages) }
-  if (access.full) return { ...priced, access: accessView, stages: priced.stages.map((stage) => ({ ...stage, locked: false })) }
+  const accessView = { full: access.full, stages: Array.from(access.stages), view: Array.from(access.view), see: Array.from(access.see), cards: Array.from(access.cards) }
+  if (access.full) return { ...priced, access: accessView, stages: trimStages(access, priced.stages, overrides) }
   const contact = access.accounts || access.dispatch
   const customer = priced.customer
   return {
@@ -686,7 +919,7 @@ export async function serializeOrder(ctx: OrderContext, order: DermatOrder) {
     billingAddress: access.accounts ? priced.billingAddress : null,
     shippingAddress: contact ? priced.shippingAddress : null,
     stages: trimStages(access, priced.stages, overrides),
-    events: trimEvents(access, priced.events),
+    events: trimEvents(access, priced.events, overrides),
     qc: Object.fromEntries(Object.entries(priced.qc).filter(([key]) => canReadStage(access, key))),
   }
 }

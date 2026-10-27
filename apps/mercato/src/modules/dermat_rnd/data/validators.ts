@@ -6,6 +6,8 @@ const day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/)
 export const rdInputSchema = z.object({
   kind: z.enum(['client', 'npd']).default('client'),
   customerId: z.string().uuid().optional().nullable(),
+  newClientName: text(200),
+  urgency: z.enum(['normal', 'urgent']).default('normal'),
   orderId: z.string().uuid().optional().nullable(),
   productName: z.string().trim().min(1).max(200),
   brand: text(200),
@@ -34,7 +36,10 @@ export const rdActionSchema = z.object({
   sentOn: day.optional().nullable(),
   sentVia: text(200),
   trialId: z.string().uuid().optional().nullable(),
-  result: z.enum(['approved', 'changes']).optional(),
+  result: z.enum(['approved', 'changes', 'rejected']).optional(),
+  nextStep: z.enum(['same', 'new']).optional().nullable(),
+  addActives: z.array(z.object({ productId: z.string().uuid(), code: z.string().max(80).nullable(), name: z.string().max(300) })).max(20).optional(),
+  removeActives: z.array(z.string().trim().min(1).max(300)).max(20).optional(),
   feedback: text(2000),
   note: text(1000),
 })
@@ -81,7 +86,12 @@ const values = z.record(z.string().max(120), z.string().trim().max(500))
 
 export const rdTrialActionSchema = z.object({
   id: z.string().uuid(),
-  action: z.enum(['submit', 'record_result', 'start_stability', 'record_reading', 'finish_stability', 'approve', 'reject', 'reopen', 'make_bom']),
+  action: z.enum(['submit', 'record_result', 'start_stability', 'record_reading', 'finish_stability', 'approve', 'reject', 'reopen', 'make_bom', 'record_micro', 'set_details']),
+  productCode: text(80),
+  sampleReceivedBy: text(120),
+  microRequired: z.boolean().optional(),
+  testingDate: day.optional().nullable(),
+  releasedDate: day.optional().nullable(),
   values: values.optional(),
   result: z.enum(['pass', 'fail']).optional(),
   remarks: text(2000),
@@ -100,6 +110,11 @@ export const rdTrialListSchema = z.object({
   id: z.string().uuid().optional(),
 })
 
+export const rdExportSchema = z.object({
+  view: z.enum(['open', 'samples', 'approved', 'closed', 'all']).default('all'),
+  search: z.string().trim().max(200).optional(),
+})
+
 export const rdReportSchema = z.object({
   month: z.string().regex(/^\d{4}-\d{2}$/).optional(),
 })
@@ -108,3 +123,4 @@ export type RdInput = z.infer<typeof rdInputSchema>
 export type RdTrialUpdate = z.infer<typeof rdTrialUpdateSchema>
 export type RdTrialAction = z.infer<typeof rdTrialActionSchema>
 export type RdAction = z.infer<typeof rdActionSchema>
+export type RdExportQuery = z.infer<typeof rdExportSchema>

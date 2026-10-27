@@ -18,7 +18,7 @@ import { rupeeText } from '../../dermat_products/lib/whatsapp'
 
 export type PaymentRow = {
   id: string
-  kind: 'advance' | 'balance' | 'other'
+  kind: 'advance' | 'balance' | 'other' | 'sample'
   amount: number
   paidOn: string
   mode: string | null
@@ -27,13 +27,14 @@ export type PaymentRow = {
   byName: string | null
   voided: boolean
   voidReason: string | null
-  orderId: string
+  orderId: string | null
   orderNo: string
   invoiceId: string | null
   invoiceCode: string | null
   history: Array<{ action: string; by: string | null; at: string; note: string | null }>
   updatedAt: string
   customerName?: string
+  customerId?: string
 }
 
 type OrderHit = { id: string; orderNo: string; customerName: string }

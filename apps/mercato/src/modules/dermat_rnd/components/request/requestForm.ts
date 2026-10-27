@@ -5,6 +5,8 @@ import type { IngredientRef, RdRequest } from '../types'
 export type RequestForm = {
   kind: 'client' | 'npd'
   customer: PickerOption<Customer> | null
+  newClientName: string
+  urgency: 'normal' | 'urgent'
   orderId: string | null
   productName: string
   brand: string
@@ -27,6 +29,8 @@ export type RequestForm = {
 export const EMPTY_REQUEST_FORM: RequestForm = {
   kind: 'client',
   customer: null,
+  newClientName: '',
+  urgency: 'normal',
   orderId: null,
   productName: '',
   brand: '',
@@ -50,6 +54,8 @@ export function formFromRequest(request: RdRequest): RequestForm {
   return {
     kind: request.kind,
     customer: request.customerId ? { id: request.customerId, primary: request.customerName ?? '', value: { id: request.customerId, name: request.customerName ?? '' } as Customer } : null,
+    newClientName: request.customerId ? '' : request.customerName ?? '',
+    urgency: request.urgency ?? 'normal',
     orderId: request.orderId,
     productName: request.productName,
     brand: request.brand ?? '',
@@ -75,6 +81,8 @@ export function bodyFromForm(form: RequestForm, id?: string): Record<string, unk
     ...(id ? { id } : {}),
     kind: form.kind,
     customerId: form.customer?.id ?? null,
+    newClientName: form.customer ? null : form.newClientName || null,
+    urgency: form.urgency,
     orderId: form.orderId,
     productName: form.productName,
     brand: form.brand,

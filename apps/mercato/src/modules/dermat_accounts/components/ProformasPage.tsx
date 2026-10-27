@@ -1,6 +1,8 @@
 "use client"
 
 import * as React from 'react'
+import { Button } from '@open-mercato/ui/primitives/button'
+import Link from 'next/link'
 import { useGranted } from '../../dermat_departments/components/useGranted'
 import { ViewOnlyNote } from '../../dermat_departments/components/ViewOnlyNote'
 import { useRouter } from 'next/navigation'
@@ -94,7 +96,7 @@ export function ProformasPage() {
       { header: 'Valid until', value: (row) => row.validUntil ?? '' },
       { header: 'Customer', value: (row) => row.customerName },
       { header: 'Customer GSTIN', value: (row) => row.customerGstin ?? '' },
-      { header: 'Order', value: (row) => row.orderNo },
+      { header: 'Order', value: (row) => row.orderNo ?? 'No order yet' },
       { header: 'Taxable (₹)', value: (row) => row.totals.taxable },
       { header: 'GST (₹)', value: (row) => row.totals.gst },
       { header: 'Total (₹)', value: (row) => row.totals.total },
@@ -116,11 +118,16 @@ export function ProformasPage() {
               <p className="text-overline font-semibold uppercase tracking-widest text-muted-foreground">{t('dermat_accounts.eyebrow', 'Accounts')}</p>
               <h1 className="text-2xl font-bold tracking-tight">{t('dermat_accounts.pi.title', 'Proforma invoices')}</h1>
               <p className="max-w-2xl text-sm text-muted-foreground">
-                {t('dermat_accounts.pi.lede', 'Made from an order with the rates on it. Send it to the customer for the advance; the order’s Advance stage gets the PI no. when you mark it sent.')}
+                {t('dermat_accounts.pi.lede', 'Made from an order, or before the order when only the pack size is known. Send it for the advance; when the money comes, make the order from it.')}
               </p>
             </div>
             <div className="flex shrink-0 flex-wrap items-center gap-2">
               <ExportButton onExport={exportAll} />
+              {canRecord ? (
+                <Button asChild variant="outline">
+                  <Link href="/backend/accounts/proformas/new">{t('dermat_accounts.pi.newNoOrder', 'New proforma (no order yet)')}</Link>
+                </Button>
+              ) : null}
               {canRecord ? (
               <div className="w-72">
                 <SearchPicker
@@ -183,7 +190,7 @@ export function ProformasPage() {
                         <span className="block text-xs text-muted-foreground">{day(row.piDate)}</span>
                       </td>
                       <td className="px-4 py-3 font-medium">{row.customerName}</td>
-                      <td className="px-4 py-3 font-mono text-xs">{row.orderNo}</td>
+                      <td className="px-4 py-3 font-mono text-xs">{row.orderNo ?? <span className="font-sans text-status-warning-text">{t('dermat_accounts.pi.noOrder', 'No order yet')}</span>}</td>
                       <td className="px-4 py-3 text-right tabular-nums">{rupeeText(row.totals.total)}</td>
                       <td className="px-4 py-3 text-right tabular-nums">{row.advancePercent ? `${row.advancePercent}% · ${rupeeText(row.advanceAmount ?? 0)}` : '—'}</td>
                       <td className="px-4 py-3 text-xs">{day(row.validUntil)}</td>

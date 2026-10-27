@@ -16,6 +16,7 @@ export const orderLineInputSchema = z.object({
   discountPercent: z.coerce.number().min(0).max(100).default(0),
   batchNo: optionalText(60),
   sampleNeeded: z.boolean().default(false),
+  sameAsProductId: z.string().uuid().optional().nullable(),
   rdNumber: optionalText(60),
   specs: z.object({ production: specSection, primary: specSection, secondary: specSection }).optional(),
 })
@@ -28,6 +29,9 @@ export const orderInputSchema = z.object({
   orderType: z.enum(['new', 'repeat', 'revision']).default('new'),
   sourceOrderId: z.string().uuid().optional().nullable(),
   salesManager: optionalText(120),
+  coordinator: optionalText(120),
+  fromPiId: z.string().uuid().optional().nullable(),
+  advanceReceived: z.object({ amount: z.coerce.number().positive().max(100_000_000), receivedOn: isoDate.optional().nullable(), reference: optionalText(120) }).optional().nullable(),
   paymentTerms: optionalText(120),
   paymentRemarks: optionalText(200),
   productRemarks: optionalText(2000),
@@ -40,12 +44,20 @@ export const orderInputSchema = z.object({
   lines: z.array(orderLineInputSchema).min(1).max(50),
 })
 
+export const quickRepeatSchema = z.object({
+  repeatFrom: z.string().uuid(),
+  deliveryDate: isoDate.optional().nullable(),
+  customerPoRef: optionalText(120),
+  lines: z.array(z.object({ lineId: z.string().uuid(), quantity: z.coerce.number().min(0).max(100_000_000) })).min(1).max(50),
+  advanceReceived: z.object({ amount: z.coerce.number().positive().max(100_000_000), receivedOn: isoDate.optional().nullable(), reference: optionalText(120) }).optional().nullable(),
+})
+
 export const orderUpdateSchema = orderInputSchema.extend({ id: z.string().uuid(), revisionNote: optionalText(500) })
 
 export const stageActionSchema = z.object({
   orderId: z.string().uuid(),
   stageKey: z.enum(STAGE_KEYS as [string, ...string[]]),
-  action: z.enum(['start', 'checklist', 'rework', 'reject_batch', 'save', 'complete', 'hold', 'resume', 'revert', 'skip', 'assign', 'step', 'pm_status', 'new_round', 'delivered']),
+  action: z.enum(['start', 'checklist', 'rework', 'reject_batch', 'save', 'complete', 'hold', 'resume', 'revert', 'skip', 'assign', 'step', 'pm_status', 'new_round', 'delivered', 'filling_check']),
   stepKey: z.string().max(60).optional(),
   productId: z.string().uuid().optional(),
   pmStatus: z.string().max(60).optional(),
@@ -65,6 +77,10 @@ export const orderListQuerySchema = z.object({
   stageStatus: z.enum(['active', 'waiting', 'done']).default('active'),
   customerId: z.string().uuid().optional(),
   productId: z.string().uuid().optional(),
+  from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  pm: z.enum(['complete', 'pending']).optional(),
+  similarTo: z.string().uuid().optional(),
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(50),
 })
@@ -97,6 +113,22 @@ export const stageSettingSchema = z.object({
     .max(20)
     .default([]),
   documents: z.record(z.string(), z.enum(['always', 'optional'])).default({}),
+  cardSettings: z
+    .object({
+      owners: z.record(settingKey, z.array(z.string().regex(/^dermat_orders\.(manage|work\.[a-z]+)$/)).max(8)).optional(),
+      people: z.record(settingKey, z.object({ userId: z.string().uuid(), name: z.string().max(120).nullable() })).optional(),
+      fields: z.record(settingKey, settingKey).optional(),
+      documents: z.record(settingKey, settingKey).optional(),
+      labels: z.record(settingKey, z.string().trim().max(80)).optional(),
+      extraSteps: z
+        .array(z.object({ key: z.string().regex(/^x_[a-z0-9_]{1,40}$/), label: z.string().trim().min(1, 'Every new step needs a name').max(80), after: settingKey.nullable(), optional: z.boolean().optional() }))
+        .max(10)
+        .optional(),
+      parallel: z.array(settingKey).max(20).optional(),
+      optional: z.array(settingKey).max(60).optional(),
+    })
+    .optional()
+    .nullable(),
   extraDocuments: z
     .array(z.object({ key: z.string().regex(/^x_[a-z0-9_]{1,40}$/), label: z.string().trim().min(1, 'Every extra document needs a name').max(80), required: z.boolean() }))
     .max(10)

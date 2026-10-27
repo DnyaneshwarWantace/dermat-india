@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { withSupplierMask } from '../../../dermat_products/lib/suppliers'
 import { z } from 'zod'
 import type { OpenApiRouteDoc } from '@open-mercato/shared/lib/openapi'
 import { enforceCommandOptimisticLock } from '@open-mercato/shared/lib/crud/optimistic-lock-command'
@@ -16,7 +17,7 @@ export const metadata = {
 
 const RESOURCE = 'dermat_purchase.order'
 
-async function GET(req: Request) {
+async function getUnmasked(req: Request) {
   const ctx = await resolveOrderContext(req)
   if ('error' in ctx) return NextResponse.json({ error: ctx.error }, { status: ctx.status })
   const parsed = poListSchema.safeParse(Object.fromEntries(new URL(req.url).searchParams))
@@ -117,5 +118,7 @@ export const openApi: OpenApiRouteDoc = {
     PUT: { summary: 'Edit a draft or waiting PO', tags: ['Dermat Purchase'], requestBody: { schema: poUpdateSchema }, responses: [{ status: 200, description: 'Updated', schema: itemSchema }], errors: [{ status: 409, description: 'Approved PO, or changed by someone else' }] },
   },
 }
+
+const GET = withSupplierMask(getUnmasked)
 
 export { GET, POST, PUT }

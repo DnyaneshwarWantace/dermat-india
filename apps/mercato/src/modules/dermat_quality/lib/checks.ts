@@ -68,8 +68,7 @@ export async function decidePart(ctx: QcContext, check: QcCheck, part: 'chemical
   if (check.status === 'reworked' || check.status === 'rejected') throw new QcError('This check is closed; the batch went to a new round', 409)
   if (result === 'pass') {
     if (!check.worksheet?.sampledBy || !check.worksheet?.sampledAt) throw new QcError('Record who drew the sample and when before passing')
-    const missing = (check.results ?? []).filter((row) => row.test === part && !row.observation.trim()).map((row) => row.name)
-    if (missing.length) throw new QcError(`Enter the observation for: ${missing.join(', ')}`)
+    if (!(check.results ?? []).some((row) => row.test === part && row.observation.trim())) throw new QcError(`Enter at least one ${part} observation before passing`)
     const out = (check.results ?? []).map(evaluateResult).filter((row) => row.test === part && row.inSpec === false)
     if (out.length) throw new QcError(`Out of spec: ${out.map((row) => `${row.name} ${row.observation} (spec ${limitText(row)})`).join(', ')}. Fail it, or correct the reading.`)
     if (part === 'micro' && !check.worksheet?.platedAt) throw new QcError('Record the micro plating date before passing micro')

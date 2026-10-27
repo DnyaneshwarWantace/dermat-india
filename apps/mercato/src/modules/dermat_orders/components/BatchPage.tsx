@@ -15,6 +15,7 @@ import { stageDef } from '../lib/stages'
 import { formatDate, formatDateTime, formatQty } from './format'
 import { BATCH_STATUS, type BatchRow } from './BatchRegister'
 import { printBatchRecord } from './batchRecord'
+import { BprPanel } from './BprPanel'
 import type { DocCompany } from './printDocs'
 import { BackLink } from '../../dermat_departments/components/BackLink'
 
@@ -298,6 +299,8 @@ export function BatchPage({ batchNo }: { batchNo: string }) {
               </table>
             </div>
           </section>
+
+          <BprPanel batchNo={batch.batchNo} />
 
           <section className="space-y-2" aria-labelledby="batch-qc">
             <h2 id="batch-qc" className="flex items-center gap-2 text-sm font-semibold">

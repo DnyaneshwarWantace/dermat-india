@@ -6,7 +6,7 @@ import { Check, ChevronDown, CircleDot, Lock, PauseCircle, SkipForward } from 'l
 import { useT } from '@open-mercato/shared/lib/i18n/context'
 import { cn } from '@open-mercato/shared/lib/utils'
 import { StatusBadge } from '@open-mercato/ui/primitives/status-badge'
-import { stageDef, stepStates, type StageField } from '../lib/stages'
+import { stageDef, stepStates, waitsOn, type StageField } from '../lib/stages'
 import { formatDate, formatDateTime, formatQty } from './format'
 import { StageWorkArea, type StageActionRequest } from './StageSheet'
 import { subStageProgress } from './subStages'
@@ -178,7 +178,7 @@ export function StageRecord({ order, file, people, busy, shortCount, focusKey, o
           const working = stage.status === 'open' || stage.status === 'on_hold'
           const finished = stage.status === 'done' || stage.status === 'skipped'
           const isOpen = working || expanded.has(stage.key)
-          const waitingFor = (def?.after ?? []).map((key) => order.stages.find((entry) => entry.key === key)).filter((entry): entry is Stage => Boolean(entry) && entry!.status !== 'done' && entry!.status !== 'skipped')
+          const waitingFor = (def ? waitsOn(def) : []).map((key) => order.stages.find((entry) => entry.key === key)).filter((entry): entry is Stage => Boolean(entry) && entry!.status !== 'done' && entry!.status !== 'skipped')
           if (stage.locked) {
             return (
               <li key={stage.key} id={`stage-row-${stage.key}`} className={cn('flex scroll-mt-4 items-center gap-4 border-b px-4 py-2 last:border-b-0', stage.status === 'waiting' && 'opacity-60')}>

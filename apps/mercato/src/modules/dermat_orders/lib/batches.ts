@@ -2,6 +2,9 @@ import { DermatOrder, DermatOrderLine, DermatOrderStage } from '../data/entities
 import { QcCheck } from '../../dermat_quality/data/entities'
 import { StoreRequest, StoreRequestLine } from '../../dermat_store/data/entities'
 import { OrderError, loadCustomers, loadProducts, type OrderContext } from './server'
+import { visibleStageData, type OrderAccess } from './visibility'
+import { withoutMoneyFields } from './money'
+import type { StageOverrides } from './stageSettings'
 
 const PRODUCTION_KEYS = ['manufacturing', 'filling', 'packing', 'qc_qa', 'billing', 'dispatch'] as const
 
@@ -132,7 +135,9 @@ export async function batchRegister(ctx: OrderContext, filter: { q?: string; sta
   return { items, counts }
 }
 
-export async function batchFile(ctx: OrderContext, batchNo: string) {
+export type BatchViewer = { access: OrderAccess; overrides?: StageOverrides; money: boolean }
+
+export async function batchFile(ctx: OrderContext, batchNo: string, viewer?: BatchViewer) {
   const [key] = await batchKeys(ctx, batchNo)
   if (!key) throw new OrderError(`Batch ${batchNo} not found`, 404)
   const data = await load(ctx, key.orderIds)
@@ -151,7 +156,12 @@ export async function batchFile(ctx: OrderContext, batchNo: string) {
       completedAt: stage?.completedAt ? stage.completedAt.toISOString() : null,
       completedByName: stage?.completedByName ?? null,
       responsibleName: stage?.responsibleName ?? null,
-      fields: Object.fromEntries(Object.entries(stage?.data ?? {}).filter(([field]) => !field.startsWith('__'))),
+      fields: (() => {
+        const raw = (stage?.data ?? {}) as Record<string, unknown>
+        const seen = viewer ? visibleStageData(viewer.access, stageKey, raw, viewer.overrides) : raw
+        const plain = Object.fromEntries(Object.entries(seen).filter(([field]) => !field.startsWith('__')))
+        return viewer && !viewer.money ? (withoutMoneyFields(stageKey, plain) as Record<string, unknown>) : plain
+      })(),
       ticks: Object.entries((stage?.data?.__steps as Record<string, { done?: boolean }> | undefined) ?? {}).filter(([, value]) => value?.done).map(([tick]) => tick),
       rework: Array.isArray(stage?.data?.__rework) ? (stage?.data?.__rework as Array<Record<string, unknown>>) : [],
     }

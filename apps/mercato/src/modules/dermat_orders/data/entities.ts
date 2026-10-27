@@ -19,6 +19,7 @@ export class DermatOrder {
     | 'customerPoRef'
     | 'sourceOrderId'
     | 'salesManager'
+    | 'coordinator'
     | 'paymentTerms'
     | 'paymentRemarks'
     | 'productRemarks'
@@ -68,6 +69,9 @@ export class DermatOrder {
 
   @Property({ name: 'sales_manager', type: 'text', nullable: true })
   salesManager?: string | null
+
+  @Property({ type: 'text', nullable: true })
+  coordinator?: string | null
 
   @Property({ name: 'payment_terms', type: 'text', nullable: true })
   paymentTerms?: string | null
@@ -125,7 +129,7 @@ export class DermatOrder {
 @Index({ name: 'dermat_order_lines_order_idx', properties: ['orderId'] })
 @Index({ name: 'dermat_order_lines_product_idx', properties: ['productId'] })
 export class DermatOrderLine {
-  [OptionalProps]?: 'brandName' | 'packSize' | 'mrp' | 'rate' | 'gstPercent' | 'discountPercent' | 'batchNo' | 'sampleNeeded' | 'rdNumber' | 'specs' | 'createdAt' | 'updatedAt'
+  [OptionalProps]?: 'brandName' | 'packSize' | 'mrp' | 'rate' | 'gstPercent' | 'discountPercent' | 'batchNo' | 'sampleNeeded' | 'sameAsProductId' | 'rdNumber' | 'specs' | 'createdAt' | 'updatedAt'
 
   @PrimaryKey({ type: 'uuid', defaultRaw: 'gen_random_uuid()' })
   id!: string
@@ -171,6 +175,9 @@ export class DermatOrderLine {
 
   @Property({ name: 'sample_needed', type: 'boolean', default: false })
   sampleNeeded: boolean = false
+
+  @Property({ name: 'same_as_product_id', type: 'uuid', nullable: true })
+  sameAsProductId?: string | null
 
   @Property({ name: 'rd_number', type: 'text', nullable: true })
   rdNumber?: string | null
@@ -255,7 +262,7 @@ export class DermatOrderStage {
 @Entity({ tableName: 'dermat_order_events' })
 @Index({ name: 'dermat_order_events_order_idx', properties: ['orderId'] })
 export class DermatOrderEvent {
-  [OptionalProps]?: 'stageKey' | 'note' | 'byName' | 'changes' | 'createdAt'
+  [OptionalProps]?: 'stageKey' | 'stepKey' | 'note' | 'byName' | 'changes' | 'createdAt'
 
   @PrimaryKey({ type: 'uuid', defaultRaw: 'gen_random_uuid()' })
   id!: string
@@ -271,6 +278,9 @@ export class DermatOrderEvent {
 
   @Property({ name: 'stage_key', type: 'text', nullable: true })
   stageKey?: string | null
+
+  @Property({ name: 'step_key', type: 'text', nullable: true })
+  stepKey?: string | null
 
   @Property({ type: 'text' })
   action!: string
@@ -288,10 +298,21 @@ export class DermatOrderEvent {
   createdAt: Date = new Date()
 }
 
+export type CardSettings = {
+  owners?: Record<string, string[]>
+  people?: Record<string, { userId: string; name: string | null }>
+  fields?: Record<string, string>
+  documents?: Record<string, string>
+  labels?: Record<string, string>
+  extraSteps?: Array<{ key: string; label: string; after: string | null; optional?: boolean }>
+  parallel?: string[]
+  optional?: string[]
+}
+
 @Entity({ tableName: 'dermat_stage_settings' })
 @Unique({ name: 'dermat_stage_settings_scope_uq', properties: ['organizationId', 'tenantId', 'stageKey'] })
 export class DermatStageSetting {
-  [OptionalProps]?: 'label' | 'dayLimit' | 'reopenHours' | 'hiddenSteps' | 'requiredFields' | 'extraFields' | 'documents' | 'extraDocuments' | 'sharedFields' | 'updatedByName' | 'createdAt' | 'updatedAt'
+  [OptionalProps]?: 'label' | 'dayLimit' | 'reopenHours' | 'hiddenSteps' | 'requiredFields' | 'extraFields' | 'documents' | 'extraDocuments' | 'sharedFields' | 'cardSettings' | 'updatedByName' | 'createdAt' | 'updatedAt'
 
   @PrimaryKey({ type: 'uuid', defaultRaw: 'gen_random_uuid()' })
   id!: string
@@ -332,8 +353,130 @@ export class DermatStageSetting {
   @Property({ name: 'shared_fields', type: 'json', nullable: true })
   sharedFields?: string[] | null
 
+  @Property({ name: 'card_settings', type: 'json', nullable: true })
+  cardSettings?: CardSettings | null
+
   @Property({ name: 'updated_by_name', type: 'text', nullable: true })
   updatedByName?: string | null
+
+  @Property({ name: 'created_at', type: Date, onCreate: () => new Date() })
+  createdAt: Date = new Date()
+
+  @Property({ name: 'updated_at', type: Date, onCreate: () => new Date(), onUpdate: () => new Date() })
+  updatedAt: Date = new Date()
+}
+
+@Entity({ tableName: 'dermat_artwork_approvals' })
+@Index({ name: 'dermat_artwork_approvals_order_idx', properties: ['organizationId', 'tenantId', 'orderId'] })
+@Unique({ name: 'dermat_artwork_approvals_token_uq', properties: ['tokenHash'] })
+export class DermatArtworkApproval {
+  [OptionalProps]?: 'status' | 'fileIds' | 'clientName' | 'clientDesignation' | 'signature' | 'comments' | 'ip' | 'userAgent' | 'decidedAt' | 'createdByName' | 'createdAt' | 'updatedAt'
+
+  @PrimaryKey({ type: 'uuid', defaultRaw: 'gen_random_uuid()' })
+  id!: string
+
+  @Property({ name: 'organization_id', type: 'uuid' })
+  organizationId!: string
+
+  @Property({ name: 'tenant_id', type: 'uuid' })
+  tenantId!: string
+
+  @Property({ name: 'order_id', type: 'uuid' })
+  orderId!: string
+
+  @Property({ name: 'token_hash', type: 'text' })
+  tokenHash!: string
+
+  @Property({ type: 'text', default: 'open' })
+  status: 'open' | 'approved' | 'changes' | 'closed' = 'open'
+
+  @Property({ name: 'file_ids', type: 'json', nullable: true })
+  fileIds?: string[] | null
+
+  @Property({ name: 'client_name', type: 'text', nullable: true })
+  clientName?: string | null
+
+  @Property({ name: 'client_designation', type: 'text', nullable: true })
+  clientDesignation?: string | null
+
+  @Property({ type: 'text', nullable: true })
+  signature?: string | null
+
+  @Property({ type: 'text', nullable: true })
+  comments?: string | null
+
+  @Property({ type: 'text', nullable: true })
+  ip?: string | null
+
+  @Property({ name: 'user_agent', type: 'text', nullable: true })
+  userAgent?: string | null
+
+  @Property({ name: 'decided_at', type: Date, nullable: true })
+  decidedAt?: Date | null
+
+  @Property({ name: 'expires_at', type: Date })
+  expiresAt!: Date
+
+  @Property({ name: 'created_by_name', type: 'text', nullable: true })
+  createdByName?: string | null
+
+  @Property({ name: 'created_at', type: Date, onCreate: () => new Date() })
+  createdAt: Date = new Date()
+
+  @Property({ name: 'updated_at', type: Date, onCreate: () => new Date(), onUpdate: () => new Date() })
+  updatedAt: Date = new Date()
+}
+
+export type DocLinkKind = 'pi' | 'invoice' | 'po' | 'dispatch' | 'sample'
+export type DocLinkSend = { via: 'email' | 'whatsapp' | 'copy'; by: string | null; at: string; to: string | null }
+
+@Entity({ tableName: 'dermat_doc_links' })
+@Index({ name: 'dermat_doc_links_record_idx', properties: ['organizationId', 'tenantId', 'kind', 'recordId'] })
+@Unique({ name: 'dermat_doc_links_token_uq', properties: ['token'] })
+export class DermatDocLink {
+  [OptionalProps]?: 'orderId' | 'customerId' | 'sends' | 'openedCount' | 'lastOpenedAt' | 'revokedAt' | 'createdByName' | 'createdAt' | 'updatedAt'
+
+  @PrimaryKey({ type: 'uuid', defaultRaw: 'gen_random_uuid()' })
+  id!: string
+
+  @Property({ name: 'organization_id', type: 'uuid' })
+  organizationId!: string
+
+  @Property({ name: 'tenant_id', type: 'uuid' })
+  tenantId!: string
+
+  @Property({ type: 'text' })
+  token!: string
+
+  @Property({ type: 'text' })
+  kind!: DocLinkKind
+
+  @Property({ name: 'record_id', type: 'uuid' })
+  recordId!: string
+
+  @Property({ name: 'order_id', type: 'uuid', nullable: true })
+  orderId?: string | null
+
+  @Property({ name: 'customer_id', type: 'uuid', nullable: true })
+  customerId?: string | null
+
+  @Property({ type: 'text' })
+  title!: string
+
+  @Property({ type: 'json', nullable: true })
+  sends?: DocLinkSend[] | null
+
+  @Property({ name: 'opened_count', type: 'integer', default: 0 })
+  openedCount: number = 0
+
+  @Property({ name: 'last_opened_at', type: Date, nullable: true })
+  lastOpenedAt?: Date | null
+
+  @Property({ name: 'revoked_at', type: Date, nullable: true })
+  revokedAt?: Date | null
+
+  @Property({ name: 'created_by_name', type: 'text', nullable: true })
+  createdByName?: string | null
 
   @Property({ name: 'created_at', type: Date, onCreate: () => new Date() })
   createdAt: Date = new Date()

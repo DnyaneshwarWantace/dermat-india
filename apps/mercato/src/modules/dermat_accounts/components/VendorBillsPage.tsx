@@ -213,7 +213,7 @@ export function VendorBillsPage() {
           </header>
 
           {summary ? (
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <div data-sheet-compact className="grid grid-cols-1 gap-3 sm:grid-cols-3">
               <div className="rounded-lg border bg-card p-4">
                 <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{t('dermat_accounts.bills.toPay', 'To pay')}</p>
                 <p className="mt-1 text-xl font-semibold tabular-nums">{rupees(summary.toPay)}</p>

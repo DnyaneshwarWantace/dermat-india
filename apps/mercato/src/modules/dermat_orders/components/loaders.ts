@@ -57,7 +57,7 @@ export async function searchFinishedGoods(search: string): Promise<PickerOption<
   }))
 }
 
-export async function loadProductDetails(id: string): Promise<Pick<ProductInfo, 'packSize' | 'brandName' | 'mrp'>> {
+export async function loadProductDetails(id: string): Promise<Pick<ProductInfo, 'packSize' | 'brandName' | 'mrp' | 'packagingCode'>> {
   const call = await apiCall<{ items?: Array<Record<string, unknown>> }>(`/api/catalog/products?id=${encodeURIComponent(id)}&pageSize=1`, undefined, {
     fallback: { items: [] },
   })
@@ -69,6 +69,7 @@ export async function loadProductDetails(id: string): Promise<Pick<ProductInfo, 
     packSize: text(pick('pack_size')),
     brandName: text(pick('brand_name')),
     mrp: mrp === null || mrp === '' || mrp === undefined ? null : Number(mrp),
+    packagingCode: text(pick('packaging_code')),
   }
 }
 

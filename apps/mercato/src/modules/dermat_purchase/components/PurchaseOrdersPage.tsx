@@ -124,7 +124,7 @@ export function PurchaseOrdersPage() {
             </div>
           </header>
 
-          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <div data-sheet-hide className="grid grid-cols-2 gap-3 lg:grid-cols-4">
             {tiles.map((tile) => {
               const active = view === tile.view
               return (

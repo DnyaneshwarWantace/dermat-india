@@ -3,12 +3,17 @@ import type { OpenApiRouteDoc } from '@open-mercato/shared/lib/openapi'
 import { issueSchema } from '../../../data/validators'
 import { issueMaterial } from '../../../lib/service'
 import { storeAction } from '../../../lib/action'
+import { notifyIssued } from '../../../lib/notify'
+import { currentUserName } from '../../../../dermat_orders/lib/server'
 
 export const metadata = {
   POST: { requireAuth: true, requireFeatures: ['dermat_store.issue'] },
 }
 
-const POST = storeAction(issueSchema, 'Enter the quantity to issue', (ctx, request, input) => issueMaterial(ctx, request, input))
+const POST = storeAction(issueSchema, 'Enter the quantity to issue', async (ctx, request, input) => {
+  await issueMaterial(ctx, request, input)
+  await notifyIssued(ctx, request, await currentUserName(ctx))
+})
 
 export const openApi: OpenApiRouteDoc = {
   tag: 'Dermat Store',

@@ -4,7 +4,7 @@ import * as React from 'react'
 import Link from 'next/link'
 import { useT } from '@open-mercato/shared/lib/i18n/context'
 import { StatusBadge } from '@open-mercato/ui/primitives/status-badge'
-import { stageDef, type StageDef } from '../../lib/stages'
+import { stageDef, waitsOn, type StageDef } from '../../lib/stages'
 import { STAGE_VARIANT, formatDateTime } from '../format'
 import { LockedNote, SharedStageFields } from '../LockedStageRow'
 import type { Order } from '../types'
@@ -16,7 +16,7 @@ export function BeforeStagePanel({ order, def }: { order: Order; def: StageDef }
   const byKey = new Map(order.stages.map((entry) => [entry.key, entry]))
   return (
     <div className="divide-y">
-      {def.after.map((key) => {
+      {waitsOn(def).map((key) => {
         const entry = byKey.get(key)
         const before = stageDef(key)
         if (!entry || !before) return null

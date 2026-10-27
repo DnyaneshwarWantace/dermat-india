@@ -69,8 +69,23 @@ export const companyInputSchema = z.object({
   grnOverPercent: z.coerce.number().int().min(0).max(50).default(0),
 })
 
+export const piFreeLineSchema = z.object({
+  productId: z.string().uuid().optional().nullable(),
+  title: z.string().trim().min(1).max(300),
+  brandName: z.string().trim().max(200).optional().nullable(),
+  packSize: z.string().trim().max(60).optional().nullable(),
+  hsn: z.string().trim().max(20).optional().nullable(),
+  quantity: z.coerce.number().positive().max(100_000_000),
+  rate: z.coerce.number().min(0).max(100_000_000),
+  gstPercent: z.coerce.number().min(0).max(40).default(18),
+  discountPercent: z.coerce.number().min(0).max(100).default(0),
+})
+
 export const piCreateSchema = z.object({
-  orderId: z.string().uuid(),
+  orderId: z.string().uuid().optional().nullable(),
+  customerId: z.string().uuid().optional().nullable(),
+  lines: z.array(piFreeLineSchema).max(50).optional().nullable(),
+  pricesIncludeGst: z.boolean().optional(),
   piDate: isoDay.optional().nullable(),
   validUntil: isoDay.optional().nullable(),
   advancePercent: z.coerce.number().min(0).max(100).optional().nullable(),
@@ -88,6 +103,8 @@ export const piUpdateSchema = z.object({
   bankDetails: text(1000),
   notes: text(2000),
   refreshLines: z.boolean().optional(),
+  lines: z.array(piFreeLineSchema).max(50).optional().nullable(),
+  pricesIncludeGst: z.boolean().optional(),
 })
 
 export const piActionSchema = z.object({ id: z.string().uuid(), action: z.enum(['send', 'cancel']), reason: text(500) })
@@ -95,6 +112,8 @@ export const piActionSchema = z.object({ id: z.string().uuid(), action: z.enum([
 export const piListSchema = z.object({
   id: z.string().uuid().optional(),
   orderId: z.string().uuid().optional(),
+  customerId: z.string().uuid().optional(),
+  linked: z.enum(['with_order', 'without_order']).optional(),
   status: z.enum(['draft', 'sent', 'cancelled']).optional(),
   search: z.string().trim().max(120).optional(),
   page: z.coerce.number().int().min(1).default(1),
@@ -119,6 +138,9 @@ export const invoiceUpdateSchema = z.object({
   vehicleNo: text(40),
   lrNo: text(60),
   ewayBillNo: text(20),
+  irn: text(80),
+  ackNo: text(40),
+  ackDate: isoDay.optional().nullable(),
   terms: text(3000),
   bankDetails: text(1000),
   notes: text(2000),
@@ -198,3 +220,19 @@ export const tallyQuerySchema = z.object({
   format: z.enum(['summary', 'xml', 'csv']).default('summary'),
   masters: z.enum(['true', 'false']).optional(),
 }).passthrough()
+
+export const sampleChargeInputSchema = z.object({
+  customerId: z.string().uuid(),
+  rdRequestId: z.string().uuid().optional().nullable(),
+  amount: z.coerce.number().positive().max(1_000_000_000),
+  paidOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().nullable(),
+  mode: paymentModeSchema.optional().nullable(),
+  reference: z.string().trim().max(120).optional().nullable(),
+  note: z.string().trim().max(500).optional().nullable(),
+})
+
+export const sampleChargeVoidSchema = z.object({ id: z.string().uuid(), reason: z.string().trim().min(1).max(500) })
+
+export const sampleChargeQuerySchema = z.object({ customerId: z.string().uuid().optional(), rdRequestId: z.string().uuid().optional() })
+
+export type SampleChargeInput = z.infer<typeof sampleChargeInputSchema>

@@ -7,10 +7,12 @@ export type StageField = {
   options?: string[]
   listKey?: string
   required?: boolean
+  beforeDone?: boolean
   placeholder?: string
+  step?: string
 }
 
-export type StageStep = { key: string; label: string; optional?: boolean }
+export type StageStep = { key: string; label: string; optional?: boolean; owners?: string[]; parallel?: boolean }
 
 export type StageDef = {
   key: string
@@ -19,6 +21,7 @@ export type StageDef = {
   group: string
   hint: string
   after: string[]
+  afterSteps?: Array<{ stage: string; step: string }>
   canSkip?: boolean
   steps: StageStep[]
   fields: StageField[]
@@ -57,11 +60,47 @@ export const STAGE_WORK_FEATURE: Record<string, string> = {
   dispatch: 'dermat_orders.work.dispatch',
 }
 
+export const STAGE_SEE_FEATURE: Record<string, string> = {
+  order: 'dermat_orders.see.sales',
+  advance: 'dermat_orders.see.accounts',
+  sampling: 'dermat_orders.see.rnd',
+  artwork: 'dermat_orders.see.artwork',
+  formulation: 'dermat_orders.see.rnd',
+  planning: 'dermat_orders.see.planning',
+  manufacturing: 'dermat_orders.see.production',
+  filling: 'dermat_orders.see.production',
+  packing: 'dermat_orders.see.production',
+  qc_qa: 'dermat_orders.see.qa',
+  billing: 'dermat_orders.see.accounts',
+  dispatch: 'dermat_orders.see.dispatch',
+}
+
 export function stageWorkFeature(stageKey: string): string {
   return STAGE_WORK_FEATURE[stageKey] ?? 'dermat_orders.stages'
 }
 
-export type StageDocument = { key: string; label: string; hint: string; required?: 'always' | 'eway' }
+export const STAGE_OWN_WORK_FEATURE: Record<string, string> = {
+  manufacturing: 'dermat_orders.work.manufacturing',
+  filling: 'dermat_orders.work.filling',
+  packing: 'dermat_orders.work.packing',
+}
+
+export const STAGE_OWN_SEE_FEATURE: Record<string, string> = {
+  manufacturing: 'dermat_orders.see.manufacturing',
+  filling: 'dermat_orders.see.filling',
+  packing: 'dermat_orders.see.packing',
+}
+
+export function stageWorkFeatures(stageKey: string): string[] {
+  return STAGE_OWN_WORK_FEATURE[stageKey] ? [stageWorkFeature(stageKey), STAGE_OWN_WORK_FEATURE[stageKey]] : [stageWorkFeature(stageKey)]
+}
+
+export function stageSeeFeatures(stageKey: string): string[] {
+  const base = STAGE_SEE_FEATURE[stageKey]
+  return [base, STAGE_OWN_SEE_FEATURE[stageKey]].filter((feature): feature is string => Boolean(feature))
+}
+
+export type StageDocument = { key: string; label: string; hint: string; required?: 'always' | 'eway'; step?: string }
 
 export const EWAY_BILL_LIMIT = 50000
 
@@ -72,7 +111,11 @@ export const STAGE_DOCUMENTS: Record<string, StageDocument[]> = {
     { key: 'client_approval', label: 'Client approval of the sample', hint: 'Email or WhatsApp screenshot where the client approves the sample.', required: 'always' },
     { key: 'sample_photo', label: 'Sample photo', hint: 'Photo of the approved sample.' },
   ],
-  artwork: [{ key: 'approved_artwork', label: 'Artwork approved by the client', hint: 'Final artwork file or the client approval of it.', required: 'always' }],
+  artwork: [
+    { key: 'composition_file', label: 'Composition sheet (Word / PDF)', hint: 'The composition chart that goes on the pack. Type it above or upload it here.' },
+    { key: 'design_file', label: 'Artwork design file', hint: 'The design sent to the client.' },
+    { key: 'approved_artwork', label: 'Artwork approved by the client', hint: 'Final artwork file or the client approval of it.', required: 'always' },
+  ],
   manufacturing: [{ key: 'bmr', label: 'Batch manufacturing record', hint: 'Scan or photo of the filled BMR sheet.' }],
   filling: [{ key: 'filling_photo', label: 'Filling photo', hint: 'Photo of filled units.' }],
   packing: [{ key: 'packed_photo', label: 'Packed goods photo', hint: 'Photo of packed cartons or shippers.' }],
@@ -112,7 +155,7 @@ export const STAGES: StageDef[] = [
   },
   {
     key: 'advance',
-    label: 'Advance received',
+    label: 'Advance payment',
     department: 'Accounts',
     group: 'accounts',
     hint: 'The order becomes official the day the advance arrives.',
@@ -122,10 +165,10 @@ export const STAGES: StageDef[] = [
       { key: 'advance_received', label: 'Advance received in bank' },
     ],
     fields: [
-      { key: 'pi_number', label: 'Proforma invoice no.', type: 'text' },
+      { key: 'pi_number', label: 'Proforma invoice no.', type: 'text', beforeDone: true },
       { key: 'advance_percent', label: 'Advance %', type: 'number', placeholder: '40' },
       { key: 'advance_amount', label: 'Advance amount (₹)', type: 'number', required: true },
-      { key: 'received_on', label: 'Received on', type: 'date', required: true },
+      { key: 'received_on', label: 'Received on (blank = today)', type: 'date' },
       { key: 'payment_ref', label: 'Payment reference / UTR', type: 'text' },
     ],
   },
@@ -134,7 +177,7 @@ export const STAGES: StageDef[] = [
     label: 'Sampling / R&D',
     department: 'R&D',
     group: 'rnd',
-    hint: 'Sample made after the order, tracked by R&D number. Skip for a repeat order.',
+    hint: 'Formula arm: the sample is made and approved, tracked by R&D number (e.g. RD0486-01). Skipped by itself for a repeat order or a product with the same formula. Artwork does not wait for it.',
     after: ['advance'],
     canSkip: true,
     steps: [
@@ -145,8 +188,8 @@ export const STAGES: StageDef[] = [
     ],
     fields: [
       { key: 'rd_number', label: 'R&D no.', type: 'text', required: true },
-      { key: 'sample_name', label: 'Sample name', type: 'text' },
-      { key: 'sample_sent_on', label: 'Sample sent on', type: 'date' },
+      { key: 'sample_name', label: 'Sample name', type: 'text', beforeDone: true },
+      { key: 'sample_sent_on', label: 'Sample sent on', type: 'date', beforeDone: true },
       { key: 'client_feedback', label: 'Client feedback', type: 'select', options: ['Approved', 'Changes needed', 'Waiting'], listKey: 'client_feedback', required: true },
       { key: 'remarks', label: 'Remarks', type: 'textarea' },
     ],
@@ -156,9 +199,10 @@ export const STAGES: StageDef[] = [
     label: 'Artwork & packaging',
     department: 'Artwork & PM',
     group: 'artwork',
-    hint: 'Design, client approval, QA finalise, packing material ordered and received. Runs side by side with the formula.',
-    after: ['sampling'],
+    hint: 'Design, client approval, QA finalise, packing material ordered and received. Starts right after the advance and runs side by side with sampling and the formula.',
+    after: ['advance'],
     steps: [
+      { key: 'composition', label: 'Composition sheet ready' },
       { key: 'design', label: 'Artwork designed' },
       { key: 'client_approved', label: 'Client approved the artwork' },
       { key: 'qa_final', label: 'QA finalised the artwork' },
@@ -166,9 +210,10 @@ export const STAGES: StageDef[] = [
       { key: 'pm_ok', label: 'Packing material received (PM OK)' },
     ],
     fields: [
+      { key: 'composition_text', label: 'Composition (ingredients, claims, directions, warnings)', type: 'textarea', placeholder: 'Type it here, or upload the Word file below' },
       { key: 'designer_status', label: 'Designer status', type: 'select', options: DESIGNER_STATUSES, listKey: 'designer_statuses', required: true },
       { key: 'status_note', label: 'Status note', type: 'text', placeholder: 'e.g. Artwork under process' },
-      { key: 'artwork_approved_on', label: 'Artwork approved on', type: 'date' },
+      { key: 'artwork_approved_on', label: 'Artwork approved on', type: 'date', beforeDone: true },
       { key: 'remarks', label: 'Remarks', type: 'textarea' },
     ],
   },
@@ -179,7 +224,10 @@ export const STAGES: StageDef[] = [
     group: 'rnd',
     hint: 'Every product in the order needs an approved BOM. Runs side by side with artwork.',
     after: ['sampling'],
-    steps: [],
+    steps: [
+      { key: 'bom_made', label: 'BOM made for every product' },
+      { key: 'bom_approved', label: 'BOM approved' },
+    ],
     fields: [{ key: 'remarks', label: 'Remarks', type: 'textarea' }],
   },
   {
@@ -187,8 +235,9 @@ export const STAGES: StageDef[] = [
     label: 'Material planning',
     department: 'Planning',
     group: 'planning',
-    hint: 'Raw and packing material checked against stock; purchase raised for what is short; received material QC-approved. Runs in the formula arm, alongside artwork.',
+    hint: 'Raw and packing material checked against stock; purchase raised for what is short; received material QC-approved. Starts when the BOM is final and QA has finalised the artwork.',
     after: ['formulation'],
+    afterSteps: [{ stage: 'artwork', step: 'qa_final' }],
     steps: [
       { key: 'checked', label: 'Material checked against stock' },
       { key: 'reserved', label: 'Stock reserved for this order' },
@@ -197,8 +246,8 @@ export const STAGES: StageDef[] = [
     ],
     fields: [
       { key: 'material_status', label: 'Material status', type: 'select', options: ['All available', 'Purchase raised', 'Waiting for material'], listKey: 'material_status', required: true },
-      { key: 'planned_for', label: 'Manufacturing planned on', type: 'date' },
-      { key: 'planned_vessel', label: 'Planned vessel', type: 'text', listKey: 'vessels' },
+      { key: 'planned_for', label: 'Manufacturing planned on', type: 'date', beforeDone: true },
+      { key: 'planned_vessel', label: 'Planned vessel', type: 'text', listKey: 'vessels', beforeDone: true },
       { key: 'remarks', label: 'Remarks', type: 'textarea' },
     ],
   },
@@ -210,18 +259,18 @@ export const STAGES: StageDef[] = [
     hint: 'Bulk made in the vessel. Unit: kg / ml. Starts only when both arms are ready. Ask the RM store for the material and confirm you received it; the QC team tests the bulk (chemical and micro) before this can be done.',
     after: ['planning', 'artwork'],
     steps: [
+      { key: 'started', label: 'Manufacturing started' },
       { key: 'manufactured', label: 'Manufacturing done' },
     ],
     fields: [
       { key: 'bulk_source', label: 'Bulk', type: 'select', options: ['Make a new batch', 'Use bulk already made'] },
       { key: 'batch_no', label: 'Batch no.', type: 'text', required: true },
+      { key: 'planned_kg', label: 'Planned (kg)', type: 'number', beforeDone: true },
       { key: 'batch_size', label: 'Bulk made / taken (kg)', type: 'number', required: true },
       { key: 'mfg_date', label: 'Mfg. date', type: 'date', required: true },
-      { key: 'shift', label: 'Shift', type: 'select', options: ['A', 'B', 'C', 'General'], listKey: 'shifts' },
-      { key: 'machine', label: 'Vessel / machine', type: 'text', listKey: 'vessels' },
-      { key: 'operator', label: 'Operator', type: 'text', listKey: 'operators' },
-      { key: 'start_time', label: 'Started at', type: 'time' },
-      { key: 'end_time', label: 'Finished at', type: 'time' },
+      { key: 'shift', label: 'Shift', type: 'select', options: ['A', 'B', 'C', 'General'], listKey: 'shifts', beforeDone: true },
+      { key: 'machine', label: 'Vessel / machine', type: 'text', listKey: 'vessels', beforeDone: true },
+      { key: 'operator', label: 'Operator', type: 'text', listKey: 'operators', beforeDone: true },
       { key: 'wastage_kg', label: 'Wastage (kg)', type: 'number' },
       { key: 'remarks', label: 'Remarks', type: 'textarea' },
     ],
@@ -234,15 +283,25 @@ export const STAGES: StageDef[] = [
     hint: 'Bulk filled into bottles / tubes / jars. Unit: bottles / gm / ml. Ask the PM store for bottles, tubes and caps and confirm you received them. QC after filling only if its QC rule is switched on.',
     after: ['manufacturing'],
     steps: [
+      { key: 'pm_asked', label: 'Bottles, caps and labels asked from the store' },
+      { key: 'started', label: 'Filling started' },
       { key: 'filled', label: 'Filling done' },
     ],
     fields: [
       { key: 'filled_units', label: 'Units filled', type: 'number', required: true },
       { key: 'rejected_units', label: 'Rejected units', type: 'number' },
-      { key: 'filling_date', label: 'Filling date', type: 'date' },
-      { key: 'shift', label: 'Shift', type: 'select', options: ['A', 'B', 'C', 'General'], listKey: 'shifts' },
-      { key: 'machine', label: 'Filling machine', type: 'text', listKey: 'filling_machines' },
-      { key: 'operator', label: 'Operator', type: 'text', listKey: 'operators' },
+      { key: 'count_type', label: 'How counted', type: 'select', options: ['Counted', 'Approximate (online line, no counter)'] },
+      { key: 'handed_to_packing', label: 'Pieces handed to packing', type: 'number' },
+      { key: 'filling_date', label: 'Filling date', type: 'date', beforeDone: true },
+      { key: 'shift', label: 'Shift', type: 'select', options: ['A', 'B', 'C', 'General'], listKey: 'shifts', beforeDone: true },
+      { key: 'machine', label: 'Filling machine', type: 'text', listKey: 'filling_machines', beforeDone: true },
+      { key: 'operator', label: 'Operator', type: 'text', listKey: 'operators', beforeDone: true },
+      { key: 'chemist', label: 'Production chemist', type: 'text' },
+      { key: 'area_temp', label: 'Area temperature (°C)', type: 'number' },
+      { key: 'area_rh', label: 'Area humidity (% RH)', type: 'number' },
+      { key: 'empty_weight', label: 'Weight of empty bottle (g)', type: 'number' },
+      { key: 'filled_weight', label: 'Weight of filled bottle (g)', type: 'number' },
+      { key: 'weight_limit_percent', label: 'Weight limit allowed (± %)', type: 'number' },
       { key: 'remarks', label: 'Remarks', type: 'textarea' },
     ],
   },
@@ -254,14 +313,19 @@ export const STAGES: StageDef[] = [
     hint: 'Finished goods packed. Unit: pieces. Ask the PM store for cartons, labels and the sample kit and confirm you received them. The QC team does the final QC before this can be done.',
     after: ['filling'],
     steps: [
+      { key: 'pm_asked', label: 'Cartons and shippers asked from the store', optional: true },
       { key: 'sample', label: 'Sample of the finished good made' },
       { key: 'packed', label: 'All packaging done' },
     ],
     fields: [
       { key: 'packed_qty', label: 'Packed quantity (pcs)', type: 'number', required: true },
-      { key: 'packed_on', label: 'Packed on', type: 'date' },
-      { key: 'shippers', label: 'Shipper boxes', type: 'number' },
-      { key: 'location', label: 'Kept at (factory location)', type: 'text', listKey: 'factory_locations' },
+      { key: 'rejected_pcs', label: 'Rejected in packing (pcs)', type: 'number' },
+      { key: 'packed_on', label: 'Packed on', type: 'date', beforeDone: true },
+      { key: 'pcs_per_shipper', label: 'Pieces per shipper', type: 'number', beforeDone: true },
+      { key: 'shippers', label: 'Shipper boxes', type: 'number', beforeDone: true },
+      { key: 'location', label: 'Kept at (factory location)', type: 'text', listKey: 'factory_locations', beforeDone: true },
+      { key: 'label_coded_by', label: 'Labels coded by', type: 'text' },
+      { key: 'cartons_coded_by', label: 'Cartons coded by', type: 'text' },
       { key: 'remarks', label: 'Remarks', type: 'textarea' },
     ],
   },
@@ -283,9 +347,11 @@ export const STAGES: StageDef[] = [
     fields: [
       { key: 'qc_result', label: 'QA decision', type: 'select', options: ['Released', 'Rework', 'Rejected'], required: true },
       { key: 'released_on', label: 'Decision date', type: 'date', required: true },
-      { key: 'coa_no', label: 'COA no.', type: 'text', placeholder: 'e.g. COA/57001' },
-      { key: 'retention_qty', label: 'Retention sample (pcs)', type: 'number' },
-      { key: 'retention_location', label: 'Retention sample kept at', type: 'text', placeholder: 'e.g. QA retention cabinet R2' },
+      { key: 'coa_no', label: 'COA no.', type: 'text', placeholder: 'e.g. COA/57001', beforeDone: true },
+      { key: 'release_order_no', label: 'Release order no.', type: 'text' },
+      { key: 'qty_released', label: 'Quantity released to FG store (pcs)', type: 'number' },
+      { key: 'retention_qty', label: 'Retention sample (pcs)', type: 'number', beforeDone: true },
+      { key: 'retention_location', label: 'Retention sample kept at', type: 'text', placeholder: 'e.g. QA retention cabinet R2', beforeDone: true },
       { key: 'remarks', label: 'QA remarks', type: 'textarea' },
     ],
   },
@@ -320,13 +386,13 @@ export const STAGES: StageDef[] = [
     ],
     fields: [
       { key: 'dispatch_date', label: 'Dispatch date', type: 'date', required: true },
-      { key: 'transporter', label: 'Transporter', type: 'text', listKey: 'transporters' },
-      { key: 'lr_number', label: 'LR / docket no.', type: 'text' },
-      { key: 'vehicle_no', label: 'Vehicle no.', type: 'text', placeholder: 'MH 04 AB 1234' },
+      { key: 'transporter', label: 'Transporter', type: 'text', listKey: 'transporters', beforeDone: true },
+      { key: 'lr_number', label: 'LR / docket no.', type: 'text', beforeDone: true },
+      { key: 'vehicle_no', label: 'Vehicle no.', type: 'text', placeholder: 'MH 04 AB 1234', beforeDone: true },
       { key: 'eway_bill_no', label: 'E-way bill no.', type: 'text' },
       { key: 'eway_bill_date', label: 'E-way bill date', type: 'date' },
-      { key: 'packages', label: 'No. of boxes / shippers', type: 'number' },
-      { key: 'delivered_on', label: 'Delivered on', type: 'date' },
+      { key: 'packages', label: 'No. of boxes / shippers', type: 'number', beforeDone: true },
+      { key: 'delivered_on', label: 'Delivered on', type: 'date', beforeDone: true },
       { key: 'dispatch_override', label: 'Dispatch before full payment: reason', type: 'textarea', placeholder: 'Only if money is still due, e.g. owner approved, 30 days credit' },
       { key: 'remarks', label: 'Remarks', type: 'textarea' },
     ],
@@ -346,20 +412,20 @@ export type StageOverride = {
   documents?: Record<string, 'always' | 'optional'> | null
   extraDocuments?: Array<{ key: string; label: string; required: boolean }> | null
   sharedFields?: string[] | null
+  cardSettings?: {
+    owners?: Record<string, string[]>
+    people?: Record<string, { userId: string; name: string | null }>
+    fields?: Record<string, string>
+    documents?: Record<string, string>
+    labels?: Record<string, string>
+    extraSteps?: Array<{ key: string; label: string; after: string | null; optional?: boolean }>
+    parallel?: string[]
+    optional?: string[]
+  } | null
 }
 
 export const DEFAULT_SHARED_FIELDS: Record<string, string[]> = {
-  advance: ['received_on'],
-  sampling: ['rd_number', 'sample_name', 'sample_sent_on'],
-  artwork: ['designer_status', 'artwork_approved_on'],
-  formulation: [],
-  planning: ['material_status', 'planned_for', 'planned_vessel'],
-  manufacturing: ['bulk_source', 'batch_no', 'batch_size', 'mfg_date'],
-  filling: ['filled_units', 'filling_date'],
-  packing: ['packed_qty', 'packed_on', 'shippers', 'location'],
-  qc_qa: ['qc_result', 'released_on', 'coa_no'],
-  billing: ['invoice_number', 'invoice_date'],
-  dispatch: ['dispatch_date', 'transporter', 'lr_number', 'delivered_on'],
+  manufacturing: ['batch_no'],
 }
 
 export function sharedFieldKeys(stageKey: string, override?: StageOverride | null): Set<string> {
@@ -376,6 +442,18 @@ export const LOCKED_STEPS: Record<string, string[]> = {
 
 export const EXTRA_FIELD_TYPES: StageFieldType[] = ['text', 'number', 'date', 'textarea', 'select']
 
+function withExtraSteps(steps: StageStep[], extra: Array<{ key: string; label: string; after: string | null; optional?: boolean }>): StageStep[] {
+  const result = [...steps]
+  for (const step of extra) {
+    if (result.some((entry) => entry.key === step.key)) continue
+    const at = step.after ? result.findIndex((entry) => entry.key === step.after) : -1
+    const added: StageStep = { key: step.key, label: step.label, optional: Boolean(step.optional) }
+    if (at >= 0) result.splice(at + 1, 0, added)
+    else result.push(added)
+  }
+  return result
+}
+
 export function applyStageOverride(def: StageDef, override?: StageOverride | null): StageDef {
   if (!override) return def
   const locked = LOCKED_STEPS[def.key] ?? []
@@ -383,11 +461,14 @@ export function applyStageOverride(def: StageDef, override?: StageOverride | nul
   const required = new Set(override.requiredFields ?? [])
   const baseKeys = new Set(def.fields.map((field) => field.key))
   const extras = (override.extraFields ?? []).filter((field) => !baseKeys.has(field.key))
+  const cards = override.cardSettings ?? {}
   return {
     ...def,
     label: override.label?.trim() || def.label,
-    steps: def.steps.filter((step) => !hidden.has(step.key)),
-    fields: [...def.fields.map((field) => (required.has(field.key) && !field.required ? { ...field, required: true } : field)), ...extras],
+    steps: withExtraSteps(def.steps, cards.extraSteps ?? [])
+      .filter((step) => !hidden.has(step.key))
+      .map((step) => ({ ...step, label: cards.labels?.[step.key]?.trim() || step.label, ...(cards.owners?.[step.key]?.length ? { owners: cards.owners[step.key] } : {}), ...(cards.parallel?.includes(step.key) ? { parallel: true } : {}) })),
+    fields: [...def.fields.map((field) => (required.has(field.key) && !field.required ? { ...field, required: true } : field)).map((field) => (field.beforeDone && cards.optional?.includes(field.key) ? { ...field, beforeDone: false } : field)), ...extras].map((field) => (cards.fields?.[field.key] ? { ...field, step: cards.fields[field.key] } : field)),
   }
 }
 
@@ -395,16 +476,17 @@ export function applyDocumentOverride(stageKey: string, override?: StageOverride
   const base = STAGE_DOCUMENTS[stageKey] ?? []
   if (!override) return base
   const modes = override.documents ?? {}
+  const placed = (doc: StageDocument): StageDocument => (override.cardSettings?.documents?.[doc.key] ? { ...doc, step: override.cardSettings.documents[doc.key] } : doc)
   const own = base.map((doc) => {
-    if (doc.required === 'eway') return doc
+    if (doc.required === 'eway') return placed(doc)
     const mode = modes[doc.key]
-    if (mode === 'always') return { ...doc, required: 'always' as const }
-    if (mode === 'optional') return { key: doc.key, label: doc.label, hint: doc.hint }
-    return doc
+    if (mode === 'always') return placed({ ...doc, required: 'always' as const })
+    if (mode === 'optional') return placed({ key: doc.key, label: doc.label, hint: doc.hint })
+    return placed(doc)
   })
   const extra = (override.extraDocuments ?? [])
     .filter((doc) => !base.some((entry) => entry.key === doc.key))
-    .map((doc) => ({ key: doc.key, label: doc.label, hint: '', ...(doc.required ? { required: 'always' as const } : {}) }))
+    .map((doc) => placed({ key: doc.key, label: doc.label, hint: '', ...(doc.required ? { required: 'always' as const } : {}) }))
   return [...own, ...extra]
 }
 
@@ -501,9 +583,118 @@ export function stepStates(data: Record<string, unknown> | null | undefined): Re
   return raw && typeof raw === 'object' ? (raw as Record<string, StepState>) : {}
 }
 
+const SALES = 'dermat_orders.manage'
+const WORK = {
+  accounts: 'dermat_orders.work.accounts',
+  rnd: 'dermat_orders.work.rnd',
+  artwork: 'dermat_orders.work.artwork',
+  planning: 'dermat_orders.work.planning',
+  production: 'dermat_orders.work.production',
+  qa: 'dermat_orders.work.qa',
+  dispatch: 'dermat_orders.work.dispatch',
+  purchase: 'dermat_orders.work.purchase',
+  store: 'dermat_orders.work.store',
+  ipqa: 'dermat_orders.work.ipqa',
+}
+
+export const OWNER_NAMES: Record<string, string> = {
+  [SALES]: 'Sales',
+  [WORK.accounts]: 'Accounts',
+  [WORK.rnd]: 'R&D',
+  [WORK.artwork]: 'Artwork & PM',
+  [WORK.planning]: 'Planning',
+  [WORK.production]: 'Production',
+  [WORK.qa]: 'QA',
+  [WORK.dispatch]: 'Dispatch',
+  [WORK.purchase]: 'Purchase',
+  [WORK.store]: 'Store',
+  [WORK.ipqa]: 'In-process QA',
+  'dermat_orders.work.manufacturing': 'Manufacturing',
+  'dermat_orders.work.filling': 'Filling',
+  'dermat_orders.work.packing': 'Packing',
+}
+
+export const STEP_OWNERS: Record<string, Record<string, string[]>> = {
+  sampling: { sample_sent: [WORK.rnd, SALES], client_ok: [SALES, WORK.rnd] },
+  artwork: { composition: [WORK.qa, WORK.artwork], client_approved: [SALES, WORK.artwork], qa_final: [WORK.qa], pm_ordered: [WORK.purchase, WORK.artwork], pm_ok: [WORK.store, WORK.artwork] },
+  planning: { purchase: [WORK.planning, WORK.purchase], received: [WORK.store, WORK.planning] },
+  filling: { pm_asked: [WORK.ipqa, WORK.production, 'dermat_orders.work.filling'] },
+  packing: { pm_asked: [WORK.ipqa, WORK.production, 'dermat_orders.work.packing'] },
+  dispatch: { delivered: [WORK.dispatch, SALES] },
+}
+
+export const FIELD_STEP: Record<string, Record<string, string>> = {
+  advance: { pi_number: 'pi_sent', advance_percent: 'advance_received', advance_amount: 'advance_received', received_on: 'advance_received', payment_ref: 'advance_received' },
+  sampling: { rd_number: 'request', sample_name: 'sample_made', sample_sent_on: 'sample_sent', client_feedback: 'client_ok', remarks: 'client_ok' },
+  artwork: { composition_text: 'composition', designer_status: 'design', status_note: 'design', artwork_approved_on: 'client_approved', remarks: 'pm_ok' },
+  planning: { material_status: 'checked', planned_for: 'reserved', planned_vessel: 'reserved', remarks: 'reserved' },
+  manufacturing: { bulk_source: 'started', batch_no: 'started', planned_kg: 'started', shift: 'started', machine: 'started', operator: 'started', batch_size: 'manufactured', mfg_date: 'manufactured', wastage_kg: 'manufactured', remarks: 'manufactured' },
+  filling: { shift: 'started', machine: 'started', operator: 'started', chemist: 'started', area_temp: 'started', area_rh: 'started', empty_weight: 'started', filled_weight: 'started', weight_limit_percent: 'started', filled_units: 'filled', rejected_units: 'filled', count_type: 'filled', handed_to_packing: 'filled', filling_date: 'filled', remarks: 'filled' },
+  qc_qa: { qc_result: 'released', released_on: 'released', coa_no: 'released', release_order_no: 'released', qty_released: 'released', retention_qty: 'retention', retention_location: 'retention' },
+  billing: { invoice_number: 'invoice', invoice_date: 'invoice', balance_payment: 'balance', remarks: 'balance' },
+  dispatch: { delivered_on: 'delivered' },
+}
+
+export const DOCUMENT_STEP: Record<string, Record<string, string>> = {
+  advance: { payment_proof: 'advance_received' },
+  sampling: { client_approval: 'client_ok', sample_photo: 'client_ok' },
+  artwork: { composition_file: 'composition', design_file: 'design', approved_artwork: 'client_approved' },
+  dispatch: { lr_copy: 'dispatched', eway_bill: 'dispatched' },
+}
+
+const STEP_NEEDED_WHEN: Record<string, Record<string, (data: Record<string, unknown>) => boolean>> = {
+  planning: {
+    purchase: (data) => typeof data.material_status === 'string' && data.material_status !== '' && data.material_status !== 'All available',
+    received: (data) => typeof data.material_status === 'string' && data.material_status !== '' && data.material_status !== 'All available',
+  },
+}
+
+export function stepOwners(stageKey: string, step: Pick<StageStep, 'key' | 'owners'>): string[] {
+  if (step.owners?.length) return step.owners
+  return STEP_OWNERS[stageKey]?.[step.key] ?? stageWorkFeatures(stageKey)
+}
+
+export const MAIN_CARD = '__main'
+
+export function cardKeys(def: StageDef): string[] {
+  return def.steps.length ? def.steps.map((step) => step.key) : [MAIN_CARD]
+}
+
+export function fieldCard(def: StageDef, fieldKey: string): string {
+  if (!def.steps.length) return MAIN_CARD
+  const field = def.fields.find((entry) => entry.key === fieldKey)
+  const wanted = field?.step ?? FIELD_STEP[def.key]?.[fieldKey]
+  if (wanted && def.steps.some((step) => step.key === wanted)) return wanted
+  const required = def.steps.filter((step) => !step.optional)
+  return (required[required.length - 1] ?? def.steps[def.steps.length - 1]).key
+}
+
+export function cardFieldKeys(def: StageDef, cardKey: string): string[] {
+  return def.fields.filter((field) => fieldCard(def, field.key) === cardKey).map((field) => field.key)
+}
+
+export function documentCard(def: StageDef, document: StageDocument): string {
+  if (!def.steps.length) return MAIN_CARD
+  const wanted = document.step ?? DOCUMENT_STEP[def.key]?.[document.key]
+  if (wanted && def.steps.some((step) => step.key === wanted)) return wanted
+  const required = def.steps.filter((step) => !step.optional)
+  return (required[required.length - 1] ?? def.steps[def.steps.length - 1]).key
+}
+
+export function stepRequired(def: StageDef, step: StageStep, data: Record<string, unknown> | null | undefined): boolean {
+  {
+    const states = stepStates(data)
+    const index = def.steps.findIndex((entry) => entry.key === step.key)
+    if (!step.parallel && !states[step.key]?.done && def.steps.slice(index + 1).some((entry) => !entry.parallel && states[entry.key]?.done)) return false
+  }
+  if (!step.optional) return true
+  const rule = STEP_NEEDED_WHEN[def.key]?.[step.key]
+  return rule ? rule(data ?? {}) : false
+}
+
 export function missingSteps(def: StageDef, data: Record<string, unknown> | null | undefined): string[] {
   const states = stepStates(data)
-  return def.steps.filter((step) => !step.optional && !states[step.key]?.done).map((step) => step.label)
+  return def.steps.filter((step) => stepRequired(def, step, data) && !states[step.key]?.done).map((step) => step.label)
 }
 
 export type WorkState = 'coming' | 'pending' | 'in_progress' | 'on_hold' | 'completed' | 'skipped'
@@ -534,6 +725,15 @@ export const QA_ARTWORK_CHECKS = [
   { key: 'barcode', label: 'Barcode readable and correct' },
 ] as const
 
+export type QaCheck = { key: string; label: string }
+
+export function qaChecksFrom(labels: string[]): QaCheck[] {
+  return labels.map((label) => {
+    const known = QA_ARTWORK_CHECKS.find((check) => check.label === label)
+    return { key: known?.key ?? `c_${label.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 40)}`, label }
+  })
+}
+
 export type OrderHeadline = 'booked' | 'confirmed' | 'updated' | 'completed' | 'delivered' | 'cancelled'
 
 export function orderHeadline(status: string, revisedAt: Date | string | null | undefined, dispatchData: Record<string, unknown> | null | undefined): OrderHeadline {
@@ -542,4 +742,26 @@ export function orderHeadline(status: string, revisedAt: Date | string | null | 
   if (status === 'completed') return 'completed'
   if (revisedAt) return 'updated'
   return status === 'booked' ? 'booked' : 'confirmed'
+}
+
+export type ProductionLimits = { yieldHigh: number; yieldLow: number; checkMinutes: number }
+
+export function productionLimits(values: string[]): ProductionLimits {
+  const find = (pattern: RegExp, fallback: number) => {
+    for (const value of values) {
+      const match = value.match(pattern)
+      if (match) return Number(match[1])
+    }
+    return fallback
+  }
+  return { yieldHigh: find(/yield above\s*(\d+(?:\.\d+)?)/i, 105), yieldLow: find(/yield below\s*(\d+(?:\.\d+)?)/i, 95), checkMinutes: find(/every\s*(\d+)\s*min/i, 15) }
+}
+
+export function waitsOn(def: StageDef): string[] {
+  return Array.from(new Set([...def.after, ...(def.afterSteps ?? []).map((entry) => entry.stage)]))
+}
+
+export function completeOwners(def: StageDef, data: Record<string, unknown> | null | undefined): string[] {
+  const last = [...def.steps].reverse().find((step) => !step.optional && stepRequired(def, step, data))
+  return Array.from(new Set([...stageWorkFeatures(def.key), ...(last ? stepOwners(def.key, last) : [])]))
 }

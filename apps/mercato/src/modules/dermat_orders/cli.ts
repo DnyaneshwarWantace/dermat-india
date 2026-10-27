@@ -1,6 +1,9 @@
 import type { ModuleCli } from '@open-mercato/shared/modules/registry'
 import { spawn } from 'child_process'
 import path from 'path'
+import type { EntityManager } from '@mikro-orm/postgresql'
+import { createRequestContainer } from '@open-mercato/shared/lib/di/container'
+import { syncGoogleSheet } from './lib/googleSheet'
 
 function readFlag(args: string[], names: string[]): string {
   for (let index = 0; index < args.length; index += 1) {
@@ -34,4 +37,25 @@ const seedTransactions: ModuleCli = {
   },
 }
 
-export default [seedTransactions]
+const syncSheet: ModuleCli = {
+  command: 'sync-sheet',
+  async run(rest) {
+    const tenantId = readFlag(rest, ['tenant', 'tenantId'])
+    const organizationId = readFlag(rest, ['org', 'organizationId'])
+    if (!tenantId || !organizationId) {
+      console.error('Usage: mercato dermat_orders sync-sheet --tenant <tenantId> --org <organizationId>')
+      return
+    }
+    const container = await createRequestContainer()
+    const em = (container.resolve('em') as EntityManager).fork()
+    try {
+      const result = await syncGoogleSheet({ em, tenantId, organizationId, container })
+      console.log(`Order book written to the Google Sheet: ${result.rows} rows`)
+    } catch (error) {
+      console.error(`Google Sheet not updated: ${error instanceof Error ? error.message : String(error)}`)
+      process.exitCode = 1
+    }
+  },
+}
+
+export default [seedTransactions, syncSheet]

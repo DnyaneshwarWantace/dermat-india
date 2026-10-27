@@ -53,7 +53,8 @@ import { FillPlan } from './FillPlan'
 import { openPrintSheet } from './printSheet'
 import { AvailabilityBadge } from './bom/AvailabilityBadge'
 import { BomDetailsCard } from './bom/BomDetailsCard'
-import type { BomView, ComponentOption } from './types'
+import type { BomView, ComponentOption, PackagingCodeView } from './types'
+import { PackagingCodePicker } from './packaging/PackagingCodePicker'
 import { ExportButton } from '../../dermat_products/components/ExportButton'
 import { downloadCsv } from '../../dermat_products/lib/csvExport'
 import { BackLink } from '../../dermat_departments/components/BackLink'
@@ -74,7 +75,7 @@ type Row = {
   specificGravity: number | null
 }
 
-type ProductInfo = { id: string; title: string; kind: string | null; unit: string | null; code: string | null; packSize: string | null }
+type ProductInfo = { id: string; title: string; kind: string | null; unit: string | null; code: string | null; packSize: string | null; packagingCode?: string | null }
 
 type EditorState = {
   bom: BomView | null
@@ -192,6 +193,7 @@ async function readProduct(productId: string): Promise<ProductInfo | null> {
     unit: (item.default_unit as string | null) ?? null,
     code: code || null,
     packSize: ((item.cf_pack_size ?? custom.pack_size ?? null) as string | null) || null,
+    packagingCode: ((item.cf_packaging_code ?? custom.packaging_code ?? null) as string | null) || null,
   }
 }
 
@@ -227,9 +229,13 @@ export function BomEditor({ bomId, productId }: { bomId?: string; productId?: st
   const load = React.useCallback(async () => {
     setLoadError(null)
     if (bomId) {
-      const call = await apiCall<BomView>(`/api/dermat_boms/boms?id=${encodeURIComponent(bomId)}`)
+      const call = await apiCall<BomView & { formulaHidden?: boolean }>(`/api/dermat_boms/boms?id=${encodeURIComponent(bomId)}`)
       if (!call.ok || !call.result) {
         setLoadError(t('dermat_boms.errors.load', 'Could not load this BOM.'))
+        return
+      }
+      if (call.result.formulaHidden) {
+        setLoadError(t('dermat_boms.errors.formulaHidden', 'This formula is shown only to R&D, production and planning.'))
         return
       }
       setState(stateFromBom(call.result))
@@ -336,6 +342,65 @@ export function BomEditor({ bomId, productId }: { bomId?: string; productId?: st
     setState((prev) => (prev ? { ...prev, rows: [...prev.rows, ...rows] } : prev))
     setDirty(true)
   }
+
+  const addPackagingSet = async (code: PackagingCodeView) => {
+    if (!state || !state.product.id) return
+    const present = new Set(state.rows.map((row) => row.componentProductId))
+    const partRows = code.components
+      .filter((part) => !present.has(part.productId))
+      .map((part) => ({
+        ...rowFromOption({ id: part.productId, title: part.name, code: part.code, sku: null, kind: part.kind ?? 'packing_material', unit: part.unit, onHand: part.onHand }, state.kind, null),
+        value: String(part.qty),
+      }))
+    let printedRows: Row[] = []
+    if (code.printedItems.length) {
+      const body = { productId: state.product.id, types: code.printedItems }
+      const call = await runMutation({
+        context: { packagingSet: code.code, productId: state.product.id },
+        mutationPayload: body,
+        operation: () =>
+          apiCall<{ items?: Array<{ id: string; title: string; type: string; sku: string | null; unit: string | null }>; error?: string }>('/api/dermat_products/packing', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify(body),
+          }),
+      })
+      if (!call.ok) {
+        flash(call.result?.error ?? t('dermat_boms.packaging.printedError', 'Could not create the printed items for this product.'), 'error')
+      } else {
+        const wanted = new Set(code.printedItems.map((item) => item.toLowerCase()))
+        const items = (call.result?.items ?? []).filter((item) => wanted.has(item.type.toLowerCase()) && !present.has(item.id))
+        const stock = items.length
+          ? await apiCall<{ items?: Record<string, { onHand: number }> }>(`/api/dermat_products/stock?productIds=${items.map((item) => item.id).join(',')}`, undefined, { fallback: { items: {} } })
+          : null
+        printedRows = items.map((item) => ({
+          ...rowFromOption({ id: item.id, title: item.title, code: null, sku: item.sku, kind: 'packing_material', unit: item.unit, onHand: stock?.result?.items?.[item.id]?.onHand ?? 0 }, state.kind, null),
+          value: '1',
+        }))
+      }
+    }
+    const added = [...partRows, ...printedRows]
+    if (!added.length) {
+      flash(t('dermat_boms.packaging.allThere', 'Everything in {code} is already in this BOM.', { code: code.code }), 'info')
+      return
+    }
+    setState((prev) => (prev ? { ...prev, rows: [...prev.rows, ...added] } : prev))
+    setDirty(true)
+    flash(t('dermat_boms.packaging.added', '{count} lines added from {code}', { count: added.length, code: code.code }), 'success')
+  }
+
+  const autoFilled = React.useRef<string | null>(null)
+  React.useEffect(() => {
+    if (!state || state.bom || state.kind !== 'pack' || !state.product.id || !state.product.packagingCode || state.rows.length) return
+    if (autoFilled.current === state.product.id) return
+    autoFilled.current = state.product.id
+    const wanted = state.product.packagingCode
+    void apiCall<{ items?: PackagingCodeView[] }>(`/api/dermat_boms/packaging-codes?code=${encodeURIComponent(wanted)}&pageSize=1`, undefined, { fallback: { items: [] } }).then((call) => {
+      const code = call.result?.items?.[0]
+      if (code) void addPackagingSet(code)
+      else flash(t('dermat_boms.packaging.codeMissing', 'This product\'s packaging code {code} is not in Masters → Packaging codes yet.', { code: wanted }), 'info')
+    })
+  })
 
   const selectProduct = async (option: ComponentOption) => {
     const product = (await readProduct(option.id)) ?? { ...NO_PRODUCT, id: option.id, title: option.title, kind: option.kind, unit: option.unit, code: option.code }
@@ -1056,6 +1121,9 @@ export function BomEditor({ bomId, productId }: { bomId?: string; productId?: st
                         onSelect={addRow}
                         label={t('dermat_boms.table.add', 'Add material')}
                       />
+                      {state.kind === 'pack' && hasProduct ? (
+                        <PackagingCodePicker variant="button" label={t('dermat_boms.packaging.addSet', 'Add packaging set (code)')} onSelect={(code) => void addPackagingSet(code)} />
+                      ) : null}
                       {state.kind === 'pack' && hasProduct ? (
                         <Button type="button" variant="outline" size="sm" onClick={addOwnPacking}>
                           <Package className="mr-1.5 h-4 w-4" />

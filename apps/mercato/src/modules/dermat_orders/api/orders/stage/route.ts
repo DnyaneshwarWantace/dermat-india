@@ -6,9 +6,11 @@ import { stageActionSchema } from '../../../data/validators'
 import { DermatOrderStage } from '../../../data/entities'
 import { applyStageAction, serializeOrder } from '../../../lib/engine'
 import { currentUserName, findOrder, hasFeatures, resolveOrderContext } from '../../../lib/server'
-import { notifyAssigned, notifyStagesOpened, notifyStagesPaused } from '../../../lib/notify'
+import { notifyAssigned, notifyCardAssigned, notifyStagesOpened, notifyStagesPaused } from '../../../lib/notify'
+import { cardPeople } from '../../../lib/tasks'
 import { canSeeMoney } from '../../../lib/money'
-import { STOCK_STAGES, stageDef, stageWorkFeature } from '../../../lib/stages'
+import { OWNER_NAMES, STOCK_STAGES, completeOwners, fieldCard, stageDef, stageWorkFeatures, stepOwners } from '../../../lib/stages'
+import { effectiveStageDef, loadStageOverrides } from '../../../lib/stageSettings'
 import { enforceOrderLock, orderErrorResponse, runGuarded } from '../../../lib/guard'
 import { STORE_STAGE_KEYS, consumeForStage, type StoreStage } from '../../../../dermat_store/lib/service'
 import { resolveStoreContext } from '../../../../dermat_store/lib/server'
@@ -28,10 +30,38 @@ async function POST(req: Request) {
     if (!parsed.success) return NextResponse.json({ error: 'Invalid stage action', details: parsed.error.flatten() }, { status: 400 })
     const money = await canSeeMoney(ctx)
     const reopenAnyTime = parsed.data.action === 'revert' && (await hasFeatures(ctx, ['dermat_orders.reopen']))
-    const allowed =
-      reopenAnyTime ||
-      (await hasFeatures(ctx, [stageWorkFeature(parsed.data.stageKey)])) ||
-      ((parsed.data.action === 'assign' || parsed.data.action === 'delivered') && (await hasFeatures(ctx, ['dermat_orders.manage'])))
+    const effectiveForSave = parsed.data.action === 'save' && !parsed.data.stepKey && parsed.data.data && Object.keys(parsed.data.data).length ? effectiveStageDef(parsed.data.stageKey, await loadStageOverrides(ctx)) : null
+    if (effectiveForSave?.steps.length) {
+      const owners = new Set(Object.keys(parsed.data.data ?? {}).map((key) => fieldCard(effectiveForSave, key)))
+      if (owners.size !== 1) return NextResponse.json({ error: 'Save the details of one step at a time' }, { status: 400 })
+      parsed.data.stepKey = Array.from(owners)[0]
+    }
+    const cardKey = parsed.data.action === 'step' || parsed.data.action === 'save' ? parsed.data.stepKey : parsed.data.action === 'checklist' ? 'qa_final' : parsed.data.action === 'pm_status' ? 'pm_ok' : parsed.data.action === 'delivered' ? 'delivered' : parsed.data.action === 'filling_check' ? 'filled' : undefined
+    const effective = effectiveStageDef(parsed.data.stageKey, await loadStageOverrides(ctx))
+    const card = cardKey ? effective?.steps.find((step) => step.key === cardKey) : undefined
+    const cardOwners = card ? stepOwners(parsed.data.stageKey, card) : []
+    let ownsCard = false
+    for (const feature of cardOwners) if (!ownsCard && (await hasFeatures(ctx, [feature]))) ownsCard = true
+    if (parsed.data.action === 'complete' && effective && effective.steps.length) {
+      const current = await ctx.em.findOne(DermatOrderStage, { orderId: parsed.data.orderId, stageKey: parsed.data.stageKey, organizationId: ctx.organizationId, tenantId: ctx.tenantId })
+      for (const feature of completeOwners(effective, current?.data)) if (!ownsCard && (await hasFeatures(ctx, [feature]))) ownsCard = true
+    }
+    if (parsed.data.action === 'filling_check' && !ownsCard && (await hasFeatures(ctx, ['dermat_orders.work.qa']))) ownsCard = true
+    if (parsed.data.action === 'pm_status' && !ownsCard && effective?.steps.some((step) => step.key === 'pm_ordered')) {
+      for (const feature of stepOwners(parsed.data.stageKey, { key: 'pm_ordered' })) if (!ownsCard && (await hasFeatures(ctx, [feature]))) ownsCard = true
+    }
+    const cardAction = Boolean(card) && (parsed.data.action === 'step' || parsed.data.action === 'checklist' || parsed.data.action === 'filling_check' || (parsed.data.action === 'save' && Boolean(parsed.data.stepKey)))
+    const onBehalf = cardAction && !ownsCard && (await hasFeatures(ctx, ['dermat_orders.settings']))
+    if (onBehalf && card) parsed.data.note = `Done on behalf of ${cardOwners.map((feature) => OWNER_NAMES[feature] ?? feature).join(' / ')}`
+    const allowed = cardAction
+      ? ownsCard || onBehalf
+      : reopenAnyTime ||
+        ownsCard ||
+        (await Promise.all(stageWorkFeatures(parsed.data.stageKey).map((feature) => hasFeatures(ctx, [feature])))).some(Boolean) ||
+        (parsed.data.action === 'assign' && (await hasFeatures(ctx, ['dermat_orders.manage'])))
+    if (!allowed && cardAction && card) {
+      return NextResponse.json({ error: `${card.label} is done by ${cardOwners.map((feature) => OWNER_NAMES[feature] ?? feature).join(' or ')}` }, { status: 403 })
+    }
     if (!allowed) {
       const def = stageDef(parsed.data.stageKey)
       return NextResponse.json({ error: `Only the ${def?.department ?? 'responsible'} department can work on ${def?.label ?? 'this stage'}` }, { status: 403 })
@@ -43,6 +73,11 @@ async function POST(req: Request) {
       const stockPostedBefore = new Set(before.filter((stage) => (stage.data as Record<string, unknown> | null)?.__stock_posted).map((stage) => stage.stageKey))
       let paused: string[] = []
       if (parsed.data.action !== 'assign' && parsed.data.action !== 'save') enforceOrderLock(order, req)
+      const stageVersion = req.headers.get('x-dermat-stage-version')
+      const stageNow = before.find((stage) => stage.stageKey === parsed.data.stageKey)
+      if (stageVersion && stageNow && ['save', 'step', 'checklist', 'pm_status', 'filling_check'].includes(parsed.data.action) && Math.abs(new Date(stageVersion).getTime() - stageNow.updatedAt.getTime()) > 1) {
+        return NextResponse.json({ error: 'Someone else just changed this stage. Reload to see their change, then save again.', conflict: true }, { status: 409 })
+      }
       return await runGuarded(ctx, req, { resourceId: order.id, operation: 'custom', payload: parsed.data }, async () => {
         await ctx.em.transactional(async (em) => {
           const txCtx = { ...ctx, em: em as EntityManager }
@@ -51,7 +86,9 @@ async function POST(req: Request) {
           if (fresh.status === 'completed') await releaseAllForOrder(txCtx, fresh.id, 'Order completed', null)
           await em.flush()
         })
-        if (parsed.data.action === 'complete' && STORE_STAGE_KEYS.includes(parsed.data.stageKey as StoreStage)) {
+        const statusNow = (await ctx.em.fork().findOne(DermatOrderStage, { orderId: order.id, stageKey: parsed.data.stageKey }))?.status
+        const finishedNow = statusNow === 'done' && statusBefore.get(parsed.data.stageKey) !== 'done'
+        if (finishedNow && STORE_STAGE_KEYS.includes(parsed.data.stageKey as StoreStage)) {
           const storeCtx = await resolveStoreContext(req)
           if (!('error' in storeCtx)) {
             const stage = await ctx.em.fork().findOne(DermatOrderStage, { orderId: order.id, stageKey: parsed.data.stageKey })
@@ -68,7 +105,7 @@ async function POST(req: Request) {
             await consumeForStage(storeCtx, order.id, parsed.data.stageKey, rounds[rounds.length - 1]?.batchNo ?? null, parsed.data.note ?? 'Rejected by QC')
           }
         }
-        if (parsed.data.action === 'complete' && STOCK_STAGES.includes(parsed.data.stageKey) && !stockPostedBefore.has(parsed.data.stageKey)) {
+        if (finishedNow && STOCK_STAGES.includes(parsed.data.stageKey) && !stockPostedBefore.has(parsed.data.stageKey)) {
           const stockCtx = await resolveStoreContext(req)
           if (!('error' in stockCtx)) await onProductionStageDone(stockCtx, order.id, parsed.data.stageKey)
         }
@@ -77,6 +114,15 @@ async function POST(req: Request) {
         const after = await freshCtx.em.find(DermatOrderStage, { orderId: order.id })
         const opened = after.filter((stage) => stage.status === 'open' && statusBefore.get(stage.stageKey) !== 'open' && statusBefore.get(stage.stageKey) !== 'on_hold').map((stage) => stage.stageKey)
         await notifyStagesOpened(ctx, freshOrder, opened)
+        const actor = await currentUserName(ctx)
+        for (const stage of after) {
+          const was = cardPeople(before.find((entry) => entry.stageKey === stage.stageKey)?.data as Record<string, unknown> | null)
+          const def = stageDef(stage.stageKey)
+          for (const [cardKey, person] of Object.entries(cardPeople(stage.data as Record<string, unknown> | null))) {
+            if (person.userId === was[cardKey]?.userId || person.userId === ctx.userId) continue
+            await notifyCardAssigned(ctx, freshOrder, stage.stageKey, def?.steps.find((step) => step.key === cardKey)?.label ?? cardKey, person.userId, actor)
+          }
+        }
         if (parsed.data.action === 'revert') await notifyStagesPaused(ctx, freshOrder, parsed.data.stageKey, paused, parsed.data.note ?? '', await currentUserName(ctx))
         if (parsed.data.action === 'assign' && parsed.data.responsibleUserId && parsed.data.responsibleUserId !== ctx.userId) {
           await notifyAssigned(ctx, freshOrder, parsed.data.stageKey, parsed.data.responsibleUserId, await currentUserName(ctx))

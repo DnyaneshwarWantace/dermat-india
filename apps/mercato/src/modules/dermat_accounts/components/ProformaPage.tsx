@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from 'react'
+import { loadCustomer } from '../../dermat_orders/components/loaders'
 import { useGranted } from '../../dermat_departments/components/useGranted'
 import { ViewOnlyNote } from '../../dermat_departments/components/ViewOnlyNote'
 import Link from 'next/link'
@@ -22,6 +23,7 @@ import { dateText, rupeeText } from '../../dermat_products/lib/whatsapp'
 import { buildPiHtml, printPi } from './piPrint'
 import { PI_STATUS, type CompanyView, type PiView } from './types'
 import { BackLink } from '../../dermat_departments/components/BackLink'
+import { SendDocButton } from '../../dermat_orders/components/links/SendDocButton'
 
 const HISTORY: Record<string, string> = { created: 'Drafted', edited: 'Edited', refreshed: 'Lines refreshed from the order', sent: 'Sent to customer', cancelled: 'Cancelled' }
 
@@ -63,8 +65,12 @@ export function ProformaPage({ id }: { id: string }) {
     }
     apply(call.result)
     setCompany(companyCall.result ?? null)
-    const order = await apiCall<{ customer?: { phone?: string | null } | null }>(`/api/dermat_orders/orders?id=${encodeURIComponent(call.result.orderId)}`)
-    setPhone(order.result?.customer?.phone ?? null)
+    if (call.result.orderId) {
+      const order = await apiCall<{ customer?: { phone?: string | null } | null }>(`/api/dermat_orders/orders?id=${encodeURIComponent(call.result.orderId)}`)
+      setPhone(order.result?.customer?.phone ?? null)
+    } else {
+      setPhone((await loadCustomer(call.result.customerId))?.phone ?? null)
+    }
   }, [id, t])
 
   React.useEffect(() => {
@@ -145,7 +151,7 @@ export function ProformaPage({ id }: { id: string }) {
   const message = [
     `Dear ${pi.customerName},`,
     '',
-    `Please find our proforma invoice ${pi.code} dated ${dateText(pi.piDate)} for order ${pi.orderNo}.`,
+    `Please find our proforma invoice ${pi.code} dated ${dateText(pi.piDate)}${pi.orderNo ? ` for order ${pi.orderNo}` : ''}.`,
     ...pi.lines.map((line, index) => `${index + 1}. ${line.brandName ? `${line.brandName} ` : ''}${line.title}: ${line.quantity} pcs × ${line.rate == null ? '—' : rupeeText(line.rate)}`),
     '',
     `Total with GST: ${rupeeText(pi.totals.total)}`,
@@ -175,9 +181,13 @@ export function ProformaPage({ id }: { id: string }) {
               </div>
               <p className="text-sm text-muted-foreground">
                 <span className="font-medium text-foreground">{pi.customerName}</span> ·{' '}
-                <Link href={`/backend/orders/${pi.orderId}`} className="font-mono text-primary hover:underline">
-                  {pi.orderNo}
-                </Link>{' '}
+                {pi.orderId ? (
+                  <Link href={`/backend/orders/${pi.orderId}`} className="font-mono text-primary hover:underline">
+                    {pi.orderNo}
+                  </Link>
+                ) : (
+                  <span className="text-status-warning-text">{t('dermat_accounts.pi.noOrder', 'No order yet')}</span>
+                )}{' '}
                 · {rupeeText(pi.totals.total)}
                 {pi.advancePercent ? ` · ${t('dermat_accounts.pi.advanceShort', 'advance {pct}% = {amount}', { pct: pi.advancePercent, amount: rupeeText(pi.advanceAmount ?? 0) })}` : ''}
               </p>
@@ -188,6 +198,12 @@ export function ProformaPage({ id }: { id: string }) {
                 <Printer className="mr-1.5 h-4 w-4" aria-hidden="true" />
                 {t('dermat_accounts.pi.print', 'Print / PDF')}
               </Button>
+              {pi.status !== 'cancelled' ? <SendDocButton kind="pi" recordId={pi.id} size="default" /> : null}
+              {canRecord && !pi.orderId && pi.status !== 'cancelled' ? (
+                <Button asChild>
+                  <Link href={`/backend/orders/new?fromPi=${pi.id}`}>{t('dermat_accounts.pi.makeOrder', 'Make order from this proforma')}</Link>
+                </Button>
+              ) : null}
               {canRecord && pi.status === 'draft' ? (
                 <Button type="button" onClick={() => send('/api/dermat_accounts/proformas/action', { id, action: 'send' }, t('dermat_accounts.pi.sentFlash', 'Marked as sent; the order Advance stage has the PI no.'))} disabled={busy}>
                   <CheckCircle2 className="mr-1.5 h-4 w-4" aria-hidden="true" />
@@ -270,10 +286,10 @@ export function ProformaPage({ id }: { id: string }) {
                 </div>
                 {editable ? (
                   <div className="flex flex-wrap justify-between gap-2">
-                    <Button type="button" variant="ghost" size="sm" onClick={() => send('/api/dermat_accounts/proformas', { id, refreshLines: true }, t('dermat_accounts.pi.refreshed', 'Lines and totals taken again from the order'))} disabled={busy}>
+                    {pi.orderId ? <Button type="button" variant="ghost" size="sm" onClick={() => send('/api/dermat_accounts/proformas', { id, refreshLines: true }, t('dermat_accounts.pi.refreshed', 'Lines and totals taken again from the order'))} disabled={busy}>
                       <RefreshCcw className="mr-1.5 h-4 w-4" aria-hidden="true" />
                       {t('dermat_accounts.pi.refresh', 'Refresh from order')}
-                    </Button>
+                    </Button> : <span />}
                     <Button type="button" size="sm" onClick={save} disabled={busy}>
                       <Save className="mr-1.5 h-4 w-4" aria-hidden="true" />
                       {t('dermat_accounts.pi.save', 'Save')}

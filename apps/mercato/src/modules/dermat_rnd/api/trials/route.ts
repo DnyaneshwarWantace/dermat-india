@@ -4,7 +4,7 @@ import type { OpenApiRouteDoc } from '@open-mercato/shared/lib/openapi'
 import { enforceCommandOptimisticLock } from '@open-mercato/shared/lib/crud/optimistic-lock-command'
 import { resolveOrderContext } from '../../../dermat_orders/lib/server'
 import { rdTrialInputSchema, rdTrialListSchema, rdTrialUpdateSchema } from '../../data/validators'
-import { createTrial, findTrial, listTrials, trialView, updateTrial } from '../../lib/trials'
+import { approvalProofCounts, createTrial, findTrial, listTrials, trialView, updateTrial } from '../../lib/trials'
 import { rdErrorResponse, runRdGuarded } from '../../lib/server'
 
 export const metadata = {
@@ -21,9 +21,13 @@ async function GET(req: Request) {
   const parsed = rdTrialListSchema.safeParse(Object.fromEntries(new URL(req.url).searchParams))
   if (!parsed.success || (!parsed.data.id && !parsed.data.requestId)) return NextResponse.json({ error: 'Pass a request or a trial' }, { status: 400 })
   try {
-    if (parsed.data.id) return NextResponse.json(trialView(await findTrial(ctx, parsed.data.id)))
+    if (parsed.data.id) {
+      const trial = await findTrial(ctx, parsed.data.id)
+      return NextResponse.json(trialView(trial, (await approvalProofCounts(ctx, [trial.id])).get(trial.id) ?? 0))
+    }
     const trials = await listTrials(ctx, parsed.data.requestId as string)
-    return NextResponse.json({ items: trials.map(trialView) })
+    const proofs = await approvalProofCounts(ctx, trials.map((trial) => trial.id))
+    return NextResponse.json({ items: trials.map((trial) => trialView(trial, proofs.get(trial.id) ?? 0)) })
   } catch (error) {
     return rdErrorResponse(error)
   }

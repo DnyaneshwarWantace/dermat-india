@@ -3,12 +3,15 @@
 import * as React from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, ArrowRight, FileText, ListChecks } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Download, FileText, ListChecks, Printer } from 'lucide-react'
 import { useT } from '@open-mercato/shared/lib/i18n/context'
 import { FormHeader } from '@open-mercato/ui/backend/forms'
 import { StatusBadge } from '@open-mercato/ui/primitives/status-badge'
 import { stageList, type StageDef } from '../../lib/stages'
 import { STAGE_VARIANT, formatDate, formatQty } from '../format'
+import { openStagePrint } from '../stagePrint'
+import { openServerExport } from '../../../dermat_products/lib/csvExport'
+import { flash } from '@open-mercato/ui/backend/FlashMessages'
 import type { Order, Stage } from '../types'
 
 type StagePageHeaderProps = { order: Order; stage: Stage; def: StageDef }
@@ -27,6 +30,12 @@ export function StagePageHeader({ order, stage, def }: StagePageHeaderProps) {
     { id: 'queue', label: t('dermat_orders.stagePage.allOrders', 'All orders at {stage}', { stage: def.label }), icon: ListChecks, onSelect: () => router.push(`/backend/work/${def.key.replace('_', '-')}`) },
     ...(previous ? [{ id: 'previous', label: t('dermat_orders.stagePage.previous', 'Previous: {stage}', { stage: previous.label }), icon: ArrowLeft, onSelect: () => router.push(`/backend/orders/${order.id}/stages/${previous.key}`) }] : []),
     ...(next ? [{ id: 'next', label: t('dermat_orders.stagePage.next', 'Next: {stage}', { stage: next.label }), icon: ArrowRight, onSelect: () => router.push(`/backend/orders/${order.id}/stages/${next.key}`) }] : []),
+    ...(!stage.locked
+      ? [
+          { id: 'print', label: t('dermat_orders.stagePage.print', 'Print this stage'), icon: Printer, onSelect: () => (openStagePrint(order, stage, def) ? undefined : flash(t('dermat_orders.stagePage.popup', 'Allow pop-ups for this site to print.'), 'error')) },
+          { id: 'export', label: t('dermat_orders.stagePage.export', 'Export this stage to Excel'), icon: Download, onSelect: () => openServerExport(`/api/dermat_orders/orders/export?orderId=${encodeURIComponent(order.id)}&stage=${encodeURIComponent(stage.key)}`) },
+        ]
+      : []),
     ...(full ? [{ id: 'order', label: t('dermat_orders.stagePage.fullOrder', 'Open the full order'), icon: FileText, onSelect: () => router.push(`/backend/orders/${order.id}`) }] : []),
   ]
 

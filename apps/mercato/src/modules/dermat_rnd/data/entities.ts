@@ -2,7 +2,7 @@ import { Entity, Index, PrimaryKey, Property, Unique } from '@mikro-orm/decorato
 import { OptionalProps } from '@mikro-orm/core'
 
 export type RdStatus = 'requested' | 'in_progress' | 'sample_sent' | 'changes' | 'approved' | 'dropped'
-export type RdRound = { round: number; madeOn: string | null; sentOn: string | null; sentVia: string | null; feedback: string | null; feedbackOn: string | null; result: 'approved' | 'changes' | null; by: string | null; trialId?: string | null; trialCode?: string | null }
+export type RdRound = { round: number; madeOn: string | null; sentOn: string | null; sentVia: string | null; feedback: string | null; feedbackOn: string | null; result: 'approved' | 'changes' | 'rejected' | null; by: string | null; trialId?: string | null; trialCode?: string | null; nextStep?: 'same' | 'new' | null; nextTrialCode?: string | null; feedbackBy?: string | null; addActives?: string[] | null; removeActives?: string[] | null }
 export type RdHistory = { action: string; by: string | null; at: string; note: string | null }
 export type RdIngredientRef = { productId: string; code: string | null; name: string }
 export type RdTrialStatus = 'draft' | 'testing' | 'passed' | 'failed' | 'approved' | 'rejected'
@@ -10,7 +10,8 @@ export type RdStabilityStatus = 'not_started' | 'running' | 'passed' | 'failed'
 export type RdFormulaLine = { id: string; phase: string | null; productId: string | null; code: string | null; name: string; function: string | null; percent: number; isBalance: boolean; note: string | null }
 export type RdObservations = { values: Record<string, string>; result: 'pass' | 'fail' | null; remarks: string | null; by: string | null; at: string | null }
 export type RdReading = { condition: string; day: number; date: string; values: Record<string, string>; result: 'pass' | 'fail'; remarks: string | null; by: string | null; at: string }
-export type RdStability = { startDate: string | null; conditions: string[]; checkpoints: number[]; readings: RdReading[]; conclusion: string | null }
+export type RdStability = { startDate: string | null; conditions: string[]; checkpoints: number[]; readings: RdReading[]; conclusion: string | null; endDate?: string | null }
+export type RdMicro = { required: boolean; testingDate: string | null; values: Record<string, string>; releasedDate: string | null; result: 'pass' | 'fail' | null; remarks: string | null; by: string | null; at: string | null }
 
 @Entity({ tableName: 'dermat_rnd_requests' })
 @Index({ name: 'dermat_rnd_requests_scope_idx', properties: ['organizationId', 'tenantId', 'status'] })
@@ -21,6 +22,7 @@ export class RdRequest {
     | 'status'
     | 'customerId'
     | 'customerName'
+    | 'urgency'
     | 'orderId'
     | 'orderNo'
     | 'brand'
@@ -72,6 +74,9 @@ export class RdRequest {
 
   @Property({ name: 'customer_name', type: 'text', nullable: true })
   customerName?: string | null
+
+  @Property({ type: 'text', default: 'normal' })
+  urgency: 'normal' | 'urgent' = 'normal'
 
   @Property({ name: 'order_id', type: 'uuid', nullable: true })
   orderId?: string | null
@@ -174,6 +179,9 @@ export class RdTrial {
     | 'observations'
     | 'stability'
     | 'stabilityStatus'
+    | 'productCode'
+    | 'sampleReceivedBy'
+    | 'micro'
     | 'history'
     | 'createdAt'
     | 'updatedAt'
@@ -229,6 +237,15 @@ export class RdTrial {
 
   @Property({ name: 'stability_status', type: 'text', default: 'not_started' })
   stabilityStatus: RdStabilityStatus = 'not_started'
+
+  @Property({ name: 'product_code', type: 'text', nullable: true })
+  productCode?: string | null
+
+  @Property({ name: 'sample_received_by', type: 'text', nullable: true })
+  sampleReceivedBy?: string | null
+
+  @Property({ type: 'json', nullable: true })
+  micro?: RdMicro | null
 
   @Property({ type: 'json', nullable: true })
   history?: RdHistory[] | null

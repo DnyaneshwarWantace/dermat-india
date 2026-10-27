@@ -23,6 +23,7 @@ import { KIND_CONFIG, unitsForKind, type KindConfig } from '../lib/kindConfig'
 import { fieldsForKind, isNumericField, loadProductFieldDefs, type ProductFieldDef } from '../lib/fieldDefs'
 import { FieldsPanel, type PanelField } from './FieldsPanel'
 import { PackingItemsCard } from './PackingItemsCard'
+import { useGranted } from '../../dermat_departments/components/useGranted'
 
 type Row = Record<string, unknown>
 type ListResponse<T> = { items?: T[] }
@@ -41,6 +42,7 @@ type FormState = {
   strategy: string
   sellingPrice: string
   costPrice: string
+  packagingCode: string
   details: Record<string, string>
 }
 
@@ -57,6 +59,7 @@ type Loaded = {
   updatedAt: string | null
   parentProductId: string | null
   sku: string | null
+  profileDenied: boolean
 }
 
 const STRATEGY_OPTIONS = [
@@ -98,6 +101,8 @@ function numberOrNull(value: string): number | null {
   return Number.isFinite(parsed) ? parsed : null
 }
 
+const QUIET = { headers: { 'x-om-forbidden-redirect': '0' } }
+
 async function loadListOptions(defs: ProductFieldDef[]): Promise<Record<string, TaxOption[]>> {
   const result: Record<string, TaxOption[]> = {}
   await Promise.all(
@@ -105,7 +110,7 @@ async function loadListOptions(defs: ProductFieldDef[]): Promise<Record<string, 
       if (def.dictionaryId) {
         const call = await apiCall<{ items?: Array<{ value: string; label?: string | null }> }>(
           `/api/dictionaries/${def.dictionaryId}/entries?limit=500`,
-          undefined,
+          QUIET,
           { fallback: { items: [] } },
         )
         result[def.key] = (call.result?.items ?? []).map((entry) => ({ value: entry.value, label: entry.label || entry.value }))
@@ -121,20 +126,20 @@ async function load(config: KindConfig, productId?: string): Promise<Loaded> {
   const kindLabel = PRODUCT_KINDS.find((entry) => entry.code === config.kind)?.label ?? ''
   const [defs, tree, taxes, unitCall, typeCall, settingsCall, productCall, profileCall] = await Promise.all([
     loadProductFieldDefs(),
-    apiCall<ListResponse<{ id: string; name: string }>>('/api/catalog/categories?view=tree', undefined, { fallback: { items: [] } }),
-    apiCall<ListResponse<Row>>('/api/sales/tax-rates?pageSize=100', undefined, { fallback: { items: [] } }),
-    apiCall<{ entries?: Array<{ value: string; label: string }> }>('/api/catalog/dictionaries/unit', undefined, {
+    apiCall<ListResponse<{ id: string; name: string }>>('/api/catalog/categories?view=tree', QUIET, { fallback: { items: [] } }),
+    apiCall<ListResponse<Row>>('/api/sales/tax-rates?pageSize=100', QUIET, { fallback: { items: [] } }),
+    apiCall<{ entries?: Array<{ value: string; label: string }> }>('/api/catalog/dictionaries/unit', QUIET, {
       fallback: { entries: [] },
     }),
-    apiCall<{ entries?: Array<{ value: string; label: string }> }>('/api/catalog/dictionaries/product_type', undefined, {
+    apiCall<{ entries?: Array<{ value: string; label: string }> }>('/api/catalog/dictionaries/product_type', QUIET, {
       fallback: { entries: [] },
     }),
-    apiCall<{ hiddenFields?: Record<string, string[]> }>('/api/dermat_products/field-settings', undefined, {
+    apiCall<{ hiddenFields?: Record<string, string[]> }>('/api/dermat_products/field-settings', QUIET, {
       fallback: { hiddenFields: {} },
     }),
     productId ? apiCall<ListResponse<Row>>(`/api/catalog/products?id=${encodeURIComponent(productId)}&pageSize=1`) : null,
     productId
-      ? apiCall<ListResponse<Row>>(`/api/wms/inventory-profiles?catalogProductId=${encodeURIComponent(productId)}&pageSize=1`, undefined, {
+      ? apiCall<ListResponse<Row>>(`/api/wms/inventory-profiles?catalogProductId=${encodeURIComponent(productId)}&pageSize=1`, QUIET, {
           fallback: { items: [] },
         })
       : null,
@@ -161,6 +166,7 @@ async function load(config: KindConfig, productId?: string): Promise<Loaded> {
       strategy: text(read(profile, 'default_strategy', 'defaultStrategy')) || 'fifo',
       sellingPrice: text(read(product, 'cf_selling_price')),
       costPrice: text(read(product, 'cf_cost_price')),
+      packagingCode: text(read(product, 'cf_packaging_code')),
       details,
     },
     rootCategoryId: (tree.result?.items ?? []).find((node) => node.name === kindLabel)?.id ?? null,
@@ -171,6 +177,7 @@ async function load(config: KindConfig, productId?: string): Promise<Loaded> {
     listOptions,
     units: unitsForKind(config, (unitCall.result?.entries ?? []).map((entry) => ({ value: entry.value, label: entry.label }))),
     profileId: profile ? text(read(profile, 'id')) : null,
+    profileDenied: profileCall?.status === 403,
     updatedAt: text(read(product, 'updated_at', 'updatedAt')) || null,
     parentProductId: text(read(product, 'cf_parent_product_id')) || null,
     sku: text(read(product, 'sku')) || null,
@@ -215,9 +222,11 @@ export function ProductForm({ kind, productId }: { kind: ProductKind; productId?
     setListOptions(loaded.listOptions)
   }, [loaded])
 
+  const granted = useGranted()
+  const canSeeSupplier = granted.ready && granted.has('dermat_products.supplier')
   const kindDefs = React.useMemo(
-    () => fieldsForKind(defs, kind, config.fields.map((field) => field.key)),
-    [defs, kind, config],
+    () => fieldsForKind(defs, kind, config.fields.map((field) => field.key)).filter((def) => canSeeSupplier || def.key !== 'supplier'),
+    [defs, kind, config, canSeeSupplier],
   )
 
   const panelFields = React.useMemo<PanelField[]>(
@@ -306,6 +315,7 @@ export function ProductForm({ kind, productId }: { kind: ProductKind; productId?
       cf_product_type: state.productType || null,
       cf_selling_price: numberOrNull(state.sellingPrice),
       cf_cost_price: numberOrNull(state.costPrice),
+      ...(kind === 'finished_goods' ? { cf_packaging_code: state.packagingCode.trim() || null } : {}),
     }
     for (const def of kindDefs) {
       const value = state.details[def.key] ?? ''
@@ -351,8 +361,10 @@ export function ProductForm({ kind, productId }: { kind: ProductKind; productId?
             const productSku = text(read(createdCall.result?.items?.[0], 'sku')) || undefined
             await createCrud('catalog/variants', { productId: id, name: title, sku: productSku, isDefault: true, isActive: true })
           }
-          if (loaded.profileId) await updateCrud('wms/inventory-profiles', { id: loaded.profileId, ...profilePayload })
-          else await createCrud('wms/inventory-profiles', { catalogProductId: id, ...profilePayload })
+          if (!loaded.profileDenied) {
+            if (loaded.profileId) await updateCrud('wms/inventory-profiles', { id: loaded.profileId, ...profilePayload })
+            else await createCrud('wms/inventory-profiles', { catalogProductId: id, ...profilePayload })
+          }
           if (kind === 'finished_goods' && (packTypes.length || productId)) {
             const packing = await apiCall('/api/dermat_products/packing', {
               method: 'POST',
@@ -626,7 +638,14 @@ export function ProductForm({ kind, productId }: { kind: ProductKind; productId?
                 </Card>
               ) : null}
               {kind === 'finished_goods' ? (
-                <PackingItemsCard productId={productId} productTitle={state.title} selected={packTypes} onChange={setPackTypes} />
+                <PackingItemsCard
+                  productId={productId}
+                  productTitle={state.title}
+                  selected={packTypes}
+                  onChange={setPackTypes}
+                  packagingCode={state.packagingCode}
+                  onPackagingCode={(code) => update({ packagingCode: code })}
+                />
               ) : null}
             </div>
 

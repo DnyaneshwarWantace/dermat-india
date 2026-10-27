@@ -11,7 +11,10 @@ import { useT } from '@open-mercato/shared/lib/i18n/context'
 import { cn } from '@open-mercato/shared/lib/utils'
 import { Page, PageBody } from '@open-mercato/ui/backend/Page'
 import { DataTable } from '@open-mercato/ui/backend/DataTable'
+import { Input } from '@open-mercato/ui/primitives/input'
 import { Tabs, TabsList, TabsTrigger } from '@open-mercato/ui/primitives/tabs'
+import { Label } from '@open-mercato/ui/primitives/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@open-mercato/ui/primitives/select'
 import { apiCall } from '@open-mercato/ui/backend/utils/apiCall'
 import { flash } from '@open-mercato/ui/backend/FlashMessages'
 import { ExportButton } from '../../dermat_products/components/ExportButton'
@@ -36,6 +39,7 @@ export function StageQueue({ stageKey }: { stageKey: string }) {
   useStageSettings()
   const def = stageDef(stageKey)
   const [tab, setTab] = React.useState<QueueTab>('active')
+  const [cardFilter, setCardFilter] = React.useState<string>('all')
   const [rows, setRows] = React.useState<SheetOrder[]>([])
   const [search, setSearch] = React.useState('')
   const [page, setPage] = React.useState(1)
@@ -102,10 +106,10 @@ export function StageQueue({ stageKey }: { stageKey: string }) {
     const result = await runner.run(order, stage, request)
     if (result.order) {
       setOrder(result.order)
-      if (request.action === 'complete' || request.action === 'skip') {
-        setOrder(null)
-        setReload((value) => value + 1)
-      }
+      const finishedNow = result.order.stages.find((entry) => entry.key === stage.key)?.status === 'done' && stage.status !== 'done'
+      if (request.action === 'complete' || request.action === 'skip' || finishedNow) setOrder(null)
+      silent.current = true
+      setReload((value) => value + 1)
       return true
     }
     if (result.conflict) await openOrder(order.id)
@@ -136,13 +140,9 @@ export function StageQueue({ stageKey }: { stageKey: string }) {
     {
       id: 'order',
       header: t('dermat_orders.list.order', 'Order'),
-      cell: ({ row }) => (
-        <span>
-          <span className="font-mono text-xs font-semibold">{row.original.orderNo}</span>
-          <span className="block text-xs text-muted-foreground">{formatDate(row.original.orderDate)}</span>
-        </span>
-      ),
+      cell: ({ row }) => <span className="whitespace-nowrap font-mono text-xs font-semibold">{row.original.orderNo}</span>,
     },
+    { id: 'ordered', header: t('dermat_orders.queue.ordered', 'Ordered'), cell: ({ row }) => <span className="whitespace-nowrap text-xs">{formatDate(row.original.orderDate)}</span> },
     { id: 'customer', header: t('dermat_orders.list.customer', 'Customer'), cell: ({ row }) => <span className="font-medium">{row.original.customerName || '—'}</span> },
     {
       id: 'products',
@@ -166,21 +166,22 @@ export function StageQueue({ stageKey }: { stageKey: string }) {
         const stage = row.original.stages[stageKey]
         const state = sheetWorkState(stage)
         const current = row.original.current.find((entry) => entry.key === stageKey)
+        const who = [
+          current?.status === 'on_hold' ? current.holdParty : null,
+          stage?.responsibleName ?? (tab === 'done' ? stage?.completedByName : t('dermat_orders.rail.unassigned', 'Not assigned')),
+          stage?.days != null && tab !== 'waiting' ? `${formatQty(stage.days, 1)} d` : null,
+        ]
+          .filter(Boolean)
+          .join(' · ')
+        const steps = stage?.stepsTotal ? t('dermat_orders.queue.steps', '{done}/{total} steps', { done: stage.stepsDone, total: stage.stepsTotal }) : null
+        const full = [steps, stage?.currentCard ? t('dermat_orders.queue.now', 'Now: {card}', { card: stage.currentCard.label }) : null, stage?.currentCard?.waitingFor ?? null, stage?.currentCard?.owners.join(' / ') ?? null, who].filter(Boolean).join(' · ')
         return (
-          <span className="flex flex-col gap-0.5 text-xs">
-            <span className="flex items-center gap-1.5">
-              <StatePill state={state} />
-              {stage?.stepsTotal ? <span className="tabular-nums text-muted-foreground">{t('dermat_orders.queue.steps', '{done}/{total} steps', { done: stage.stepsDone, total: stage.stepsTotal })}</span> : null}
-            </span>
-            <span className="text-muted-foreground">
-              {[
-                current?.status === 'on_hold' ? current.holdParty : null,
-                stage?.responsibleName ?? (tab === 'done' ? stage?.completedByName : t('dermat_orders.rail.unassigned', 'Not assigned')),
-                stage?.days != null && tab !== 'waiting' ? `${formatQty(stage.days, 1)} d` : null,
-              ]
-                .filter(Boolean)
-                .join(' · ')}
-            </span>
+          <span className="flex min-w-72 max-w-md items-center gap-1.5 whitespace-nowrap text-xs" title={full}>
+            <StatePill state={state} />
+            {steps ? <span className="shrink-0 tabular-nums text-muted-foreground">{stage?.stepsDone}/{stage?.stepsTotal}</span> : null}
+            {stage?.currentCard ? <span className="min-w-0 truncate font-medium text-foreground">{stage.currentCard.label}</span> : null}
+            {stage?.currentCard?.waitingFor ? <span className="min-w-0 truncate text-status-warning-text">{stage.currentCard.waitingFor}</span> : null}
+            {who ? <span className="shrink-0 text-muted-foreground">{who}</span> : null}
           </span>
         )
       },
@@ -268,7 +269,77 @@ export function StageQueue({ stageKey }: { stageKey: string }) {
               <TabsTrigger value="done">{t('dermat_orders.queue.tab.done', 'Done')}</TabsTrigger>
             </TabsList>
           </Tabs>
+          {tab === 'active' && def.steps.length > 1 ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <Label htmlFor="queue-card" className="text-xs text-muted-foreground">
+                {t('dermat_orders.queue.stepFilter', 'Waiting at step')}
+              </Label>
+              <Select value={cardFilter} onValueChange={setCardFilter}>
+                <SelectTrigger id="queue-card" className="h-8 w-auto min-w-56">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">{t('dermat_orders.queue.allSteps', 'Every step')}</SelectItem>
+                  {def.steps.map((step) => (
+                    <SelectItem key={step.key} value={step.key}>
+                      {step.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          ) : null}
         </div>
+        <div className="space-y-2 md:hidden">
+          <Input
+            aria-label={t('dermat_orders.list.search', 'Search order no., customer, product ID or batch no.')}
+            placeholder={t('dermat_orders.queue.phoneSearch', 'Search order, customer, product')}
+            className="h-11"
+            value={search}
+            onChange={(event) => {
+              setSearch(event.target.value)
+              setPage(1)
+            }}
+          />
+          {(tab === 'active' && cardFilter !== 'all' ? rows.filter((row) => row.stages[stageKey]?.currentCard?.key === cardFilter) : rows).map((row) => {
+            const here = row.stages[stageKey]
+            const card = here?.currentCard ?? null
+            const href = card && card.key !== '__main' ? `/backend/orders/${row.id}/stages/${stageKey}/steps/${card.key}` : `/backend/orders/${row.id}/stages/${stageKey}`
+            const first = row.lines[0]
+            return (
+              <Link key={row.id} href={href} className="block rounded-lg border bg-card p-3 active:bg-muted">
+                <span className="flex items-baseline justify-between gap-2">
+                  <span className="font-mono text-sm font-semibold text-primary">{row.orderNo}</span>
+                  <span className={row.late ? 'text-xs font-semibold text-status-error-text' : 'text-xs text-muted-foreground'}>
+                    {row.late ? t('dermat_orders.book.late', 'Late') : here?.days != null ? t('dermat_orders.queue.days', '{days} d here', { days: formatQty(here.days, 1) }) : ''}
+                  </span>
+                </span>
+                <span className="mt-0.5 block truncate text-sm">{first ? `${first.brandName ?? first.productTitle} · ${formatQty(first.quantity, 0)} pcs${row.lines.length > 1 ? ` +${row.lines.length - 1}` : ''}` : '—'}</span>
+                <span className="block truncate text-xs text-muted-foreground">{row.customerName}</span>
+                {card ? (
+                  <span className="mt-1.5 flex items-center justify-between gap-2 rounded-md bg-muted/60 px-2 py-1 text-xs">
+                    <span className="truncate font-medium">{card.label}</span>
+                    <span className="shrink-0 text-muted-foreground">{card.personName ?? card.owners.join(' / ')}</span>
+                  </span>
+                ) : null}
+                {card?.waitingFor ? <span className="mt-1 block text-xs text-status-warning-text">{card.waitingFor}</span> : null}
+              </Link>
+            )
+          })}
+          {!isLoading && !rows.length ? <p className="py-8 text-center text-sm text-muted-foreground">{t('dermat_orders.queue.empty', 'Nothing here right now.')}</p> : null}
+          {totalPages > 1 ? (
+            <div className="flex items-center justify-between pt-1">
+              <Button type="button" variant="outline" className="h-10" disabled={page <= 1} onClick={() => setPage((value) => value - 1)}>
+                {t('dermat_orders.book.prev', 'Previous page')}
+              </Button>
+              <span className="text-xs text-muted-foreground tabular-nums">{page} / {totalPages}</span>
+              <Button type="button" variant="outline" className="h-10" disabled={page >= totalPages} onClick={() => setPage((value) => value + 1)}>
+                {t('dermat_orders.book.next', 'Next page')}
+              </Button>
+            </div>
+          ) : null}
+        </div>
+        <div className="hidden md:block">
         <DataTable
           perspective={{ tableId: `dermat_orders.work.${stageKey}` }}
           title={
@@ -279,7 +350,7 @@ export function StageQueue({ stageKey }: { stageKey: string }) {
                 : t('dermat_orders.queue.titleDone', '{count} orders done here', { count: total })
           }
           columns={columns}
-          data={rows}
+          data={tab === 'active' && cardFilter !== 'all' ? rows.filter((row) => row.stages[stageKey]?.currentCard?.key === cardFilter) : rows}
           onRowClick={(row) => (table.editing ? undefined : router.push(`/backend/orders/${row.id}/stages/${stageKey}`))}
           searchValue={search}
           onSearchChange={(value) => {
@@ -298,6 +369,7 @@ export function StageQueue({ stageKey }: { stageKey: string }) {
           pagination={{ page, pageSize: PAGE_SIZE, total, totalPages, onPageChange: setPage }}
           isLoading={isLoading}
         />
+        </div>
         {order ? (
           <StageSheet
             order={order}

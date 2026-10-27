@@ -2140,7 +2140,8 @@ CREATE TABLE public.dermat_company_profiles (
     created_at timestamp with time zone NOT NULL,
     updated_at timestamp with time zone NOT NULL,
     grn_over_percent integer DEFAULT 0 NOT NULL,
-    number_series jsonb
+    number_series jsonb,
+    form_options jsonb
 );
 
 
@@ -2390,7 +2391,8 @@ CREATE TABLE public.dermat_order_lines (
     gst_percent numeric(6,2) DEFAULT '18'::numeric NOT NULL,
     discount_percent numeric(6,2) DEFAULT '0'::numeric NOT NULL,
     sample_needed boolean DEFAULT false NOT NULL,
-    rd_number text
+    rd_number text,
+    same_as_product_id uuid
 );
 
 
@@ -2477,7 +2479,8 @@ CREATE TABLE public.dermat_orders (
     shipping_address text,
     revised_at timestamp with time zone,
     revised_by_name text,
-    revision_note text
+    revision_note text,
+    coordinator text
 );
 
 
@@ -2651,8 +2654,8 @@ CREATE TABLE public.dermat_proforma_invoices (
     organization_id uuid NOT NULL,
     tenant_id uuid NOT NULL,
     code text NOT NULL,
-    order_id uuid NOT NULL,
-    order_no text NOT NULL,
+    order_id uuid,
+    order_no text,
     customer_id uuid NOT NULL,
     customer_name text NOT NULL,
     customer_gstin text,
@@ -18849,6 +18852,103 @@ ALTER TABLE ONLY public.wms_stock_valuations
 ALTER TABLE ONLY public.wms_stock_valuations
     ADD CONSTRAINT wms_stock_valuations_warehouse_id_foreign FOREIGN KEY (warehouse_id) REFERENCES public.wms_warehouses(id);
 
+
+CREATE TABLE public.dermat_packaging_codes (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    organization_id uuid NOT NULL,
+    tenant_id uuid NOT NULL,
+    code text NOT NULL,
+    name text NOT NULL,
+    kind text NOT NULL,
+    size text,
+    specs text,
+    components jsonb DEFAULT '[]'::jsonb NOT NULL,
+    printed_items jsonb DEFAULT '[]'::jsonb NOT NULL,
+    notes text,
+    created_at timestamp with time zone NOT NULL,
+    updated_at timestamp with time zone NOT NULL,
+    deleted_at timestamp with time zone
+);
+
+ALTER TABLE ONLY public.dermat_packaging_codes
+    ADD CONSTRAINT dermat_packaging_codes_pkey PRIMARY KEY (id);
+
+CREATE INDEX dermat_packaging_codes_org_tenant_idx ON public.dermat_packaging_codes USING btree (organization_id, tenant_id);
+
+CREATE UNIQUE INDEX dermat_packaging_codes_code_uq ON public.dermat_packaging_codes USING btree (organization_id, tenant_id, upper(code)) WHERE (deleted_at IS NULL);
+
+
+CREATE TABLE public.dermat_sample_charges (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    organization_id uuid NOT NULL,
+    tenant_id uuid NOT NULL,
+    customer_id uuid NOT NULL,
+    rd_request_id uuid,
+    rd_code text,
+    amount numeric(14,2) NOT NULL,
+    paid_on text NOT NULL,
+    mode text,
+    reference text,
+    note text,
+    by_name text,
+    voided_at timestamp with time zone,
+    void_reason text,
+    created_at timestamp with time zone NOT NULL,
+    updated_at timestamp with time zone NOT NULL
+);
+
+ALTER TABLE ONLY public.dermat_sample_charges
+    ADD CONSTRAINT dermat_sample_charges_pkey PRIMARY KEY (id);
+
+CREATE INDEX dermat_sample_charges_customer_idx ON public.dermat_sample_charges USING btree (organization_id, tenant_id, customer_id);
+
+ALTER TABLE public.dermat_rnd_requests ADD COLUMN IF NOT EXISTS urgency text DEFAULT 'normal'::text NOT NULL;
+ALTER TABLE public.dermat_rnd_trials ADD COLUMN IF NOT EXISTS product_code text, ADD COLUMN IF NOT EXISTS sample_received_by text, ADD COLUMN IF NOT EXISTS micro jsonb;
+
+ALTER TABLE public.dermat_stage_settings ADD COLUMN IF NOT EXISTS card_settings jsonb;
+
+CREATE TABLE IF NOT EXISTS public.dermat_artwork_approvals (id uuid DEFAULT gen_random_uuid() NOT NULL, organization_id uuid NOT NULL, tenant_id uuid NOT NULL, order_id uuid NOT NULL, token_hash text NOT NULL, status text DEFAULT 'open'::text NOT NULL, file_ids jsonb, client_name text, client_designation text, signature text, comments text, ip text, user_agent text, decided_at timestamp with time zone, expires_at timestamp with time zone NOT NULL, created_by_name text, created_at timestamp with time zone NOT NULL, updated_at timestamp with time zone NOT NULL, CONSTRAINT dermat_artwork_approvals_pkey PRIMARY KEY (id), CONSTRAINT dermat_artwork_approvals_token_uq UNIQUE (token_hash));
+CREATE INDEX IF NOT EXISTS dermat_artwork_approvals_order_idx ON public.dermat_artwork_approvals USING btree (organization_id, tenant_id, order_id);
+
+CREATE TABLE IF NOT EXISTS public.dermat_doc_links (id uuid DEFAULT gen_random_uuid() NOT NULL, organization_id uuid NOT NULL, tenant_id uuid NOT NULL, token text NOT NULL, kind text NOT NULL, record_id uuid NOT NULL, order_id uuid, customer_id uuid, title text NOT NULL, sends jsonb, opened_count integer DEFAULT 0 NOT NULL, last_opened_at timestamp with time zone, revoked_at timestamp with time zone, created_by_name text, created_at timestamp with time zone NOT NULL, updated_at timestamp with time zone NOT NULL, CONSTRAINT dermat_doc_links_pkey PRIMARY KEY (id));
+CREATE UNIQUE INDEX IF NOT EXISTS dermat_doc_links_token_uq ON public.dermat_doc_links USING btree (token);
+CREATE INDEX IF NOT EXISTS dermat_doc_links_record_idx ON public.dermat_doc_links USING btree (organization_id, tenant_id, kind, record_id);
+
+CREATE TABLE IF NOT EXISTS public.dermat_customer_registrations (id uuid DEFAULT gen_random_uuid() NOT NULL, organization_id uuid NOT NULL, tenant_id uuid NOT NULL, token text NOT NULL, customer_id uuid, status text DEFAULT 'open'::text NOT NULL, answers jsonb, submitted_at timestamp with time zone, ip text, decided_by_name text, decided_at timestamp with time zone, note text, created_by_name text, created_at timestamp with time zone NOT NULL, updated_at timestamp with time zone NOT NULL, CONSTRAINT dermat_customer_registrations_pkey PRIMARY KEY (id));
+CREATE UNIQUE INDEX IF NOT EXISTS dermat_customer_registrations_token_uq ON public.dermat_customer_registrations USING btree (token);
+ALTER TABLE public.dermat_tax_invoices ADD COLUMN IF NOT EXISTS irn text, ADD COLUMN IF NOT EXISTS ack_no text, ADD COLUMN IF NOT EXISTS ack_date text;
+
+CREATE TABLE public.dermat_whatsapp_numbers (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    organization_id uuid NOT NULL,
+    tenant_id uuid NOT NULL,
+    user_id uuid NOT NULL,
+    phone text NOT NULL,
+    enabled boolean DEFAULT true NOT NULL,
+    last_sent_at timestamp with time zone,
+    last_error text,
+    sent_count integer DEFAULT 0 NOT NULL,
+    created_at timestamp with time zone NOT NULL,
+    updated_at timestamp with time zone NOT NULL,
+    CONSTRAINT dermat_whatsapp_numbers_pkey PRIMARY KEY (id)
+);
+CREATE UNIQUE INDEX dermat_whatsapp_numbers_user_uq ON public.dermat_whatsapp_numbers USING btree (tenant_id, user_id);
+
+ALTER TABLE public.dermat_order_events ADD COLUMN IF NOT EXISTS step_key text;
+
+CREATE TABLE public.dermat_access_log (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    organization_id uuid NOT NULL,
+    tenant_id uuid NOT NULL,
+    user_id uuid NOT NULL,
+    user_name text,
+    changed_by_name text,
+    added jsonb NOT NULL,
+    removed jsonb NOT NULL,
+    created_at timestamp with time zone NOT NULL,
+    CONSTRAINT dermat_access_log_pkey PRIMARY KEY (id)
+);
+CREATE INDEX dermat_access_log_scope_idx ON public.dermat_access_log USING btree (tenant_id, created_at);
 
 --
 -- PostgreSQL database dump complete

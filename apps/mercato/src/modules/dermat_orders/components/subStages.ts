@@ -1,4 +1,4 @@
-import { stageDef, stepStates } from '../lib/stages'
+import { stageDef, stepRequired, stepStates } from '../lib/stages'
 import type { Order, Stage } from './types'
 
 export type SubStage = {
@@ -7,6 +7,7 @@ export type SubStage = {
   kind: 'step' | 'store' | 'qc'
   status: 'done' | 'current' | 'pending' | 'na'
   optional: boolean
+  parallel?: boolean
   by: string | null
   at: string | null
   detail: string | null
@@ -54,22 +55,25 @@ export function subStages(order: Order, stage: Stage): SubStage[] {
   const step = (key: string): Omit<SubStage, 'status'> & { done: boolean } => {
     const entry = def.steps.find((candidate) => candidate.key === key)
     const state = states[key]
-    return { key, label: entry?.label ?? key, kind: 'step', optional: Boolean(entry?.optional), by: state?.by ?? null, at: state?.at ?? null, done: Boolean(state?.done), detail: null, links: [] }
+    return { key, label: entry?.label ?? key, kind: 'step', optional: entry ? !stepRequired(def, entry, stage.data) : false, parallel: Boolean(entry?.parallel), by: state?.by ?? null, at: state?.at ?? null, done: Boolean(state?.done), detail: null, links: [] }
   }
   let items: Array<Omit<SubStage, 'status'> & { done: boolean; na?: boolean; naText?: string }>
   const reusing = stage.key === 'manufacturing' && stage.data?.bulk_source === 'Use bulk already made'
   if (stage.key === 'manufacturing') {
     items = [
       reusing ? { ...storeSub(order, stage, 'Requirement given to store'), na: true, naText: `Bulk taken from batch ${String(stage.data?.batch_no ?? '')}` } : storeSub(order, stage, 'Requirement given to store'),
+      step('started'),
       step('manufactured'),
       reusing ? { key: 'qc', label: 'QC testing', kind: 'qc', optional: false, by: null, at: null, done: true, detail: null, links: [], na: true, naText: 'Batch already QC-approved' } : (qcSub(order, stage, 'QC testing') ?? { key: 'qc', label: 'QC testing', kind: 'qc', optional: false, by: null, at: null, done: false, detail: 'Check is created when the stage opens', links: [] }),
     ]
   } else if (stage.key === 'filling') {
     const qc = qcSub(order, stage, 'QC testing')
-    items = [storeSub(order, stage, 'Bottle requirement given to store'), step('filled'), qc ?? { key: 'qc', label: 'QC testing', kind: 'qc', optional: false, by: null, at: null, done: true, detail: null, links: [], na: true, naText: 'QC after filling is switched off' }]
+    items = [step('pm_asked'), storeSub(order, stage, 'Bottles issued by store and received'), step('started'), step('filled'), qc ?? { key: 'qc', label: 'QC testing', kind: 'qc', optional: false, by: null, at: null, done: true, detail: null, links: [], na: true, naText: 'QC after filling is switched off' }]
   } else if (stage.key === 'packing') {
     const qc = qcSub(order, stage, 'QC testing')
-    items = [step('sample'), qc ?? { key: 'qc', label: 'QC testing', kind: 'qc', optional: false, by: null, at: null, done: true, detail: null, links: [], na: true, naText: 'No packing QC rule' }, step('packed')]
+    const asked = (order.store?.[stage.key] ?? []).some((request) => request.status !== 'cancelled')
+    const store = storeSub(order, stage, 'Cartons and shippers issued by store and received')
+    items = [step('pm_asked'), asked ? store : { ...store, optional: true, detail: 'Not asked (only if secondary packing comes from the PM store)' }, step('sample'), qc ?? { key: 'qc', label: 'QC testing', kind: 'qc', optional: false, by: null, at: null, done: true, detail: null, links: [], na: true, naText: 'No packing QC rule' }, step('packed')]
   } else {
     items = def.steps.map((entry) => step(entry.key))
   }
@@ -79,11 +83,12 @@ export function subStages(order: Order, stage: Stage): SubStage[] {
     let status: SubStage['status']
     if (item.na) status = 'na'
     else if (item.done || stage.status === 'done') status = 'done'
+    else if (working && item.parallel && !item.optional) status = 'current'
     else if (working && !currentGiven && !item.optional) {
       status = 'current'
       currentGiven = true
     } else status = 'pending'
-    return { key: item.key, label: item.label, kind: item.kind, optional: item.optional, by: item.by, at: item.at, detail: item.na ? (item.naText ?? null) : item.detail, links: item.links, status }
+    return { key: item.key, label: item.label, kind: item.kind, optional: item.optional, parallel: item.parallel, by: item.by, at: item.at, detail: item.na ? (item.naText ?? null) : item.detail, links: item.links, status }
   })
 }
 

@@ -2,6 +2,27 @@ import { currentUserName, loadCustomers, type OrderContext } from '../../dermat_
 import { DermatOrder, DermatOrderStage } from '../../dermat_orders/data/entities'
 import { RdRequest, RdTrial, type RdRound } from '../data/entities'
 import type { RdAction, RdInput } from '../data/validators'
+
+const VIEW_STATUS: Record<string, string[] | null> = {
+  open: ['requested', 'in_progress', 'changes'],
+  samples: ['sample_sent'],
+  approved: ['approved'],
+  closed: ['dropped'],
+  all: null,
+}
+
+export function requestFilter(ctx: OrderContext, query: { view: string; kind?: string; customerId?: string; search?: string }): Record<string, unknown> {
+  const where: Record<string, unknown> = { tenantId: ctx.tenantId, organizationId: ctx.organizationId, deletedAt: null }
+  const statuses = VIEW_STATUS[query.view]
+  if (statuses) where.status = { $in: statuses }
+  if (query.kind) where.kind = query.kind
+  if (query.customerId) where.customerId = query.customerId
+  if (query.search) {
+    const term = `%${query.search.replace(/[%_]/g, '')}%`
+    where.$or = [{ code: { $ilike: term } }, { productName: { $ilike: term } }, { customerName: { $ilike: term } }, { brand: { $ilike: term } }, { orderNo: { $ilike: term } }]
+  }
+  return where
+}
 import { nextSeriesCode } from '../../dermat_accounts/lib/numberSeries'
 
 export class RdError extends Error {
@@ -38,7 +59,8 @@ export async function findRequest(ctx: OrderContext, id: string): Promise<RdRequ
 
 async function applyInput(ctx: OrderContext, request: RdRequest, input: RdInput) {
   request.kind = input.kind
-  if (input.kind === 'client' && !input.customerId && !input.orderId) throw new RdError('Pick the client, or mark it as a new product (NPD)')
+  if (input.kind === 'client' && !input.customerId && !input.orderId && !input.newClientName?.trim()) throw new RdError('Pick the client or type a new client name, or mark it as a new product (NPD)')
+  request.urgency = input.urgency ?? 'normal'
   let customerId = input.customerId ?? null
   if (input.orderId) {
     const order = await ctx.em.findOne(DermatOrder, { id: input.orderId, tenantId: ctx.tenantId, organizationId: ctx.organizationId, deletedAt: null })
@@ -51,7 +73,7 @@ async function applyInput(ctx: OrderContext, request: RdRequest, input: RdInput)
     request.orderNo = null
   }
   request.customerId = input.kind === 'npd' && !input.orderId ? null : customerId
-  request.customerName = request.customerId ? (await loadCustomers(ctx, [request.customerId])).get(request.customerId)?.name ?? null : null
+  request.customerName = request.customerId ? (await loadCustomers(ctx, [request.customerId])).get(request.customerId)?.name ?? null : input.kind === 'client' ? clean(input.newClientName) : null
   request.productName = input.productName.trim()
   request.brand = clean(input.brand)
   request.productType = clean(input.productType)
@@ -118,11 +140,14 @@ export async function actOnRequest(ctx: OrderContext, request: RdRequest, input:
     }
     case 'feedback':
       if (request.status !== 'sample_sent' || !current) throw new RdError('Record feedback after a sample has been sent', 409)
-      if (!input.result) throw new RdError('Did the client approve or ask for changes?')
-      if (input.result === 'changes' && !clean(input.feedback)) throw new RdError('Write what the client wants changed')
+      if (!input.result) throw new RdError('Did the client approve, ask for changes or reject the sample?')
+      if (input.result !== 'approved' && !clean(input.feedback)) throw new RdError(input.result === 'rejected' ? 'Write why the client rejected the sample' : 'Write what the client wants changed')
       current.result = input.result
       current.feedback = clean(input.feedback)
       current.feedbackOn = todayIst()
+      current.feedbackBy = byName
+      current.addActives = input.addActives?.length ? input.addActives.map((ref) => ref.name) : null
+      current.removeActives = input.removeActives?.length ? input.removeActives : null
       request.status = input.result === 'approved' ? 'approved' : 'changes'
       break
     case 'drop':
@@ -150,6 +175,7 @@ export function requestView(request: RdRequest) {
     status: request.status,
     customerId: request.customerId ?? null,
     customerName: request.customerName ?? null,
+    urgency: request.urgency ?? 'normal',
     orderId: request.orderId ?? null,
     orderNo: request.orderNo ?? null,
     productName: request.productName,

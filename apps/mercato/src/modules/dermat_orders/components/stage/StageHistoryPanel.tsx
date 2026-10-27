@@ -4,20 +4,7 @@ import * as React from 'react'
 import { useT } from '@open-mercato/shared/lib/i18n/context'
 import { formatDateTime } from '../format'
 import type { Order } from '../types'
-
-const EVENT_LABEL: Record<string, string> = {
-  opened: 'Started',
-  saved: 'Saved',
-  completed: 'Done',
-  held: 'Put on hold',
-  resumed: 'Resumed',
-  reverted: 'Reopened',
-  skipped: 'Skipped',
-  assigned: 'Assigned to',
-  step_done: 'Ticked',
-  step_undone: 'Unticked',
-  created: 'Order booked',
-}
+import { ACTION_LABEL } from '../OrderHistory'
 
 export function StageHistoryPanel({ events }: { events: Order['events'] }) {
   const t = useT()
@@ -27,7 +14,7 @@ export function StageHistoryPanel({ events }: { events: Order['events'] }) {
       {events.map((event) => (
         <li key={event.id} className="flex flex-col gap-0.5 px-4 py-2">
           <div className="flex items-baseline justify-between gap-2">
-            <span className="font-medium">{t(`dermat_orders.event.${event.action}`, EVENT_LABEL[event.action] ?? event.action)}</span>
+            <span className="font-medium">{t(`dermat_orders.event.${event.action}`, ACTION_LABEL[event.action] ?? event.action)}</span>
             <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{formatDateTime(event.at)}</span>
           </div>
           {event.note ? <p className="text-xs">{event.note}</p> : null}

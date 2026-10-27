@@ -2,11 +2,15 @@
 
 import * as React from 'react'
 import Link from 'next/link'
-import { Boxes, Check, ExternalLink } from 'lucide-react'
+import { Boxes, Check, ExternalLink, X } from 'lucide-react'
 import { useT } from '@open-mercato/shared/lib/i18n/context'
 import { cn } from '@open-mercato/shared/lib/utils'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@open-mercato/ui/primitives/card'
 import { apiCall } from '@open-mercato/ui/backend/utils/apiCall'
+import { IconButton } from '@open-mercato/ui/primitives/icon-button'
+import { PackagingCodePicker } from '../../dermat_boms/components/packaging/PackagingCodePicker'
+import { setSummary } from '../../dermat_boms/components/packaging/labels'
+import type { PackagingCodeView } from '../../dermat_boms/components/types'
 
 export type LinkedPackingItem = { id: string; title: string; type: string; sku: string | null; unit: string | null }
 
@@ -16,12 +20,36 @@ type PackingItemsCardProps = {
   selected: string[]
   onChange: (types: string[]) => void
   refreshKey?: number
+  packagingCode?: string
+  onPackagingCode?: (code: string) => void
 }
 
-export function PackingItemsCard({ productId, productTitle, selected, onChange, refreshKey }: PackingItemsCardProps) {
+export function PackingItemsCard({ productId, productTitle, selected, onChange, refreshKey, packagingCode, onPackagingCode }: PackingItemsCardProps) {
   const t = useT()
   const [types, setTypes] = React.useState<string[]>([])
   const [linked, setLinked] = React.useState<LinkedPackingItem[]>([])
+  const [codeDetail, setCodeDetail] = React.useState<PackagingCodeView | null>(null)
+
+  React.useEffect(() => {
+    if (!packagingCode?.trim()) {
+      setCodeDetail(null)
+      return
+    }
+    let cancelled = false
+    apiCall<{ items?: PackagingCodeView[] }>(`/api/dermat_boms/packaging-codes?code=${encodeURIComponent(packagingCode)}&pageSize=1`, undefined, { fallback: { items: [] } }).then((call) => {
+      if (!cancelled) setCodeDetail(call.result?.items?.[0] ?? null)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [packagingCode])
+
+  const pickCode = (code: PackagingCodeView) => {
+    onPackagingCode?.(code.code)
+    const have = new Set(selected.map((type) => type.toLowerCase()))
+    const added = code.printedItems.filter((item) => !have.has(item.toLowerCase()))
+    if (added.length) onChange([...selected, ...added])
+  }
 
   React.useEffect(() => {
     let cancelled = false
@@ -66,6 +94,28 @@ export function PackingItemsCard({ productId, productTitle, selected, onChange, 
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4 pt-4">
+        {onPackagingCode ? (
+          <div className="space-y-1.5">
+            <p className="text-xs font-medium">{t('dermat_products.packing.code', 'Packaging code')}</p>
+            <div className="flex items-center gap-1">
+              <div className="min-w-0 flex-1">
+                <PackagingCodePicker label={t('dermat_products.packing.pickCode', 'Pick the packaging code (CT…, BT…)')} value={packagingCode} onSelect={pickCode} />
+              </div>
+              {packagingCode ? (
+                <IconButton type="button" variant="ghost" size="sm" aria-label={t('dermat_products.packing.clearCode', 'Clear packaging code')} onClick={() => onPackagingCode('')}>
+                  <X className="size-4" />
+                </IconButton>
+              ) : null}
+            </div>
+            {codeDetail ? (
+              <p className="text-xs text-muted-foreground">{setSummary(codeDetail, (item) => `${item} - ${name}`)}</p>
+            ) : packagingCode ? (
+              <p className="text-xs text-status-warning-text">{t('dermat_products.packing.codeUnknown', '{code} is not in Masters → Packaging codes yet.', { code: packagingCode })}</p>
+            ) : (
+              <p className="text-xs text-muted-foreground">{t('dermat_products.packing.codeHint', 'Picking a code ticks its printed items below and fills the pack BOM with its parts.')}</p>
+            )}
+          </div>
+        ) : null}
         <div className="flex flex-wrap gap-2">
           {types.map((type) => {
             const existing = linkedByType.get(type.toLowerCase())

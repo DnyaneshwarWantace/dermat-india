@@ -1,0 +1,6 @@
+{
+  "dermat_departments.whatsapp.channel": "WhatsApp",
+  "dermat_departments.whatsapp.channelHint": "Work that reaches you (stage, store request, approval) on your WhatsApp number",
+  "dermat_departments.push.channel": "Phone pop-up",
+  "dermat_departments.push.channelHint": "A pop-up on phones where you turned on phone alerts"
+}

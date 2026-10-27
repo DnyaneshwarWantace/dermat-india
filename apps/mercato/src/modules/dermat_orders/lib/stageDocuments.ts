@@ -12,7 +12,16 @@ export async function documentCounts(ctx: OrderContext, orderId: string): Promis
       group by record_id`,
     [STAGE_ATTACHMENT_ENTITY, ctx.tenantId, ctx.organizationId, `${orderId}:%`],
   )
-  return new Map(rows.map((row) => [row.record_id, Number(row.files)]))
+  const counts = new Map(rows.map((row) => [row.record_id, Number(row.files)]))
+  const [approved] = await ctx.em.getConnection().execute<Array<{ total: string }>>(
+    `select count(*)::text as total from dermat_artwork_approvals where order_id = ? and tenant_id = ? and organization_id = ? and status = 'approved'`,
+    [orderId, ctx.tenantId, ctx.organizationId],
+  )
+  if (Number(approved?.total ?? 0) > 0) {
+    const key = documentRecordId(orderId, 'artwork', 'approved_artwork')
+    counts.set(key, (counts.get(key) ?? 0) + Number(approved.total))
+  }
+  return counts
 }
 
 export function documentStatus(orderId: string, stageKey: string, counts: Map<string, number>, orderValue: number, override?: StageOverride | null): DocumentStatus[] {

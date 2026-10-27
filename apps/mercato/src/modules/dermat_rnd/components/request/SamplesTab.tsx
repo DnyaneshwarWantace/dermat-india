@@ -27,6 +27,7 @@ export function SamplesTab({ rounds, onOpenTrial }: SamplesTabProps) {
             <th className="px-3 py-2 text-left font-semibold">{t('dermat_rnd.samples.via', 'Via')}</th>
             <th className="px-3 py-2 text-left font-semibold">{t('dermat_rnd.samples.result', 'Client')}</th>
             <th className="px-3 py-2 text-left font-semibold">{t('dermat_rnd.samples.feedback', 'What the client said')}</th>
+            <th className="px-3 py-2 text-left font-semibold">{t('dermat_rnd.samples.next', 'Next')}</th>
           </tr>
         </thead>
         <tbody>
@@ -44,12 +45,28 @@ export function SamplesTab({ rounds, onOpenTrial }: SamplesTabProps) {
               <td className="px-3 py-2">{round.sentVia ?? '—'}</td>
               <td className="px-3 py-2">
                 {round.result ? (
-                  <StatusBadge variant={round.result === 'approved' ? 'success' : 'warning'}>{round.result === 'approved' ? t('dermat_rnd.ok', 'Approved') : t('dermat_rnd.changes', 'Changes')}</StatusBadge>
+                  <StatusBadge variant={round.result === 'approved' ? 'success' : round.result === 'rejected' ? 'error' : 'warning'}>
+                    {round.result === 'approved' ? t('dermat_rnd.ok', 'Approved') : round.result === 'rejected' ? t('dermat_rnd.rejected', 'Rejected') : t('dermat_rnd.changes', 'Changes')}
+                  </StatusBadge>
                 ) : (
                   <span className="text-status-warning-text">{t('dermat_rnd.waiting', 'Waiting')}</span>
                 )}
               </td>
-              <td className="px-3 py-2">{round.feedback ?? '—'}</td>
+              <td className="px-3 py-2">
+                <p>{round.feedback ?? '—'}</p>
+                {round.addActives?.length ? <p className="text-xs text-muted-foreground">{t('dermat_rnd.samples.add', 'Add: {list}', { list: round.addActives.join(', ') })}</p> : null}
+                {round.removeActives?.length ? <p className="text-xs text-muted-foreground">{t('dermat_rnd.samples.remove', 'Remove: {list}', { list: round.removeActives.join(', ') })}</p> : null}
+                {round.feedbackOn ? <p className="text-xs text-muted-foreground">{[round.feedbackBy, dayText(round.feedbackOn)].filter(Boolean).join(' · ')}</p> : null}
+              </td>
+              <td className="px-3 py-2">
+                {round.nextTrialCode ? (
+                  <span className="text-xs">
+                    {round.nextStep === 'same' ? t('dermat_rnd.samples.revised', 'Revise {code}', { code: round.nextTrialCode }) : t('dermat_rnd.samples.newSample', 'New sample {code}', { code: round.nextTrialCode })}
+                  </span>
+                ) : (
+                  '—'
+                )}
+              </td>
             </tr>
           ))}
         </tbody>

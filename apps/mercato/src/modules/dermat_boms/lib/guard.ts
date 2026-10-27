@@ -21,14 +21,14 @@ export function enforceBomLock(bom: BomHeader, req: Request): void {
 export async function runGuarded<T>(
   ctx: BomRequestContext,
   req: Request,
-  input: { resourceId: string; operation: 'create' | 'update' | 'delete' | 'custom'; payload: Record<string, unknown> },
+  input: { resourceId: string; operation: 'create' | 'update' | 'delete' | 'custom'; payload: Record<string, unknown>; resourceKind?: string },
   run: () => Promise<T>,
 ): Promise<T | Response> {
   const guard = await runRouteMutationGuards({
     container: ctx.container,
     req,
     auth: { userId: ctx.userId ?? 'system', tenantId: ctx.tenantId, organizationId: ctx.organizationId },
-    input: { resourceKind: RESOURCE_KIND, resourceId: input.resourceId, operation: input.operation, mutationPayload: input.payload },
+    input: { resourceKind: input.resourceKind ?? RESOURCE_KIND, resourceId: input.resourceId, operation: input.operation, mutationPayload: input.payload },
   })
   if (!guard.ok) return guard.response
   const result = await run()

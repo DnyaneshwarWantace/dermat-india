@@ -31,13 +31,15 @@ function BomChip({ bom, label }: { bom: Bom; label: string }) {
 export function CustomerSamples({ customerId }: { customerId: string }) {
   const t = useT()
   const granted = useGranted()
+  const seesRequests = granted.ready && granted.has('dermat_rnd.view')
   const [formulas, setFormulas] = React.useState<Formula[] | null>(null)
   const [requests, setRequests] = React.useState<Request[] | null>(null)
 
   React.useEffect(() => {
     void apiCall<{ items?: Formula[] }>(`/api/dermat_customers/formulas?customerId=${encodeURIComponent(customerId)}`, undefined, { fallback: { items: [] } }).then((call) => setFormulas(call.result?.items ?? []))
-    void apiCall<{ items?: Request[] }>(`/api/dermat_rnd/requests?view=all&customerId=${encodeURIComponent(customerId)}`, undefined, { fallback: { items: [] } }).then((call) => setRequests(call.ok ? (call.result?.items ?? []) : null))
-  }, [customerId])
+    if (!seesRequests) return
+    void apiCall<{ items?: Request[] }>(`/api/dermat_rnd/requests?view=all&customerId=${encodeURIComponent(customerId)}`, { headers: { 'x-om-forbidden-redirect': '0' } }, { fallback: { items: [] } }).then((call) => setRequests(call.ok ? (call.result?.items ?? []) : null))
+  }, [customerId, seesRequests])
 
   return (
     <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
@@ -80,7 +82,7 @@ export function CustomerSamples({ customerId }: { customerId: string }) {
           </CardTitle>
         </CardHeader>
         <CardContent className="divide-y p-0">
-          {requests === null ? <p className="p-4 text-sm text-muted-foreground">{granted.ready && !granted.has('dermat_rnd.request') ? t('dermat_customers.samples.noAccess', 'You cannot see R&D requests.') : t('dermat_customers.samples.loading', 'Loading…')}</p> : null}
+          {requests === null ? <p className="p-4 text-sm text-muted-foreground">{granted.ready && !granted.has('dermat_rnd.view') ? t('dermat_customers.samples.noAccess', 'You cannot see R&D requests.') : t('dermat_customers.samples.loading', 'Loading…')}</p> : null}
           {requests && !requests.length ? <p className="p-4 text-sm text-muted-foreground">{t('dermat_customers.samples.none', 'No R&D requests for this customer yet.')}</p> : null}
           {(requests ?? []).map((request) => (
             <Link key={request.id} href={`/backend/rnd/requests?id=${request.id}`} className="block space-y-1 p-4 hover:bg-muted/40">

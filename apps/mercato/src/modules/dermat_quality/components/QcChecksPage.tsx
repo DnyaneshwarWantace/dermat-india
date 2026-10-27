@@ -85,7 +85,7 @@ export function QcChecksPage() {
         id: 'product',
         header: t('dermat_quality.list.product', 'Product'),
         cell: ({ row }) => (
-          <span>
+          <span className="block max-w-xs truncate" title={[row.original.productCode, row.original.productTitle].filter(Boolean).join(' ')}>
             {row.original.productCode ? <span className="mr-1 font-mono text-xs text-muted-foreground">{row.original.productCode}</span> : null}
             {row.original.productTitle}
           </span>

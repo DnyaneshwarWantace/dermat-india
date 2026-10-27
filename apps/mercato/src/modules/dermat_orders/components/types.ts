@@ -20,6 +20,8 @@ export type ProductInfo = {
   packSize: string | null
   brandName: string | null
   mrp: number | null
+  packagingCode?: string | null
+  batchCode?: string | null
 }
 
 export type BomRef = { id: string; version: number; status: string; orderId?: string | null } | null
@@ -40,6 +42,7 @@ export type OrderLine = {
   price: { gross: number; discount: number; taxable: number; gst: number; total: number } | null
   batchNo: string | null
   sampleNeeded?: boolean
+  sameAsProductId?: string | null
   rdNumber?: string | null
   specs: Record<string, Record<string, string>>
 }
@@ -58,9 +61,13 @@ export type OrderPayment = {
   createdAt: string
 }
 
+export type CardLevel = 'none' | 'read' | 'work'
+
 export type Stage = {
   key: string
   locked?: boolean
+  partial?: boolean
+  cardAccess?: Record<string, CardLevel>
   label: string
   department: string
   hint: string
@@ -73,11 +80,12 @@ export type Stage = {
   openedAt: string | null
   completedAt: string | null
   completedByName: string | null
+  updatedAt?: string | null
   days: number | null
   reopen?: ReopenInfo
 }
 
-export type OrderEvent = { id: string; stageKey: string | null; action: string; note: string | null; byName: string | null; changes: Array<{ key: string; label: string; from: string | number | null; to: string | number | null }>; at: string }
+export type OrderEvent = { id: string; stageKey: string | null; stepKey?: string | null; action: string; note: string | null; byName: string | null; changes: Array<{ key: string; label: string; from: string | number | null; to: string | number | null }>; at: string }
 
 export type OrderQcCheck = {
   id: string
@@ -115,6 +123,7 @@ export type Order = {
   orderType: 'new' | 'repeat' | 'revision'
   sourceOrderId: string | null
   salesManager: string | null
+  coordinator?: string | null
   paymentTerms: string | null
   paymentRemarks: string | null
   productRemarks: string | null
@@ -140,9 +149,11 @@ export type Order = {
   store: Record<string, OrderStoreRequest[]>
   reservations: Array<{ productId: string; title: string; unit: string | null; quantity: number; since: string }>
   packItems: Array<{ productId: string; title: string; code: string | null; unit: string; quantity: number }>
+  packingCodeIssues?: Array<{ lineId: string; product: string; code: string | null }>
+  packingSets?: Array<{ lineId: string; product: string; code: string | null; name: string | null; kind: string | null; size: string | null; specs: string | null; parts: Array<{ name: string; qty: number }>; printed: string[] }>
   pricesIncludeGst: boolean
   canSeeMoney: boolean
-  access?: { full: boolean; stages: string[] }
+  access?: { full: boolean; stages: string[]; view?: string[]; see?: string[]; cards?: string[] }
   totals: { gross: number; discount: number; taxable: number; gst: number; total: number } | null
   payments: { received: number; due: number; items: OrderPayment[] } | null
   events: OrderEvent[]

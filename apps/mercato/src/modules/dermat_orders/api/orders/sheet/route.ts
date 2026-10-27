@@ -10,16 +10,18 @@ import { stageViews } from '../../../lib/engine'
 import { orderFilter } from '../../../lib/orderFilter'
 import { priceLine, priceOrder } from '../../../lib/pricing'
 import { loadCustomers, loadProducts, resolveOrderContext } from '../../../lib/server'
-import { STAGES, isFinished, stageDef, stepStates } from '../../../lib/stages'
+import { OWNER_NAMES, STAGES, isFinished, stageDef, stepStates } from '../../../lib/stages'
 import { paymentsFor, received } from '../../../../dermat_accounts/lib/service'
 import { withStageOverrides } from '../../../lib/stageSettings'
+import { cardPeople, openCards } from '../../../lib/tasks'
+import { storeBlocking } from '../../../../dermat_store/lib/service'
 
 export const metadata = {
   GET: { requireAuth: true, requireFeatures: ['dermat_orders.view'] },
 }
 
 const querySchema = orderListQuerySchema
-  .pick({ search: true, status: true, stage: true, customerId: true, productId: true })
+  .pick({ search: true, status: true, stage: true, customerId: true, productId: true, from: true, to: true, pm: true, similarTo: true })
   .extend({
     stageStatus: z.enum(['active', 'waiting', 'done']).default('active'),
     page: z.coerce.number().int().min(1).default(1),
@@ -102,6 +104,17 @@ async function GET(req: Request) {
     const pageLines = pageIds.flatMap((id) => linesOf.get(id) ?? [])
     const [customers, products] = await Promise.all([loadCustomers(ctx, orders.map((order) => order.customerId)), loadProducts(ctx, pageLines.map((line) => line.productId))])
 
+    const storeWaits = new Map<string, string>()
+    for (const id of pageIds) {
+      for (const stage of stagesOf.get(id) ?? []) {
+        if (!['manufacturing', 'filling', 'packing'].includes(stage.stageKey) || (stage.status !== 'open' && stage.status !== 'on_hold')) continue
+        const states = stepStates(stage.data)
+        const firstWork = stage.stageKey === 'packing' ? 'packed' : 'started'
+        if (states[firstWork]?.done) continue
+        const block = await storeBlocking(ctx, id, stage.stageKey)
+        if (block) storeWaits.set(`${id}:${stage.stageKey}`, block)
+      }
+    }
     const items = pageIds
       .map((id) => orders.find((order) => order.id === id))
       .filter((order): order is DermatOrder => Boolean(order))
@@ -124,6 +137,7 @@ async function GET(req: Request) {
           customerPhone: customer?.phone ?? null,
           customerPoRef: order.customerPoRef ?? null,
           salesManager: order.salesManager ?? null,
+          coordinator: order.coordinator ?? null,
           paymentTerms: order.paymentTerms ?? null,
           paymentRemarks: order.paymentRemarks ?? null,
           productRemarks: order.productRemarks ?? null,
@@ -159,6 +173,11 @@ async function GET(req: Request) {
                   reopen: view.reopen,
                   stepsDone: required.filter((step) => steps[step.key]?.done).length,
                   stepsTotal: required.length,
+                  currentCard: (() => {
+                    if (!def || (view.status !== 'open' && view.status !== 'on_hold')) return null
+                    const card = openCards(def, view.data)[0]
+                    return card ? { key: card.key, label: card.label, owners: card.owners.map((feature) => OWNER_NAMES[feature] ?? feature), personName: cardPeople(view.data)[card.key]?.name ?? null, waitingFor: storeWaits.get(`${order.id}:${view.key}`) ?? null } : null
+                  })(),
                   fields: stageFields(view.key, view.data),
                 },
               ]

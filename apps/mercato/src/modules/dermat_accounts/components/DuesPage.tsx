@@ -106,7 +106,7 @@ export function DuesPage() {
           </header>
 
           {data ? (
-            <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            <div data-sheet-compact className="grid grid-cols-2 gap-3 lg:grid-cols-4">
               {[
                 { label: t('dermat_accounts.tile.due', 'Still due'), value: rupees(data.summary.due), icon: <Wallet className="h-4 w-4" />, tone: data.summary.due > 0 ? 'bg-status-warning-bg text-status-warning-icon' : 'bg-muted text-muted-foreground' },
                 { label: t('dermat_accounts.tile.received', 'Received'), value: rupees(data.summary.received), icon: <IndianRupee className="h-4 w-4" />, tone: 'bg-status-success-bg text-status-success-icon' },
@@ -145,86 +145,105 @@ export function DuesPage() {
             ) : !data.items.length ? (
               <EmptyState className="py-14" variant="subtle" icon={<Wallet className="h-5 w-5" aria-hidden="true" />} title={view === 'due' ? t('dermat_accounts.emptyDue', 'Nothing is due') : t('dermat_accounts.empty', 'No orders')} />
             ) : (
-              <ul className="divide-y divide-border">
-                {data.items.map((row) => {
-                  const percent = row.total > 0 ? Math.min(100, Math.round((row.received / row.total) * 100)) : 0
-                  return (
-                    <li key={row.orderId}>
-                      <Link href={`/backend/orders/${row.orderId}`} className="group grid grid-cols-1 items-center gap-3 px-5 py-4 transition-colors hover:bg-muted/40 md:grid-cols-12">
-                        <div className="min-w-0 md:col-span-4">
-                          <p className="font-mono text-sm font-semibold">{row.orderNo}</p>
-                          <p className="truncate text-sm">{row.customerName}</p>
-                          <p className="text-xs text-muted-foreground">
-                            {day(row.orderDate)}
-                            {row.paymentTerms ? ` · ${row.paymentTerms}` : ''}
-                          </p>
-                        </div>
-                        <div className="md:col-span-4">
-                          {row.priced ? (
-                            <>
-                              <div className="flex justify-between text-xs tabular-nums">
-                                <span>
-                                  {rupees(row.received)} {t('dermat_accounts.of', 'of')} {rupees(row.total)}
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-muted/40 text-xs text-muted-foreground">
+                    <tr className="text-left">
+                      <th className="whitespace-nowrap px-3 py-2 font-semibold">{t('dermat_accounts.col.order', 'Order')}</th>
+                      <th className="px-3 py-2 font-semibold">{t('dermat_accounts.col.customer', 'Customer')}</th>
+                      <th className="whitespace-nowrap px-3 py-2 font-semibold">{t('dermat_accounts.col.date', 'Ordered')}</th>
+                      <th className="whitespace-nowrap px-3 py-2 font-semibold">{t('dermat_accounts.col.terms', 'Terms')}</th>
+                      <th className="whitespace-nowrap px-3 py-2 text-right font-semibold">{t('dermat_accounts.col.value', 'Order value')}</th>
+                      <th className="whitespace-nowrap px-3 py-2 text-right font-semibold">{t('dermat_accounts.col.received', 'Received')}</th>
+                      <th className="whitespace-nowrap px-3 py-2 text-right font-semibold">{t('dermat_accounts.col.due', 'Due')}</th>
+                      <th className="whitespace-nowrap px-3 py-2 font-semibold">{t('dermat_accounts.col.last', 'Last payment')}</th>
+                      <th className="whitespace-nowrap px-3 py-2 font-semibold">{t('dermat_accounts.col.status', 'Status')}</th>
+                      <th className="px-3 py-2" />
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {data.items.map((row) => {
+                      const percent = row.total > 0 ? Math.min(100, Math.round((row.received / row.total) * 100)) : 0
+                      const open = row.priced && row.due > 0.5 && row.status !== 'cancelled'
+                      return (
+                        <tr key={row.orderId} className="hover:bg-muted/30">
+                          <td className="whitespace-nowrap px-3 py-1.5">
+                            <Link href={`/backend/orders/${row.orderId}`} className="font-mono text-xs font-semibold text-primary hover:underline">
+                              {row.orderNo}
+                            </Link>
+                          </td>
+                          <td className="max-w-64 px-3 py-1.5">
+                            <span className="block truncate" title={row.customerName}>{row.customerName}</span>
+                          </td>
+                          <td className="whitespace-nowrap px-3 py-1.5 text-xs">{day(row.orderDate)}</td>
+                          <td className="whitespace-nowrap px-3 py-1.5 text-xs text-muted-foreground">{row.paymentTerms ?? '—'}</td>
+                          <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums">{row.priced ? rupees(row.total) : <span className="text-xs text-status-error-text">{t('dermat_accounts.noRates', 'No rates on this order')}</span>}</td>
+                          <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums">
+                            {row.priced ? (
+                              <span className="inline-flex items-center gap-2">
+                                {rupees(row.received)}
+                                <span className="inline-flex h-1.5 w-12 overflow-hidden rounded-full bg-input" aria-hidden="true">
+                                  <span className={cn('h-full rounded-full', percent >= 100 ? 'bg-status-success-icon' : 'bg-accent-indigo')} style={{ width: `${percent}%` }} />
                                 </span>
-                                <span className="text-muted-foreground">{percent}%</span>
-                              </div>
-                              <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-input" aria-hidden="true">
-                                <div className={cn('h-full rounded-full', percent >= 100 ? 'bg-status-success-icon' : 'bg-accent-indigo')} style={{ width: `${percent}%` }} />
-                              </div>
-                              <p className="mt-1 text-xs text-muted-foreground">
-                                {row.lastPayment ? t('dermat_accounts.last', 'Last {amount} on {date}', { amount: rupees(row.lastPayment.amount), date: day(row.lastPayment.paidOn) }) : t('dermat_accounts.noPayment', 'No payment yet')}
-                              </p>
-                            </>
-                          ) : (
-                            <p className="text-xs text-status-error-text">{t('dermat_accounts.noRates', 'No rates on this order')}</p>
-                          )}
-                        </div>
-                        <div className="flex items-center justify-between gap-3 md:col-span-4 md:justify-end">
-                          <div className="text-right">
-                            <p className={cn('text-base font-bold tabular-nums', row.due > 0.5 ? 'text-status-warning-text' : 'text-status-success-text')}>{row.due > 0.5 ? rupees(row.due) : t('dermat_accounts.paid', 'Paid')}</p>
+                                <span className="w-8 text-xs text-muted-foreground">{percent}%</span>
+                              </span>
+                            ) : '—'}
+                          </td>
+                          <td className={cn('whitespace-nowrap px-3 py-1.5 text-right font-semibold tabular-nums', row.due > 0.5 ? 'text-status-warning-text' : 'text-status-success-text')}>
+                            {row.due > 0.5 ? rupees(row.due) : t('dermat_accounts.paid', 'Paid')}
+                          </td>
+                          <td className="whitespace-nowrap px-3 py-1.5 text-xs text-muted-foreground">
+                            {row.lastPayment ? t('dermat_accounts.lastShort', '{amount} · {date}', { amount: rupees(row.lastPayment.amount), date: day(row.lastPayment.paidOn) }) : t('dermat_accounts.noPayment', 'No payment yet')}
+                          </td>
+                          <td className="whitespace-nowrap px-3 py-1.5">
                             <StatusBadge variant={STATUS_VARIANT[row.status] ?? 'neutral'}>{row.status}</StatusBadge>
-                          </div>
-                          <ChevronRight className="h-4 w-4 text-muted-foreground transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
-                        </div>
-                      </Link>
-                      {row.priced && row.due > 0.5 && row.status !== 'cancelled' ? (
-                        <div className="flex flex-wrap items-center gap-2 px-5 pb-3">
-                          {granted.has('dermat_accounts.record') ? (
-                          <Button type="button" size="sm" variant="outline" onClick={() => setPaying(row)}>
-                            <IndianRupee className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" />
-                            {t('dermat_accounts.recordPayment', 'Record payment')}
-                          </Button>
-                          ) : null}
-                          <WhatsAppMenu
-                            phone={row.customerPhone}
-                            recipient={row.customerName}
-                            messages={[
-                              {
-                                key: 'reminder',
-                                label: t('dermat_accounts.reminder', 'Payment reminder'),
-                                hint: `${rupeeText(row.due)} due on ${row.orderNo}`,
-                                text: [
-                                  `Dear ${row.customerName},`,
-                                  '',
-                                  `A balance of ${rupeeText(row.due)} is due on our order ${row.orderNo} dated ${dateText(row.orderDate)}.`,
-                                  `Order value: ${rupeeText(row.total)} · Received: ${rupeeText(row.received)}`,
-                                  'Please arrange the payment and share the UTR.',
-                                  '',
-                                  'Thank you,',
-                                  'Dermat India – Accounts',
-                                ].join('\n'),
-                              },
-                            ]}
-                          />
-                          <Button asChild type="button" size="sm" variant="ghost">
-                            <Link href={`/backend/customers/companies/${row.customerId}`}>{t('dermat_accounts.statement', 'Customer statement')}</Link>
-                          </Button>
-                        </div>
-                      ) : null}
-                    </li>
-                  )
-                })}
-              </ul>
+                          </td>
+                          <td className="whitespace-nowrap px-3 py-1">
+                            {open ? (
+                              <span className="flex items-center justify-end gap-1">
+                                {granted.has('dermat_accounts.record') ? (
+                                  <Button type="button" size="sm" variant="outline" className="h-7 px-2 text-xs" onClick={() => setPaying(row)}>
+                                    <IndianRupee className="mr-1 h-3.5 w-3.5" aria-hidden="true" />
+                                    {t('dermat_accounts.pay', 'Payment')}
+                                  </Button>
+                                ) : null}
+                                <WhatsAppMenu
+                                  phone={row.customerPhone}
+                                  recipient={row.customerName}
+                                  messages={[
+                                    {
+                                      key: 'reminder',
+                                      label: t('dermat_accounts.reminder', 'Payment reminder'),
+                                      hint: `${rupeeText(row.due)} due on ${row.orderNo}`,
+                                      text: [
+                                        `Dear ${row.customerName},`,
+                                        '',
+                                        `A balance of ${rupeeText(row.due)} is due on our order ${row.orderNo} dated ${dateText(row.orderDate)}.`,
+                                        `Order value: ${rupeeText(row.total)} · Received: ${rupeeText(row.received)}`,
+                                        'Please arrange the payment and share the UTR.',
+                                        '',
+                                        'Thank you,',
+                                        'Dermat India – Accounts',
+                                      ].join('\n'),
+                                    },
+                                  ]}
+                                />
+                                <Button asChild type="button" size="sm" variant="ghost" className="h-7 px-2 text-xs">
+                                  <Link href={`/backend/customers/companies/${row.customerId}`}>{t('dermat_accounts.statementShort', 'Statement')}</Link>
+                                </Button>
+                              </span>
+                            ) : (
+                              <Link href={`/backend/orders/${row.orderId}`} className="flex justify-end text-muted-foreground hover:text-primary" aria-label={t('dermat_accounts.openOrder', 'Open the order')}>
+                                <ChevronRight className="h-4 w-4" aria-hidden="true" />
+                              </Link>
+                            )}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
             )}
           </section>
         </div>

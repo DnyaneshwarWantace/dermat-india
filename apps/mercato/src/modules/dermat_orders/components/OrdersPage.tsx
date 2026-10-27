@@ -3,10 +3,11 @@
 import * as React from 'react'
 import { DndContext, PointerSensor, useDraggable, useDroppable, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core'
 import { ViewsButton } from '../../dermat_products/components/ViewsPanel'
+import { useSheetMode } from '../../dermat_departments/components/sheetMode'
 import { useGranted } from '../../dermat_departments/components/useGranted'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { AlertTriangle, ArrowRight, CalendarClock, ChevronLeft, ChevronRight, ClipboardList, Clock, Eye, RotateCcw, Columns3, FileSpreadsheet, IndianRupee, LayoutGrid, List, PauseCircle, Plus, Search, Wallet } from 'lucide-react'
+import { AlertTriangle, ArrowRight, FlaskConical, X, CalendarClock, ChevronLeft, ChevronRight, ClipboardList, Clock, Copy, Eye, RotateCcw, Columns3, FileSpreadsheet, IndianRupee, LayoutGrid, List, PauseCircle, Plus, Search, Wallet } from 'lucide-react'
 import { useT } from '@open-mercato/shared/lib/i18n/context'
 import { cn } from '@open-mercato/shared/lib/utils'
 import { Page, PageBody } from '@open-mercato/ui/backend/Page'
@@ -23,7 +24,7 @@ import { EditTableBar } from '../../dermat_products/components/EditTableBar'
 import { flash } from '@open-mercato/ui/backend/FlashMessages'
 import { ExportButton } from '../../dermat_products/components/ExportButton'
 import { openServerExport } from '../../dermat_products/lib/csvExport'
-import { STAGES, WORK_STATE_LABEL, reopenBlock, reopenLeftText, stageList, stageWorkFeature } from '../lib/stages'
+import { STAGES, WORK_STATE_LABEL, reopenBlock, reopenLeftText, stageList, stageWorkFeatures } from '../lib/stages'
 import { formatDate, formatQty } from './format'
 import { ALL_COLUMNS, DEFAULT_VIEW, SHEET_VIEWS, BRAND_COLUMN, StatePill, sheetWorkState, type SheetColumn, type SheetOrder } from './orderBookColumns'
 import { StageSheet, type StageActionRequest } from './StageSheet'
@@ -32,6 +33,7 @@ import { useCellEditor } from './useCellEditor'
 import type { Order, Stage } from './types'
 
 const PAGE_SIZE = 50
+const SHEET_PAGE_SIZE = 200
 const STORAGE_KEY = 'dermat.orderBook.columns.v1'
 const STATUS_TABS = ['open', 'on_hold', 'completed', 'cancelled', 'all'] as const
 type StatusTab = (typeof STATUS_TABS)[number]
@@ -55,14 +57,14 @@ function readColumns(): string[] {
 }
 
 
-function ReopenClock({ order, onOpen }: { order: SheetOrder; onOpen: (orderId: string, stageKey: string) => void }) {
+function ReopenClock({ order, onOpen, compact = false }: { order: SheetOrder; onOpen: (orderId: string, stageKey: string) => void; compact?: boolean }) {
   const t = useT()
   const granted = useGranted()
   const now = Date.now()
   const choices = stageList()
     .filter((def) => def.key !== 'order')
     .map((def) => ({ def, stage: order.stages[def.key] }))
-    .filter(({ def, stage }) => stage && (stage.status === 'done' || stage.status === 'skipped') && stage.reopen && !reopenBlock(stage.reopen, now) && granted.has(stageWorkFeature(def.key)))
+    .filter(({ def, stage }) => stage && (stage.status === 'done' || stage.status === 'skipped') && stage.reopen && !reopenBlock(stage.reopen, now) && stageWorkFeatures(def.key).some((feature) => granted.has(feature)))
   if (!choices.length) return null
   return (
     <Popover>
@@ -70,7 +72,7 @@ function ReopenClock({ order, onOpen }: { order: SheetOrder; onOpen: (orderId: s
         <button
           type="button"
           onClick={(event) => event.stopPropagation()}
-          className="relative flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-dashed text-muted-foreground hover:border-primary hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className={cn(compact ? 'h-5 w-5' : 'h-7 w-7', 'relative flex shrink-0 items-center justify-center rounded-md border border-dashed text-muted-foreground hover:border-primary hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring')}
           title={t('dermat_orders.book.reopenTitle', 'Reopen a stage sent on by mistake')}
           aria-label={t('dermat_orders.book.reopenTitle', 'Reopen a stage sent on by mistake')}
         >
@@ -148,25 +150,37 @@ function StageProgressHover({ order, children }: { order: SheetOrder; children: 
   )
 }
 
-function ActionCell({ order, onOpen, opening }: { order: SheetOrder; onOpen: (orderId: string, stageKey: string) => void; opening: string | null }) {
+function ActionCell({ order, onOpen, opening, compact = false }: { order: SheetOrder; onOpen: (orderId: string, stageKey: string) => void; opening: string | null; compact?: boolean }) {
   const t = useT()
+  const iconBox = compact ? 'h-5 w-5' : 'h-7 w-7'
   const view = (
     <Link
       href={`/backend/orders/${order.id}`}
       onClick={(event) => event.stopPropagation()}
-      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      className={cn(iconBox, 'flex shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring')}
       title={t('dermat_orders.book.viewOrder', 'Open the order')}
       aria-label={t('dermat_orders.book.viewOrder', 'Open the order')}
     >
       <Eye className="h-4 w-4" aria-hidden="true" />
     </Link>
   )
-  if (order.status === 'cancelled') return <span className="flex items-center justify-between gap-1"><StatePill state="skipped" label={t('dermat_orders.status.cancelled', 'Cancelled')} />{view}</span>
-  if (!order.current.length) return <span className="flex items-center justify-between gap-1"><StageProgressHover order={order}><StatePill state="completed" label={t('dermat_orders.book.allDone', 'All stages done')} /></StageProgressHover><span className="flex items-center gap-1"><ReopenClock order={order} onOpen={onOpen} />{view}</span></span>
+  const copy = (
+    <Link
+      href={`/backend/orders/new?copyFrom=${order.id}`}
+      onClick={(event) => event.stopPropagation()}
+      className={cn(iconBox, 'flex shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring')}
+      title={t('dermat_orders.book.copyOrder', 'Copy as a repeat order (change prices before saving)')}
+      aria-label={t('dermat_orders.book.copyOrder', 'Copy as a repeat order (change prices before saving)')}
+    >
+      <Copy className="h-4 w-4" aria-hidden="true" />
+    </Link>
+  )
+  if (order.status === 'cancelled') return <span className="flex items-center justify-between gap-1"><StatePill state="skipped" label={t('dermat_orders.status.cancelled', 'Cancelled')} /><span className="flex items-center gap-1">{copy}{view}</span></span>
+  if (!order.current.length) return <span className="flex items-center justify-between gap-1"><StageProgressHover order={order}><StatePill state="completed" label={t('dermat_orders.book.allDone', 'All stages done')} /></StageProgressHover><span className="flex items-center gap-1"><ReopenClock order={order} onOpen={onOpen} compact={compact} />{copy}{view}</span></span>
   return (
     <span className="flex items-center gap-1">
       <StageProgressHover order={order}>
-      <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+      <span className={cn('flex min-w-0 flex-1', compact ? 'flex-row gap-1 overflow-hidden' : 'flex-col gap-0.5')}>
         {order.current.map((entry) => {
           const state = sheetWorkState(order.stages[entry.key])
           const detail = [entry.responsibleName ?? entry.department, entry.days != null ? `${formatQty(entry.days, 1)} d` : null, entry.status === 'on_hold' ? entry.holdParty : null].filter(Boolean).join(' · ')
@@ -181,18 +195,19 @@ function ActionCell({ order, onOpen, opening }: { order: SheetOrder; onOpen: (or
                 event.stopPropagation()
                 onOpen(order.id, entry.key)
               }}
-              className={cn('group flex h-7 min-w-0 items-center gap-1.5 rounded-md border bg-card pl-1 pr-1.5 text-left transition-colors hover:border-primary hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring', busy && 'border-primary bg-primary/5')}
+              className={cn('group flex min-w-0 items-center gap-1.5 rounded-md text-left transition-colors hover:border-primary hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring', compact ? 'h-5 flex-1 px-0.5' : 'h-7 border bg-card pl-1 pr-1.5', busy && 'border-primary bg-primary/5')}
             >
-              <span className={cn('h-5 w-1 shrink-0 rounded-full', STATE_BAR[state])} aria-hidden="true" />
+              <span className={cn('w-1 shrink-0 rounded-full', compact ? 'h-4' : 'h-5', STATE_BAR[state])} aria-hidden="true" />
               <span className="truncate text-xs font-semibold">{entry.label}</span>
-              <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">{detail}</span>
-              {busy ? <Spinner className="h-3.5 w-3.5 shrink-0" /> : <ArrowRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-primary" aria-hidden="true" />}
+              {compact && order.current.length > 1 ? null : <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">{detail}</span>}
+              {busy ? <Spinner className="h-3.5 w-3.5 shrink-0" /> : compact ? null : <ArrowRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-primary" aria-hidden="true" />}
             </button>
           )
         })}
       </span>
       </StageProgressHover>
-      <ReopenClock order={order} onOpen={onOpen} />
+      <ReopenClock order={order} onOpen={onOpen} compact={compact} />
+      {copy}
       {view}
     </span>
   )
@@ -303,6 +318,8 @@ function BoardView({ orders, onOpen, opening }: { orders: SheetOrder[]; onOpen: 
 export function OrdersPage() {
   const t = useT()
   const granted = useGranted()
+  const sheet = useSheetMode()
+  const pageSize = sheet ? SHEET_PAGE_SIZE : PAGE_SIZE
   const canMoney = granted.has('dermat_orders.money')
   const shownColumns = React.useMemo(() => ALL_COLUMNS.filter((column) => canMoney || !column.money), [canMoney])
   const router = useRouter()
@@ -311,6 +328,11 @@ export function OrdersPage() {
   const statusTab: StatusTab = tabParam && (STATUS_TABS as readonly string[]).includes(tabParam) ? tabParam : 'open'
   const [stageFilter, setStageFilter] = React.useState<string>('all')
   const [search, setSearch] = React.useState('')
+  const [from, setFrom] = React.useState('')
+  const [to, setTo] = React.useState('')
+  const [pmFilter, setPmFilter] = React.useState<'all' | 'complete' | 'pending'>('all')
+  const [similar, setSimilar] = React.useState<{ id: string; orderNo: string } | null>(null)
+  const [showFilters, setShowFilters] = React.useState(false)
   const [page, setPage] = React.useState(1)
   const [view, setView] = React.useState<'table' | 'board'>('table')
   const [visible, setVisible] = React.useState<string[]>(DEFAULT_VIEW.columns)
@@ -326,7 +348,7 @@ export function OrdersPage() {
   React.useEffect(() => {
     apiCall<{ items?: Array<{ id: string; name: string }> }>('/api/dermat_orders/people', undefined, { fallback: { items: [] } }).then((call) => setPeople(call.result?.items ?? []))
   }, [])
-  React.useEffect(() => setPage(1), [statusTab, stageFilter, search])
+  React.useEffect(() => setPage(1), [statusTab, stageFilter, search, from, to, pmFilter, similar])
 
   const changeColumns = (next: string[]) => {
     setVisible(next)
@@ -345,8 +367,12 @@ export function OrdersPage() {
       params.set('stageStatus', 'active')
     }
     if (search.trim()) params.set('search', search.trim())
+    if (from) params.set('from', from)
+    if (to) params.set('to', to)
+    if (pmFilter !== 'all') params.set('pm', pmFilter)
+    if (similar) params.set('similarTo', similar.id)
     return params
-  }, [statusTab, stageFilter, search])
+  }, [statusTab, stageFilter, search, from, to, pmFilter, similar])
 
   React.useEffect(() => {
     let cancelled = false
@@ -355,7 +381,7 @@ export function OrdersPage() {
     const handle = window.setTimeout(async () => {
       const params = filterParams()
       params.set('page', String(page))
-      params.set('pageSize', String(PAGE_SIZE))
+      params.set('pageSize', String(pageSize))
       const call = await apiCall<SheetResponse>(`/api/dermat_orders/orders/sheet?${params.toString()}`)
       if (cancelled) return
       if (!call.ok || !call.result) flash(t('dermat_orders.list.loadError', 'Failed to load orders'), 'error')
@@ -367,7 +393,7 @@ export function OrdersPage() {
       cancelled = true
       window.clearTimeout(handle)
     }
-  }, [filterParams, page, reload, t])
+  }, [filterParams, page, pageSize, reload, t])
 
   const patchOrder = (orderId: string, mutate: (order: SheetOrder) => SheetOrder) =>
     setData((prev) => (prev ? { ...prev, items: prev.items.map((order) => (order.id === orderId ? mutate(order) : order)) } : prev))
@@ -462,7 +488,14 @@ export function OrdersPage() {
               {view === 'table' ? (
                 <EditTableBar editing={table.editing} dirtyCount={table.dirtyCount} saving={table.saving} onEdit={table.startEditing} onCancel={table.cancelEditing} onSave={() => void table.saveAll()} />
               ) : null}
-              <ExportButton onExport={() => openServerExport(`/api/dermat_orders/orders/export?${filterParams().toString()}`)} />
+              <ExportButton
+                label={t('dermat_orders.book.exportExcel', 'Export to Excel')}
+                onExport={() => {
+                  const params = filterParams()
+                  params.set('format', 'xlsx')
+                  openServerExport(`/api/dermat_orders/orders/export?${params.toString()}`)
+                }}
+              />
               {granted.has('dermat_orders.manage') ? (
               <Button asChild>
                 <Link href="/backend/orders/new">
@@ -474,7 +507,7 @@ export function OrdersPage() {
             </div>
           </header>
 
-          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <div data-sheet-hide className="grid grid-cols-2 gap-3 lg:grid-cols-4">
             {[
               { money: false, only: 'noMoney', label: t('dermat_orders.book.kpiOrders', 'Orders'), value: summary ? String(summary.orders) : '–', hint: t('dermat_orders.book.kpiOrdersHint', 'In this view'), icon: <ClipboardList className="h-4 w-4" aria-hidden="true" />, tone: 'bg-primary/10 text-primary' },
               { money: true, label: t('dermat_orders.book.kpiValue', 'Booked value'), value: summary?.value != null ? rupees(summary.value) : '–', hint: t('dermat_orders.book.kpiValueHint', '{count} orders', { count: summary?.orders ?? 0 }), icon: <IndianRupee className="h-4 w-4" aria-hidden="true" />, tone: 'bg-primary/10 text-primary' },
@@ -495,14 +528,23 @@ export function OrdersPage() {
             ))}
           </div>
 
-          <div className="space-y-3 rounded-lg border bg-card p-3 shadow-xs">
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="relative min-w-60 flex-1">
+          {(() => {
+            const h = sheet ? 'h-8' : 'h-9'
+            const searchBox = (
+              <div className={cn('relative min-w-0 flex-1', sheet ? 'sm:min-w-52' : 'sm:min-w-60')}>
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
-                <Input id="order-book-search" value={search} onChange={(event) => setSearch(event.target.value)} className="h-9 pl-9" placeholder={t('dermat_orders.list.search', 'Search order no., customer, product ID or batch no.')} />
+                <Input id="order-book-search" value={search} onChange={(event) => setSearch(event.target.value)} className={cn(h, 'pl-9')} placeholder={t('dermat_orders.list.search', 'Search order no., customer, product ID or batch no.')} />
               </div>
+            )
+            const filtersButton = (
+              <Button type="button" variant="outline" size="sm" className={cn(h, 'sm:hidden')} aria-expanded={showFilters} aria-controls="order-book-filters" onClick={() => setShowFilters((value) => !value)}>
+                {t('dermat_orders.book.filters', 'Filters')}
+                {from || to || pmFilter !== 'all' || similar || stageFilter !== 'all' ? <span className="ml-1.5 h-2 w-2 rounded-full bg-primary" aria-hidden="true" /> : null}
+              </Button>
+            )
+            const statusSelect = (
               <Select value={statusTab} onValueChange={(value) => router.replace(`/backend/orders?tab=${value}`)}>
-                <SelectTrigger className="h-9 w-44">
+                <SelectTrigger className={cn(h, 'w-full sm:w-40', !showFilters && 'hidden sm:flex')} aria-label={t('dermat_orders.book.status', 'Order status')}>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -513,19 +555,95 @@ export function OrdersPage() {
                   <SelectItem value="all">{t('dermat_orders.list.tab.all', 'All orders')}</SelectItem>
                 </SelectContent>
               </Select>
-            </div>
-            <div className="flex flex-wrap gap-1.5 border-t pt-3">
-              <Button type="button" size="sm" variant={stageFilter === 'all' ? 'default' : 'outline'} className="h-7 px-2.5 text-xs" onClick={() => setStageFilter('all')}>
-                {t('dermat_orders.book.allStages', 'All stages')}
-              </Button>
-              {STAGES.filter((def) => def.key !== 'order').map((def) => (
-                <Button key={def.key} type="button" size="sm" variant={stageFilter === def.key ? 'default' : 'outline'} className="h-7 px-2.5 text-xs" onClick={() => setStageFilter(def.key)}>
-                  {def.label}
-                  <span className="ml-1.5 tabular-nums opacity-70">{summary?.stageCounts[def.key] ?? 0}</span>
-                </Button>
-              ))}
-            </div>
-          </div>
+            )
+            const stageSelect = (
+              <Select value={stageFilter} onValueChange={(value) => setStageFilter(value)}>
+                <SelectTrigger className={cn(h, 'w-full text-xs sm:w-48')} aria-label={t('dermat_orders.book.stage', 'Stage')}>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">{t('dermat_orders.book.allStages', 'All stages')}</SelectItem>
+                  {STAGES.filter((def) => def.key !== 'order').map((def) => (
+                    <SelectItem key={def.key} value={def.key}>
+                      {`${def.label} · ${summary?.stageCounts[def.key] ?? 0}`}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )
+            const extraFilters = (
+              <>
+                <label className="flex items-center gap-1.5 text-xs text-muted-foreground" htmlFor="order-book-from">
+                  {t('dermat_orders.book.from', 'Ordered from')}
+                  <Input id="order-book-from" type="date" value={from} onChange={(event) => setFrom(event.target.value)} className="h-8 w-36 text-xs" />
+                </label>
+                <label className="flex items-center gap-1.5 text-xs text-muted-foreground" htmlFor="order-book-to">
+                  {t('dermat_orders.book.to', 'to')}
+                  <Input id="order-book-to" type="date" value={to} onChange={(event) => setTo(event.target.value)} className="h-8 w-36 text-xs" />
+                </label>
+                <Select value={pmFilter} onValueChange={(value) => setPmFilter(value as typeof pmFilter)}>
+                  <SelectTrigger className="h-8 w-44 text-xs" aria-label={t('dermat_orders.book.pmFilter', 'Packing material')}>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">{t('dermat_orders.book.pmAll', 'Any packing material')}</SelectItem>
+                    <SelectItem value="complete">{t('dermat_orders.book.pmComplete', 'PM complete (green)')}</SelectItem>
+                    <SelectItem value="pending">{t('dermat_orders.book.pmPending', 'PM not complete')}</SelectItem>
+                  </SelectContent>
+                </Select>
+                {similar ? (
+                  <span className="flex h-8 items-center gap-1.5 rounded-full border bg-primary/10 px-3 text-xs font-medium text-primary">
+                    <FlaskConical className="h-3.5 w-3.5" aria-hidden="true" />
+                    {t('dermat_orders.book.similarChip', 'Same formulation as {orderNo}', { orderNo: similar.orderNo })}
+                    <Button type="button" variant="ghost" size="sm" className="size-5 rounded-full p-0" onClick={() => setSimilar(null)} aria-label={t('dermat_orders.book.similarClear', 'Show all orders')}>
+                      <X className="h-3 w-3" aria-hidden="true" />
+                    </Button>
+                  </span>
+                ) : null}
+                {from || to || pmFilter !== 'all' || similar || (sheet && stageFilter !== 'all') ? (
+                  <Button type="button" variant="ghost" size="sm" className="h-8 text-xs" onClick={() => { setFrom(''); setTo(''); setPmFilter('all'); setSimilar(null); setStageFilter('all') }}>
+                    {t('dermat_orders.book.clearFilters', 'Clear filters')}
+                  </Button>
+                ) : null}
+              </>
+            )
+            if (sheet) {
+              return (
+                <div className="flex flex-wrap items-center gap-1.5 rounded-lg border bg-card p-1.5 shadow-xs">
+                  {searchBox}
+                  {filtersButton}
+                  {statusSelect}
+                  <div id="order-book-filters" className={cn('flex-wrap items-center gap-1.5', showFilters ? 'flex w-full sm:w-auto' : 'hidden sm:flex')}>
+                    {stageSelect}
+                    {extraFilters}
+                  </div>
+                </div>
+              )
+            }
+            return (
+              <div className="space-y-3 rounded-lg border bg-card p-3 shadow-xs">
+                <div className="flex flex-wrap items-center gap-2">
+                  {searchBox}
+                  {filtersButton}
+                  {statusSelect}
+                </div>
+                <div id="order-book-filters" className={cn('flex-wrap items-center gap-2', showFilters ? 'flex' : 'hidden sm:flex')}>
+                  {extraFilters}
+                </div>
+                <div className="-mx-1 flex flex-nowrap gap-1.5 overflow-x-auto border-t px-1 pt-3 sm:flex-wrap">
+                  <Button type="button" size="sm" variant={stageFilter === 'all' ? 'default' : 'outline'} className="h-7 shrink-0 px-2.5 text-xs" onClick={() => setStageFilter('all')}>
+                    {t('dermat_orders.book.allStages', 'All stages')}
+                  </Button>
+                  {STAGES.filter((def) => def.key !== 'order').map((def) => (
+                    <Button key={def.key} type="button" size="sm" variant={stageFilter === def.key ? 'default' : 'outline'} className="h-7 shrink-0 px-2.5 text-xs" onClick={() => setStageFilter(def.key)}>
+                      {def.label}
+                      <span className="ml-1.5 tabular-nums opacity-70">{summary?.stageCounts[def.key] ?? 0}</span>
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            )
+          })()}
 
           {loading && !data ? (
             <div className="flex justify-center py-20">
@@ -542,7 +660,7 @@ export function OrdersPage() {
             <BoardView orders={orders} onOpen={openStage} opening={opening} />
           ) : (
             <div className={cn('isolate overflow-hidden rounded-lg border bg-card shadow-xs transition-opacity', loading && 'opacity-60')}>
-              <div className="overflow-auto" style={{ maxHeight: 'calc(100dvh - 9rem)' }}>
+              <div className="overflow-auto" style={{ maxHeight: sheet ? 'calc(100dvh - 5.5rem)' : 'calc(100dvh - 9rem)' }}>
                 <table data-own-grid className="w-full border-separate border-spacing-0 whitespace-nowrap text-left text-xs">
                   <thead className="sticky top-0 z-20 bg-muted">
                     <tr>
@@ -553,7 +671,7 @@ export function OrdersPage() {
                           {section.name}
                         </th>
                       ))}
-                      <th className={cn('sticky right-0 z-30 border-b bg-muted px-3 py-1.5', PIN_RIGHT_LINE)} />
+                      <th className={cn('z-30 border-b bg-muted px-3 py-1.5 md:sticky md:right-0', PIN_RIGHT_LINE)} />
                     </tr>
                     <tr className="text-muted-foreground">
                       <th className={cn('sticky left-0 z-30 border-b bg-muted px-3 py-2 font-semibold', PIN_LEFT_LINE)}>{t('dermat_orders.book.order', 'Order')}</th>
@@ -563,11 +681,12 @@ export function OrdersPage() {
                           {column.label}
                         </th>
                       ))}
-                      <th className={cn('sticky right-0 z-30 border-b bg-muted px-3 py-2 font-semibold text-foreground', PIN_RIGHT_LINE)}>{t('dermat_orders.book.action', 'Now at · action')}</th>
+                      <th className={cn('z-30 border-b bg-muted px-3 py-2 font-semibold text-foreground md:sticky md:right-0', PIN_RIGHT_LINE)}>{t('dermat_orders.book.action', 'Now at · action')}</th>
                     </tr>
                   </thead>
                   <tbody>
                     {orders.map((order) => {
+                      const cellY = sheet ? 'py-0.5' : 'py-1.5'
                       const lines = order.lines.length ? order.lines : [null]
                       return lines.map((line, index) => {
                         const span = index === 0 ? lines.length : 0
@@ -578,16 +697,29 @@ export function OrdersPage() {
                             className={cn('group/row align-middle hover:bg-muted/30', order.status === 'cancelled' && 'opacity-60')}
                           >
                             {span ? (
-                              <td rowSpan={span} className={cn('sticky left-0 z-10 border-b bg-card px-3 py-1.5 group-hover/row:bg-muted', PIN_LEFT_LINE)} title={formatDate(order.orderDate)}>
+                              <td
+                                rowSpan={span}
+                                className={cn('sticky left-0 z-10 border-b px-3 group-hover/row:bg-muted', cellY, order.pm.set > 0 && order.pm.ok === order.pm.set ? 'bg-status-success-bg' : 'bg-card', PIN_LEFT_LINE)}
+                                title={[formatDate(order.orderDate), order.pm.set > 0 && order.pm.ok === order.pm.set ? t('dermat_orders.book.pmCompleteHint', 'All packing material OK') : null].filter(Boolean).join(' · ')}
+                              >
                                 <span className="flex items-center gap-1.5">
                                   <Link href={`/backend/orders/${order.id}`} className="font-mono font-semibold text-primary hover:underline">
                                     {order.orderNo}
                                   </Link>
                                   {order.late ? <span className="rounded-sm bg-status-error-bg px-1 font-semibold text-status-error-text">{t('dermat_orders.book.late', 'Late')}</span> : null}
+                                  <button
+                                    type="button"
+                                    className="rounded-sm p-0.5 text-muted-foreground opacity-0 hover:bg-muted hover:text-foreground focus-visible:opacity-100 group-hover/row:opacity-100"
+                                    title={t('dermat_orders.book.similar', 'Orders with the same formulation')}
+                                    aria-label={t('dermat_orders.book.similarFor', 'Orders with the same formulation as {orderNo}', { orderNo: order.orderNo })}
+                                    onClick={() => setSimilar({ id: order.id, orderNo: order.orderNo })}
+                                  >
+                                    <FlaskConical className="h-3.5 w-3.5" aria-hidden="true" />
+                                  </button>
                                 </span>
                               </td>
                             ) : null}
-                            <td className={cn('px-3 py-1.5', lineBottom)}>
+                            <td className={cn('px-3', cellY, lineBottom)}>
                               <span className="flex max-w-96 items-center gap-1.5" title={[line?.productCode, line?.productTitle].filter(Boolean).join(' · ')}>
                                 <span className="min-w-0 max-w-56 shrink">{renderCell(BRAND_COLUMN, { order, line })}</span>
                                 <span className="truncate text-muted-foreground">{line?.productCode ?? line?.productTitle ?? '—'}</span>
@@ -596,19 +728,19 @@ export function OrdersPage() {
                             {columns.map((column) =>
                               column.scope === 'order' ? (
                                 span ? (
-                                  <td key={column.key} rowSpan={span} className={cn('border-b px-3 py-1.5', columnLine(column.key), column.align === 'right' && 'text-right tabular-nums', column.align === 'center' && 'text-center')}>
+                                  <td key={column.key} rowSpan={span} className={cn('border-b px-3', cellY, columnLine(column.key), column.align === 'right' && 'text-right tabular-nums', column.align === 'center' && 'text-center')}>
                                     {renderCell(column, { order, line })}
                                   </td>
                                 ) : null
                               ) : (
-                                <td key={column.key} className={cn('px-3 py-1.5', columnLine(column.key), lineBottom, column.align === 'right' && 'text-right tabular-nums', column.align === 'center' && 'text-center')}>
+                                <td key={column.key} className={cn('px-3', cellY, columnLine(column.key), lineBottom, column.align === 'right' && 'text-right tabular-nums', column.align === 'center' && 'text-center')}>
                                   {renderCell(column, { order, line })}
                                 </td>
                               ),
                             )}
                             {span ? (
-                              <td rowSpan={span} className={cn('sticky right-0 z-10 w-80 min-w-72 max-w-80 border-b bg-card px-2 py-1 group-hover/row:bg-muted', PIN_RIGHT_LINE)} onClick={(event) => event.stopPropagation()}>
-                                <ActionCell order={order} onOpen={openStage} opening={opening} />
+                              <td rowSpan={span} className={cn('z-10 w-80 min-w-72 max-w-80 border-b bg-card px-2 group-hover/row:bg-muted md:sticky md:right-0', sheet ? 'py-0' : 'py-1', PIN_RIGHT_LINE)} onClick={(event) => event.stopPropagation()}>
+                                <ActionCell order={order} onOpen={openStage} opening={opening} compact={sheet} />
                               </td>
                             ) : null}
                           </tr>

@@ -7,7 +7,9 @@ import { buildOptimisticLockHeader } from '@open-mercato/ui/backend/utils/optimi
 import { useGuardedMutation } from '@open-mercato/ui/backend/injection/useGuardedMutation'
 import { flash } from '@open-mercato/ui/backend/FlashMessages'
 import type { StageActionRequest } from './StageSheet'
+import { stageDef } from '../lib/stages'
 import type { Order, Stage } from './types'
+import { QUEUEABLE, addToOutbox, isOffline } from './outbox'
 
 export function useStageAction(contextId: string) {
   const t = useT()
@@ -16,6 +18,15 @@ export function useStageAction(contextId: string) {
 
   const run = React.useCallback(
     async (order: Order, stage: Stage, request: StageActionRequest): Promise<{ order: Order | null; conflict: boolean }> => {
+      const queue = () => {
+        if (!QUEUEABLE.includes(request.action)) return false
+        const step = stageDef(stage.key)?.steps.find((entry) => entry.key === request.stepKey)
+        const label = request.action === 'filling_check' ? t('dermat_orders.outbox.check', 'Filling check') : request.action === 'checklist' ? t('dermat_orders.outbox.checklist', 'QA checklist tick') : `${step?.label ?? stage.label}${request.action === 'step' ? (request.done === false ? ' (undo)' : ' — Done') : ' — Save'}`
+        if (!addToOutbox({ orderId: order.id, orderNo: order.orderNo, stageKey: stage.key, label, request })) return false
+        flash(t('dermat_orders.outbox.queued', 'No signal. "{label}" is kept on this phone and will be sent when the signal is back.', { label }), 'warning')
+        return true
+      }
+      if (isOffline() && queue()) return { order: null, conflict: false }
       setBusy(true)
       try {
         const body = { orderId: order.id, stageKey: stage.key, ...request }
@@ -26,7 +37,7 @@ export function useStageAction(contextId: string) {
             withScopedApiRequestHeaders(buildOptimisticLockHeader(order.updatedAt), () =>
               apiCall<Order & { error?: string }>('/api/dermat_orders/orders/stage', {
                 method: 'POST',
-                headers: { 'content-type': 'application/json' },
+                headers: { 'content-type': 'application/json', ...(stage.updatedAt ? { 'x-dermat-stage-version': stage.updatedAt } : {}) },
                 body: JSON.stringify(body),
               }),
             ),
@@ -41,7 +52,8 @@ export function useStageAction(contextId: string) {
           return { order: null, conflict: call.status === 409 }
         }
         const next = call.result
-        if (request.action === 'complete' || request.action === 'skip') {
+        const finishedNow = next.stages.find((entry) => entry.key === stage.key)?.status === 'done' && stage.status !== 'done'
+        if (request.action === 'complete' || request.action === 'skip' || finishedNow) {
           const opened = next.stages.filter((entry) => entry.status === 'open' && order.stages.find((before) => before.key === entry.key)?.status === 'waiting')
           flash(
             opened.length
@@ -49,6 +61,9 @@ export function useStageAction(contextId: string) {
               : t('dermat_orders.flash.done', '{stage} done', { stage: stage.label }),
             'success',
           )
+        } else if (request.action === 'step' && request.done !== false) {
+          const step = stageDef(stage.key)?.steps.find((entry) => entry.key === request.stepKey)
+          flash(t('dermat_orders.flash.stepDone', '{step} done', { step: step?.label ?? '' }), 'success')
         } else if (request.action !== 'step') {
           const messages: Record<string, string> = {
             save: t('dermat_orders.flash.stageSaved', 'Saved'),
@@ -63,6 +78,7 @@ export function useStageAction(contextId: string) {
         }
         return { order: next, conflict: false }
       } catch {
+        if (queue()) return { order: null, conflict: false }
         flash(t('dermat_orders.errors.stage', 'Could not update the stage.'), 'error')
         return { order: null, conflict: false }
       } finally {

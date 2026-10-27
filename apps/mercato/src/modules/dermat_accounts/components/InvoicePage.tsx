@@ -23,6 +23,7 @@ import { dateText, rupeeText } from '../../dermat_products/lib/whatsapp'
 import { buildInvoiceHtml, printInvoice } from './invoicePrint'
 import { INVOICE_STATUS, type CompanyView, type InvoiceView } from './types'
 import { BackLink } from '../../dermat_departments/components/BackLink'
+import { SendDocButton } from '../../dermat_orders/components/links/SendDocButton'
 
 const HISTORY: Record<string, string> = { created: 'Drafted', edited: 'Edited', quantities: 'Quantities changed', issued: 'Issued', credited: 'Credit note made', cancelled: 'Cancelled' }
 
@@ -39,6 +40,7 @@ export function InvoicePage({ id }: { id: string }) {
   const [doc, setDoc] = React.useState<InvoiceView | null>(null)
   const [company, setCompany] = React.useState<CompanyView | null>(null)
   const [phone, setPhone] = React.useState<string | null>(null)
+  const [billingRemarks, setBillingRemarks] = React.useState<string | null>(null)
   const [loadError, setLoadError] = React.useState<string | null>(null)
   const [busy, setBusy] = React.useState(false)
   const [form, setForm] = React.useState<Record<string, string>>({})
@@ -56,6 +58,9 @@ export function InvoicePage({ id }: { id: string }) {
       vehicleNo: next.vehicleNo ?? '',
       lrNo: next.lrNo ?? '',
       ewayBillNo: next.ewayBillNo ?? '',
+      irn: next.irn ?? '',
+      ackNo: next.ackNo ?? '',
+      ackDate: next.ackDate ?? '',
       terms: next.terms ?? '',
       bankDetails: next.bankDetails ?? '',
       notes: next.notes ?? '',
@@ -72,8 +77,9 @@ export function InvoicePage({ id }: { id: string }) {
     }
     apply(call.result)
     setCompany(companyCall.result ?? null)
-    const order = await apiCall<{ customer?: { phone?: string | null } | null }>(`/api/dermat_orders/orders?id=${encodeURIComponent(call.result.orderId)}`)
+    const order = await apiCall<{ customer?: { phone?: string | null } | null; billingRemarks?: string | null }>(`/api/dermat_orders/orders?id=${encodeURIComponent(call.result.orderId)}`)
     setPhone(order.result?.customer?.phone ?? null)
+    setBillingRemarks(order.result?.billingRemarks ?? null)
   }, [id, t])
 
   React.useEffect(() => {
@@ -149,6 +155,9 @@ export function InvoicePage({ id }: { id: string }) {
         vehicleNo: form.vehicleNo,
         lrNo: form.lrNo,
         ewayBillNo: form.ewayBillNo,
+        irn: form.irn,
+        ackNo: form.ackNo,
+        ackDate: form.ackDate || null,
         terms: form.terms,
         bankDetails: form.bankDetails,
         notes: form.notes,
@@ -221,6 +230,7 @@ export function InvoicePage({ id }: { id: string }) {
                 <Printer className="mr-1.5 h-4 w-4" aria-hidden="true" />
                 {t('dermat_accounts.inv.print', 'Print / PDF')}
               </Button>
+              {!draft ? <SendDocButton kind="invoice" recordId={doc.id} size="default" /> : null}
               {draft && canRecord ? (
                 <Button type="button" onClick={() => send('/api/dermat_accounts/invoices/action', { id, action: 'issue' }, t('dermat_accounts.inv.issued', 'Invoice issued; the order Billing stage has the invoice no.'))} disabled={busy}>
                   <CheckCircle2 className="mr-1.5 h-4 w-4" aria-hidden="true" />
@@ -241,6 +251,12 @@ export function InvoicePage({ id }: { id: string }) {
               ) : null}
             </div>
           </header>
+          {billingRemarks && doc.status === 'draft' ? (
+            <div className="rounded-md border border-status-warning-border bg-status-warning-bg px-4 py-3 text-sm text-status-warning-text">
+              <p className="text-xs font-semibold uppercase tracking-wide">{t('dermat_accounts.inv.billingRemarks', 'Billing remarks from the order — add these to the bill')}</p>
+              <p className="whitespace-pre-wrap">{billingRemarks}</p>
+            </div>
+          ) : null}
           {!canRecord ? <ViewOnlyNote>{t('dermat_accounts.viewOnly', 'View only: making, issuing and cancelling documents is done by Accounts.')}</ViewOnlyNote> : null}
 
           {doc.status === 'cancelled' ? <p className="rounded-lg border bg-muted/40 p-3 text-sm text-muted-foreground">{t('dermat_accounts.inv.cancelledNote', 'Cancelled: {reason}', { reason: doc.cancelReason ?? '—' })}</p> : null}
@@ -332,6 +348,16 @@ export function InvoicePage({ id }: { id: string }) {
                   {field('lrNo', t('dermat_accounts.inv.lr', 'LR / docket no.'))}
                   {field('ewayBillNo', t('dermat_accounts.inv.eway', 'E-way bill no.'))}
                 </div>
+                {credit ? null : (
+                  <div className="space-y-2">
+                    <Label className="text-xs text-muted-foreground">{t('dermat_accounts.inv.einvoice', 'E-invoice (from the GST portal)')}</Label>
+                    {field('irn', t('dermat_accounts.inv.irn', 'IRN'))}
+                    <div className="grid grid-cols-2 gap-3">
+                      {field('ackNo', t('dermat_accounts.inv.ackNo', 'Ack no.'))}
+                      {field('ackDate', t('dermat_accounts.inv.ackDate', 'Ack date'), { type: 'date' })}
+                    </div>
+                  </div>
+                )}
                 <div className="space-y-1">
                   <Label htmlFor="inv-bank" className="text-xs text-muted-foreground">{t('dermat_accounts.inv.bank', 'Bank details')}</Label>
                   <Textarea id="inv-bank" rows={3} value={form.bankDetails ?? ''} disabled={doc.status === 'cancelled' || !canRecord} onChange={(event) => setForm((prev) => ({ ...prev, bankDetails: event.target.value }))} />

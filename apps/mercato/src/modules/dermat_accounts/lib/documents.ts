@@ -137,6 +137,84 @@ function addDays(date: string, days: number): string {
   return value.toISOString().slice(0, 10)
 }
 
+export type FreeLineInput = { productId?: string | null; title: string; brandName?: string | null; packSize?: string | null; hsn?: string | null; quantity: number; rate: number; gstPercent: number; discountPercent: number }
+
+export async function freeLines(ctx: Scope, input: FreeLineInput[], pricesIncludeGst: boolean): Promise<{ lines: PiLine[]; totals: ReturnType<typeof priceOrder> }> {
+  const ids = input.map((line) => line.productId).filter((id): id is string => Boolean(id))
+  const [products, hsn] = await Promise.all([loadProducts(ctx, ids), hsnCodes(ctx, ids)])
+  const priced = input.map((line) => ({ quantity: line.quantity, rate: line.rate, gstPercent: line.gstPercent, discountPercent: line.discountPercent }))
+  const lines: PiLine[] = input.map((line, index) => {
+    const price = priceLine(priced[index], pricesIncludeGst)
+    const product = line.productId ? products.get(line.productId) : undefined
+    return {
+      productId: line.productId ?? '',
+      code: product?.code ?? null,
+      title: line.title.trim() || product?.title || '',
+      brandName: line.brandName?.trim() || null,
+      packSize: line.packSize?.trim() || null,
+      hsn: line.hsn?.trim() || (line.productId ? hsn.get(line.productId) ?? null : null),
+      quantity: line.quantity,
+      rate: line.rate,
+      discountPercent: line.discountPercent,
+      gstPercent: line.gstPercent,
+      taxable: price.taxable,
+      gst: price.gst,
+      total: price.total,
+    }
+  })
+  return { lines, totals: priceOrder(priced, pricesIncludeGst) }
+}
+
+export async function createStandalonePi(
+  ctx: Scope,
+  input: { customerId: string; lines: FreeLineInput[]; pricesIncludeGst?: boolean; piDate?: string | null; validUntil?: string | null; advancePercent?: number | null; terms?: string | null; bankDetails?: string | null; notes?: string | null },
+  byName: string | null,
+): Promise<ProformaInvoice> {
+  if (!input.lines.length) throw new AccountsError('Add at least one line')
+  const [customers, companyRow] = await Promise.all([loadCustomers(ctx, [input.customerId]), loadCompany(ctx)])
+  const customer = customers.get(input.customerId)
+  if (!customer) throw new AccountsError('Customer not found', 404)
+  const company = companyView(companyRow)
+  const pricesIncludeGst = input.pricesIncludeGst ?? false
+  const { lines, totals } = await freeLines(ctx, input.lines, pricesIncludeGst)
+  const piDate = input.piDate || new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' })
+  const pi = ctx.em.create(ProformaInvoice, {
+    organizationId: ctx.organizationId,
+    tenantId: ctx.tenantId,
+    code: await nextPiCode(ctx),
+    orderId: null,
+    orderNo: null,
+    customerId: input.customerId,
+    customerName: customer.name ?? '',
+    customerGstin: customer.gstin ?? null,
+    piDate,
+    validUntil: input.validUntil || addDays(piDate, company.piValidityDays || 15),
+    status: 'draft',
+    advancePercent: String(input.advancePercent ?? advanceFromRemarks(customer.paymentRemarks) ?? 40),
+    pricesIncludeGst,
+    lines,
+    totals,
+    terms: input.terms ?? company.piTerms,
+    bankDetails: input.bankDetails ?? bankText(company),
+    notes: input.notes ?? null,
+    createdByName: byName,
+    history: [{ action: 'created', by: byName, at: new Date().toISOString(), note: 'Made before the order' }],
+  })
+  ctx.em.persist(pi)
+  return pi
+}
+
+export async function linkPiToOrder(ctx: Scope, piId: string, order: { id: string; orderNo: string; customerId: string }, byName: string | null): Promise<void> {
+  const pi = await ctx.em.findOne(ProformaInvoice, { id: piId, tenantId: ctx.tenantId, organizationId: ctx.organizationId, deletedAt: null })
+  if (!pi) throw new AccountsError('Proforma invoice not found', 404)
+  if (pi.orderId && pi.orderId !== order.id) throw new AccountsError(`Proforma ${pi.code} already belongs to order ${pi.orderNo}`, 409)
+  if (pi.customerId !== order.customerId) throw new AccountsError('The proforma is for another customer', 400)
+  pi.orderId = order.id
+  pi.orderNo = order.orderNo
+  pi.history = [...(pi.history ?? []), { action: 'linked', by: byName, at: new Date().toISOString(), note: `Order ${order.orderNo} made from this proforma` }]
+  pi.updatedAt = new Date()
+}
+
 export async function createPi(
   ctx: Scope,
   input: { orderId: string; piDate?: string | null; validUntil?: string | null; advancePercent?: number | null; terms?: string | null; bankDetails?: string | null; notes?: string | null },
@@ -178,6 +256,7 @@ export async function createPi(
 }
 
 export async function refreshPiLines(ctx: Scope, pi: ProformaInvoice, byName: string | null): Promise<void> {
+  if (!pi.orderId) return
   const order = await findOrder(ctx, pi.orderId)
   const { lines, totals } = await linesFromOrder(ctx, order)
   pi.lines = lines
@@ -192,6 +271,7 @@ export async function markPiSent(ctx: Scope, pi: ProformaInvoice, byName: string
   pi.sentAt = new Date()
   pi.sentByName = byName
   pi.history = [...(pi.history ?? []), { action: 'sent', by: byName, at: new Date().toISOString(), note: null }]
+  if (!pi.orderId) return
   const order = await findOrder(ctx, pi.orderId)
   const stage = await ctx.em.findOne(DermatOrderStage, { orderId: order.id, stageKey: 'advance' })
   if (stage && (stage.status === 'open' || stage.status === 'on_hold')) {
@@ -213,8 +293,8 @@ export function piView(pi: ProformaInvoice) {
   return {
     id: pi.id,
     code: pi.code,
-    orderId: pi.orderId,
-    orderNo: pi.orderNo,
+    orderId: pi.orderId ?? null,
+    orderNo: pi.orderNo ?? null,
     customerId: pi.customerId,
     customerName: pi.customerName,
     customerGstin: pi.customerGstin ?? null,

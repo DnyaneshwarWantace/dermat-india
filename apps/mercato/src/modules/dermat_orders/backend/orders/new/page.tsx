@@ -8,7 +8,8 @@ function NewOrder() {
   const searchParams = useSearchParams()
   const copyFrom = searchParams?.get('copyFrom') ?? undefined
   const customerId = searchParams?.get('customerId') ?? undefined
-  return <OrderForm key={copyFrom ?? customerId ?? 'new'} copyFrom={copyFrom} customerId={customerId} />
+  const fromPi = searchParams?.get('fromPi') ?? undefined
+  return <OrderForm key={copyFrom ?? fromPi ?? customerId ?? 'new'} copyFrom={copyFrom} customerId={customerId} fromPi={fromPi} />
 }
 
 export default function NewDermatOrderPage() {

@@ -69,7 +69,7 @@ export class OrderPayment {
 @Entity({ tableName: 'dermat_company_profiles' })
 @Index({ name: 'dermat_company_profiles_scope_idx', properties: ['organizationId', 'tenantId'] })
 export class CompanyProfile {
-  [OptionalProps]?: 'legalName' | 'gstin' | 'pan' | 'address' | 'phone' | 'email' | 'website' | 'bankName' | 'bankBranch' | 'bankAccount' | 'bankIfsc' | 'upiId' | 'signatory' | 'piTerms' | 'invoiceTerms' | 'piValidityDays' | 'grnOverPercent' | 'numberSeries' | 'createdAt' | 'updatedAt'
+  [OptionalProps]?: 'legalName' | 'gstin' | 'pan' | 'address' | 'phone' | 'email' | 'website' | 'bankName' | 'bankBranch' | 'bankAccount' | 'bankIfsc' | 'upiId' | 'signatory' | 'piTerms' | 'invoiceTerms' | 'piValidityDays' | 'grnOverPercent' | 'numberSeries' | 'formOptions' | 'createdAt' | 'updatedAt'
 
   @PrimaryKey({ type: 'uuid', defaultRaw: 'gen_random_uuid()' })
   id!: string
@@ -137,6 +137,9 @@ export class CompanyProfile {
   @Property({ name: 'number_series', type: 'json', nullable: true })
   numberSeries?: Record<string, { prefix: string; suffix: string; pad: number; startAt: number }> | null
 
+  @Property({ name: 'form_options', type: 'json', nullable: true })
+  formOptions?: { askCountry?: boolean } | null
+
   @Property({ name: 'created_at', type: Date, onCreate: () => new Date() })
   createdAt: Date = new Date()
 
@@ -166,7 +169,7 @@ export type PiHistory = { action: string; by: string | null; at: string; note: s
 @Entity({ tableName: 'dermat_proforma_invoices' })
 @Index({ name: 'dermat_proforma_invoices_order_idx', properties: ['organizationId', 'tenantId', 'orderId'] })
 export class ProformaInvoice {
-  [OptionalProps]?: 'customerGstin' | 'validUntil' | 'status' | 'advancePercent' | 'pricesIncludeGst' | 'terms' | 'bankDetails' | 'notes' | 'sentAt' | 'sentByName' | 'createdByName' | 'cancelReason' | 'history' | 'createdAt' | 'updatedAt' | 'deletedAt'
+  [OptionalProps]?: 'orderId' | 'orderNo' | 'customerGstin' | 'validUntil' | 'status' | 'advancePercent' | 'pricesIncludeGst' | 'terms' | 'bankDetails' | 'notes' | 'sentAt' | 'sentByName' | 'createdByName' | 'cancelReason' | 'history' | 'createdAt' | 'updatedAt' | 'deletedAt'
 
   @PrimaryKey({ type: 'uuid', defaultRaw: 'gen_random_uuid()' })
   id!: string
@@ -180,11 +183,11 @@ export class ProformaInvoice {
   @Property({ type: 'text' })
   code!: string
 
-  @Property({ name: 'order_id', type: 'uuid' })
-  orderId!: string
+  @Property({ name: 'order_id', type: 'uuid', nullable: true })
+  orderId?: string | null
 
-  @Property({ name: 'order_no', type: 'text' })
-  orderNo!: string
+  @Property({ name: 'order_no', type: 'text', nullable: true })
+  orderNo?: string | null
 
   @Property({ name: 'customer_id', type: 'uuid' })
   customerId!: string
@@ -258,7 +261,7 @@ export type InvoiceTotals = PiTotals & { cgst: number; sgst: number; igst: numbe
 @Entity({ tableName: 'dermat_tax_invoices' })
 @Index({ name: 'dermat_tax_invoices_order_idx', properties: ['organizationId', 'tenantId', 'orderId'] })
 export class TaxInvoice {
-  [OptionalProps]?: 'kind' | 'againstId' | 'againstCode' | 'customerGstin' | 'customerAddress' | 'dueDate' | 'status' | 'interState' | 'placeOfSupply' | 'pricesIncludeGst' | 'transporter' | 'vehicleNo' | 'lrNo' | 'ewayBillNo' | 'terms' | 'bankDetails' | 'notes' | 'issuedAt' | 'issuedByName' | 'createdByName' | 'cancelReason' | 'history' | 'createdAt' | 'updatedAt' | 'deletedAt'
+  [OptionalProps]?: 'kind' | 'againstId' | 'againstCode' | 'customerGstin' | 'customerAddress' | 'dueDate' | 'status' | 'interState' | 'placeOfSupply' | 'pricesIncludeGst' | 'transporter' | 'vehicleNo' | 'lrNo' | 'ewayBillNo' | 'irn' | 'ackNo' | 'ackDate' | 'terms' | 'bankDetails' | 'notes' | 'issuedAt' | 'issuedByName' | 'createdByName' | 'cancelReason' | 'history' | 'createdAt' | 'updatedAt' | 'deletedAt'
 
   @PrimaryKey({ type: 'uuid', defaultRaw: 'gen_random_uuid()' })
   id!: string
@@ -298,6 +301,15 @@ export class TaxInvoice {
 
   @Property({ name: 'customer_address', type: 'text', nullable: true })
   customerAddress?: string | null
+
+  @Property({ type: 'text', nullable: true })
+  irn?: string | null
+
+  @Property({ name: 'ack_no', type: 'text', nullable: true })
+  ackNo?: string | null
+
+  @Property({ name: 'ack_date', type: 'text', nullable: true })
+  ackDate?: string | null
 
   @Property({ name: 'invoice_date', type: 'text' })
   invoiceDate!: string
@@ -453,4 +465,111 @@ export class VendorBill {
 
   @Property({ name: 'deleted_at', type: Date, nullable: true })
   deletedAt?: Date | null
+}
+
+@Entity({ tableName: 'dermat_sample_charges' })
+@Index({ name: 'dermat_sample_charges_customer_idx', properties: ['organizationId', 'tenantId', 'customerId'] })
+export class SampleCharge {
+  [OptionalProps]?: 'rdRequestId' | 'rdCode' | 'mode' | 'reference' | 'note' | 'byName' | 'voidedAt' | 'voidReason' | 'createdAt' | 'updatedAt'
+
+  @PrimaryKey({ type: 'uuid', defaultRaw: 'gen_random_uuid()' })
+  id!: string
+
+  @Property({ name: 'organization_id', type: 'uuid' })
+  organizationId!: string
+
+  @Property({ name: 'tenant_id', type: 'uuid' })
+  tenantId!: string
+
+  @Property({ name: 'customer_id', type: 'uuid' })
+  customerId!: string
+
+  @Property({ name: 'rd_request_id', type: 'uuid', nullable: true })
+  rdRequestId?: string | null
+
+  @Property({ name: 'rd_code', type: 'text', nullable: true })
+  rdCode?: string | null
+
+  @Property({ type: 'numeric', precision: 14, scale: 2 })
+  amount!: string
+
+  @Property({ name: 'paid_on', type: 'text' })
+  paidOn!: string
+
+  @Property({ type: 'text', nullable: true })
+  mode?: string | null
+
+  @Property({ type: 'text', nullable: true })
+  reference?: string | null
+
+  @Property({ type: 'text', nullable: true })
+  note?: string | null
+
+  @Property({ name: 'by_name', type: 'text', nullable: true })
+  byName?: string | null
+
+  @Property({ name: 'voided_at', type: Date, nullable: true })
+  voidedAt?: Date | null
+
+  @Property({ name: 'void_reason', type: 'text', nullable: true })
+  voidReason?: string | null
+
+  @Property({ name: 'created_at', type: Date, onCreate: () => new Date() })
+  createdAt: Date = new Date()
+
+  @Property({ name: 'updated_at', type: Date, onCreate: () => new Date(), onUpdate: () => new Date() })
+  updatedAt: Date = new Date()
+}
+
+export type RegistrationAnswers = Record<string, string>
+
+@Entity({ tableName: 'dermat_customer_registrations' })
+@Unique({ name: 'dermat_customer_registrations_token_uq', properties: ['token'] })
+export class CustomerRegistration {
+  [OptionalProps]?: 'customerId' | 'status' | 'answers' | 'submittedAt' | 'ip' | 'decidedByName' | 'decidedAt' | 'note' | 'createdByName' | 'createdAt' | 'updatedAt'
+
+  @PrimaryKey({ type: 'uuid', defaultRaw: 'gen_random_uuid()' })
+  id!: string
+
+  @Property({ name: 'organization_id', type: 'uuid' })
+  organizationId!: string
+
+  @Property({ name: 'tenant_id', type: 'uuid' })
+  tenantId!: string
+
+  @Property({ type: 'text' })
+  token!: string
+
+  @Property({ name: 'customer_id', type: 'uuid', nullable: true })
+  customerId?: string | null
+
+  @Property({ type: 'text', default: 'open' })
+  status: 'open' | 'submitted' | 'approved' | 'rejected' = 'open'
+
+  @Property({ type: 'json', nullable: true })
+  answers?: RegistrationAnswers | null
+
+  @Property({ name: 'submitted_at', type: Date, nullable: true })
+  submittedAt?: Date | null
+
+  @Property({ type: 'text', nullable: true })
+  ip?: string | null
+
+  @Property({ name: 'decided_by_name', type: 'text', nullable: true })
+  decidedByName?: string | null
+
+  @Property({ name: 'decided_at', type: Date, nullable: true })
+  decidedAt?: Date | null
+
+  @Property({ type: 'text', nullable: true })
+  note?: string | null
+
+  @Property({ name: 'created_by_name', type: 'text', nullable: true })
+  createdByName?: string | null
+
+  @Property({ name: 'created_at', type: Date, onCreate: () => new Date() })
+  createdAt: Date = new Date()
+
+  @Property({ name: 'updated_at', type: Date, onCreate: () => new Date(), onUpdate: () => new Date() })
+  updatedAt: Date = new Date()
 }

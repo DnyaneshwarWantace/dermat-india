@@ -1,10 +1,13 @@
 import { NextResponse } from 'next/server'
+import { canSeeMoney } from '../../lib/money'
 import { z } from 'zod'
 import type { EntityManager } from '@mikro-orm/postgresql'
 import type { OpenApiRouteDoc } from '@open-mercato/shared/lib/openapi'
 import { DermatOrder, DermatOrderLine, DermatOrderStage } from '../../data/entities'
-import { orderInputSchema, orderListQuerySchema, orderUpdateSchema, type OrderInput } from '../../data/validators'
-import { createStages, logEvent, openReadyStages, serializeOrder, stageViews } from '../../lib/engine'
+import { orderInputSchema, orderListQuerySchema, orderUpdateSchema, quickRepeatSchema, type OrderInput } from '../../data/validators'
+import { createStages, logEvent, progressStages, serializeOrder, stageViews } from '../../lib/engine'
+import { recordAdvanceFromStage } from '../../../dermat_accounts/lib/service'
+import { linkPiToOrder } from '../../../dermat_accounts/lib/documents'
 import { isFinished, orderHeadline } from '../../lib/stages'
 import {
   OrderError,
@@ -19,6 +22,7 @@ import {
 } from '../../lib/server'
 import { orderFilter } from '../../lib/orderFilter'
 import { notifyStagesOpened } from '../../lib/notify'
+import { warnShortagesAtBooking } from '../../lib/shortage'
 import { enforceOrderLock, orderErrorResponse, runGuarded } from '../../lib/guard'
 import { withStageOverrides } from '../../lib/stageSettings'
 
@@ -66,6 +70,7 @@ function applyHeader(order: DermatOrder, input: OrderInput) {
   order.orderType = input.orderType
   order.sourceOrderId = input.sourceOrderId ?? null
   order.salesManager = clean(input.salesManager)
+  order.coordinator = clean(input.coordinator)
   order.paymentTerms = clean(input.paymentTerms)
   order.paymentRemarks = clean(input.paymentRemarks)
   order.productRemarks = clean(input.productRemarks)
@@ -79,26 +84,49 @@ function applyHeader(order: DermatOrder, input: OrderInput) {
 
 const FIRST_BATCH_NO = 57001
 
-async function nextBatchNumbers(ctx: OrderContext, count: number): Promise<string[]> {
-  if (count <= 0) return []
+async function topBatchNumber(ctx: OrderContext, pattern: string): Promise<number> {
   const [row] = await ctx.em.getConnection().execute<Array<{ top: string | null }>>(
     `select max(n) as top from (
-       select nullif(regexp_replace(l.batch_no, '[^0-9]', '', 'g'), '')::bigint as n
-         from dermat_order_lines l where l.tenant_id = ? and l.organization_id = ? and l.batch_no ~ '^[0-9]{3,9}$'
+       select l.batch_no::bigint as n
+         from dermat_order_lines l where l.tenant_id = ? and l.organization_id = ? and l.batch_no ~ ?
        union all
-       select nullif(regexp_replace(s.data->>'batch_no', '[^0-9]', '', 'g'), '')::bigint
-         from dermat_order_stages s where s.tenant_id = ? and s.organization_id = ? and s.stage_key = 'manufacturing' and (s.data->>'batch_no') ~ '^[0-9]{3,9}$'
+       select (s.data->>'batch_no')::bigint
+         from dermat_order_stages s where s.tenant_id = ? and s.organization_id = ? and s.stage_key = 'manufacturing' and (s.data->>'batch_no') ~ ?
      ) numbers`,
-    [ctx.tenantId, ctx.organizationId, ctx.tenantId, ctx.organizationId],
+    [ctx.tenantId, ctx.organizationId, pattern, ctx.tenantId, ctx.organizationId, pattern],
     'all',
     ctx.em.getTransactionContext(),
   )
-  const start = Math.max(FIRST_BATCH_NO, Number(row?.top ?? 0) + 1)
-  return Array.from({ length: count }, (_, index) => String(start + index))
+  return Number(row?.top ?? 0)
+}
+
+async function nextBatchNumbers(ctx: OrderContext, productIds: string[]): Promise<Array<string | null>> {
+  if (!productIds.length) return []
+  const products = await loadProducts(ctx, productIds)
+  const next = new Map<string, number>()
+  let global: number | null = null
+  const result: Array<string | null> = []
+  for (const productId of productIds) {
+    const code = products.get(productId)?.batchCode?.replace(/\D/g, '') ?? ''
+    if (code) {
+      if (!next.has(code)) {
+        const top = await topBatchNumber(ctx, `^${code}[0-9]{2,}$`)
+        next.set(code, top ? Number(String(top).slice(code.length)) : 0)
+      }
+      const serial = (next.get(code) ?? 0) + 1
+      next.set(code, serial)
+      result.push(`${code}${String(serial).padStart(2, '0')}`)
+      continue
+    }
+    if (global === null) global = Math.max(FIRST_BATCH_NO - 1, await topBatchNumber(ctx, '^[0-9]{3,9}$'))
+    global += 1
+    result.push(String(global))
+  }
+  return result
 }
 
 function describeChanges(before: { header: Record<string, unknown>; lines: Array<{ productId: string; quantity: number; rate: number | null }> }, input: OrderInput, titles: Map<string, string>): string {
-  const labels: Record<string, string> = { deliveryDate: 'delivery date', customerPoRef: 'customer PO', salesManager: 'sales manager', paymentTerms: 'payment terms', paymentRemarks: 'payment remarks', priority: 'priority', shippingAddress: 'shipping address', billingAddress: 'billing address', productRemarks: 'product remarks', packingRemarks: 'packing remarks', billingRemarks: 'billing remarks' }
+  const labels: Record<string, string> = { deliveryDate: 'delivery date', customerPoRef: 'customer PO', salesManager: 'sales person', coordinator: 'coordinator', paymentTerms: 'payment terms', paymentRemarks: 'payment remarks', priority: 'priority', shippingAddress: 'shipping address', billingAddress: 'billing address', productRemarks: 'product remarks', packingRemarks: 'packing remarks', billingRemarks: 'billing remarks' }
   const changes: string[] = []
   for (const [key, label] of Object.entries(labels)) {
     const was = before.header[key] ?? null
@@ -119,7 +147,7 @@ function describeChanges(before: { header: Record<string, unknown>; lines: Array
 }
 
 async function writeLines(ctx: OrderContext, order: DermatOrder, input: OrderInput) {
-  const numbers = await nextBatchNumbers(ctx, input.lines.filter((line) => !clean(line.batchNo)).length)
+  const numbers = await nextBatchNumbers(ctx, input.lines.filter((line) => !clean(line.batchNo)).map((line) => line.productId))
   input.lines.forEach((line, index) => {
     ctx.em.persist(
       ctx.em.create(DermatOrderLine, {
@@ -136,7 +164,8 @@ async function writeLines(ctx: OrderContext, order: DermatOrder, input: OrderInp
         gstPercent: String(line.gstPercent),
         discountPercent: String(line.discountPercent),
         batchNo: clean(line.batchNo) ?? numbers.shift() ?? null,
-        sampleNeeded: line.sampleNeeded,
+        sampleNeeded: line.sameAsProductId ? false : line.sampleNeeded,
+        sameAsProductId: line.sameAsProductId ?? null,
         rdNumber: clean(line.rdNumber),
         specs: cleanSpecs(line.specs),
       }),
@@ -219,10 +248,65 @@ async function GET(req: Request) {
   })
 }
 
+async function repeatInput(ctx: Exclude<Awaited<ReturnType<typeof resolveOrderContext>>, { error: string }>, quick: z.infer<typeof quickRepeatSchema>) {
+  const source = await findOrder(ctx, quick.repeatFrom)
+  const sourceLines = await ctx.em.find(DermatOrderLine, { orderId: source.id }, { orderBy: { position: 'asc' } })
+  const wanted = new Map(quick.lines.map((line) => [line.lineId, line.quantity]))
+  const lines = sourceLines
+    .filter((line) => (wanted.get(line.id) ?? 0) > 0)
+    .map((line) => ({
+      productId: line.productId,
+      brandName: line.brandName ?? null,
+      packSize: line.packSize ?? null,
+      mrp: line.mrp == null ? null : Number(line.mrp),
+      quantity: wanted.get(line.id) ?? 0,
+      rate: line.rate == null ? null : Number(line.rate),
+      gstPercent: Number(line.gstPercent ?? 18),
+      discountPercent: Number(line.discountPercent ?? 0),
+      sampleNeeded: false,
+      sameAsProductId: line.sameAsProductId ?? null,
+      rdNumber: line.rdNumber ?? null,
+      specs: (line.specs ?? undefined) as OrderInput['lines'][number]['specs'],
+    }))
+  if (!lines.length) throw new OrderError('Enter a quantity for at least one product', 400)
+  return {
+    orderDate: new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }),
+    deliveryDate: quick.deliveryDate ?? null,
+    customerId: source.customerId,
+    customerPoRef: quick.customerPoRef ?? null,
+    orderType: 'repeat',
+    sourceOrderId: source.id,
+    salesManager: source.salesManager ?? null,
+    coordinator: source.coordinator ?? null,
+    advanceReceived: quick.advanceReceived ?? null,
+    paymentTerms: source.paymentTerms ?? null,
+    paymentRemarks: source.paymentRemarks ?? null,
+    productRemarks: source.productRemarks ?? null,
+    billingRemarks: source.billingRemarks ?? null,
+    packingRemarks: source.packingRemarks ?? null,
+    pricesIncludeGst: Boolean(source.pricesIncludeGst),
+    priority: source.priority ?? 'normal',
+    billingAddress: source.billingAddress ?? null,
+    shippingAddress: source.shippingAddress ?? null,
+    lines,
+  }
+}
+
 async function POST(req: Request) {
   const ctx = await resolveOrderContext(req)
   if ('error' in ctx) return NextResponse.json({ error: ctx.error }, { status: ctx.status })
-  const parsed = orderInputSchema.safeParse(await req.json().catch(() => null))
+  const raw = (await req.json().catch(() => null)) as Record<string, unknown> | null
+  let body: unknown = raw
+  if (raw && typeof raw === 'object' && 'repeatFrom' in raw) {
+    const quick = quickRepeatSchema.safeParse(raw)
+    if (!quick.success) return NextResponse.json({ error: 'Check the quantities', details: quick.error.flatten() }, { status: 400 })
+    try {
+      body = await repeatInput(ctx, quick.data)
+    } catch (error) {
+      return orderErrorResponse(error)
+    }
+  }
+  const parsed = orderInputSchema.safeParse(body)
   if (!parsed.success) return NextResponse.json({ error: 'Invalid order', details: parsed.error.flatten() }, { status: 400 })
   const input = parsed.data
   try {
@@ -245,13 +329,32 @@ async function POST(req: Request) {
         await writeLines(txCtx, created, input)
         const stages = createStages(txCtx, created, byName)
         logEvent(txCtx, created, 'created', 'order', created.orderType === 'repeat' ? 'Repeat order' : null, byName)
-        for (const opened of openReadyStages(stages)) logEvent(txCtx, created, 'opened', opened, null, null)
+        const advance = stages.find((stage) => stage.stageKey === 'advance')
+        if (input.advanceReceived && advance) {
+          const receivedOn = input.advanceReceived.receivedOn ?? input.orderDate
+          advance.status = 'done'
+          advance.openedAt = new Date()
+          advance.completedAt = new Date()
+          advance.completedByName = byName
+          advance.data = { advance_amount: input.advanceReceived.amount, received_on: receivedOn, payment_ref: clean(input.advanceReceived.reference) ?? undefined, __prepaid: true }
+          logEvent(txCtx, created, 'completed', 'advance', `Advance ₹${input.advanceReceived.amount.toLocaleString('en-IN')} received before booking`, byName)
+          await em.flush()
+          if (await recordAdvanceFromStage(txCtx, created, advance.data ?? {}, byName)) {
+            logEvent(txCtx, created, 'payment', 'advance', `Advance ₹${input.advanceReceived.amount.toLocaleString('en-IN')} recorded in Accounts`, byName)
+          }
+        }
+        if (input.fromPiId) {
+          await linkPiToOrder(txCtx, input.fromPiId, created, byName)
+          logEvent(txCtx, created, 'pi_linked', 'advance', 'Made from a proforma invoice raised before the order', byName)
+        }
+        await progressStages(txCtx, created, stages, byName)
         await em.flush()
         return created
       })
       const openedNow = (await ctx.em.fork().find(DermatOrderStage, { orderId: order.id, status: 'open' })).map((stage) => stage.stageKey)
       await notifyStagesOpened(ctx, order, openedNow)
-      return NextResponse.json({ id: order.id, orderNo: order.orderNo }, { status: 201 })
+      const short = await warnShortagesAtBooking(ctx, order, byName)
+      return NextResponse.json({ id: order.id, orderNo: order.orderNo, short }, { status: 201 })
     })
   } catch (error) {
     return orderErrorResponse(error)
@@ -265,6 +368,7 @@ async function PUT(req: Request) {
   if (!parsed.success) return NextResponse.json({ error: 'Invalid order', details: parsed.error.flatten() }, { status: 400 })
   const input = parsed.data
   try {
+    const money = await canSeeMoney(ctx)
     const order = await findOrder(ctx, input.id)
     if (order.status === 'cancelled' || order.status === 'completed') throw new OrderError('This order can no longer be changed', 409)
     const stages = await ctx.em.find(DermatOrderStage, { orderId: order.id })
@@ -279,8 +383,15 @@ async function PUT(req: Request) {
         const txCtx = { ...ctx, em: em as EntityManager }
         const fresh = await findOrder(txCtx, order.id)
         const oldLines = await em.find(DermatOrderLine, { orderId: fresh.id })
+        if (!money) {
+          const priced = new Map(oldLines.map((line) => [line.productId, line]))
+          input.lines = input.lines.map((line) => {
+            const old = priced.get(line.productId)
+            return { ...line, rate: old?.rate == null ? null : Number(old.rate), gstPercent: old ? Number(old.gstPercent) : line.gstPercent, discountPercent: old ? Number(old.discountPercent) : 0 }
+          })
+        }
         const before = {
-          header: { deliveryDate: fresh.deliveryDate, customerPoRef: fresh.customerPoRef, salesManager: fresh.salesManager, paymentTerms: fresh.paymentTerms, paymentRemarks: fresh.paymentRemarks, priority: fresh.priority, shippingAddress: fresh.shippingAddress, billingAddress: fresh.billingAddress, productRemarks: fresh.productRemarks, packingRemarks: fresh.packingRemarks, billingRemarks: fresh.billingRemarks },
+          header: { deliveryDate: fresh.deliveryDate, customerPoRef: fresh.customerPoRef, salesManager: fresh.salesManager, coordinator: fresh.coordinator, paymentTerms: fresh.paymentTerms, paymentRemarks: fresh.paymentRemarks, priority: fresh.priority, shippingAddress: fresh.shippingAddress, billingAddress: fresh.billingAddress, productRemarks: fresh.productRemarks, packingRemarks: fresh.packingRemarks, billingRemarks: fresh.billingRemarks },
           lines: oldLines.map((line) => ({ productId: line.productId, quantity: Number(line.quantity), rate: line.rate == null ? null : Number(line.rate) })),
         }
         const titles = new Map([...(await loadProducts(txCtx, [...oldLines.map((line) => line.productId), ...input.lines.map((line) => line.productId)])).entries()].map(([id, product]) => [id, product.title]))

@@ -619,6 +619,16 @@
           "collation": null,
           "enumItems": [],
           "mappedType": "uuid"
+        },
+        "urgency": {
+          "name": "urgency",
+          "type": "text",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": false,
+          "default": "'normal'",
+          "mappedType": "text"
         }
       },
       "indexes": [
@@ -1022,6 +1032,33 @@
           "collation": null,
           "enumItems": [],
           "mappedType": "datetime"
+        },
+        "product_code": {
+          "name": "product_code",
+          "type": "text",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": true,
+          "mappedType": "text"
+        },
+        "sample_received_by": {
+          "name": "sample_received_by",
+          "type": "text",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": true,
+          "mappedType": "text"
+        },
+        "micro": {
+          "name": "micro",
+          "type": "jsonb",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": true,
+          "mappedType": "json"
         }
       },
       "indexes": [

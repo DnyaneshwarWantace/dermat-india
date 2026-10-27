@@ -66,6 +66,17 @@ export function orderAttention(order: Order, shortCount: number | null, t: Retur
       })
     }
   }
+  const codeIssues = order.packingCodeIssues ?? []
+  if (codeIssues.length) {
+    items.push({
+      key: 'packing-code',
+      tone: 'warning',
+      text: t('dermat_orders.attention.packingCode', 'Packing code missing or not in Masters for: {list}. Artwork cannot be finished until it exists.', {
+        list: codeIssues.map((issue) => (issue.code ? `${issue.product} (${issue.code})` : issue.product)).join(', '),
+      }),
+      action: { label: t('dermat_orders.attention.open', 'Open'), stageKey: 'artwork' },
+    })
+  }
   const noBom = order.lines.filter((line) => !line.bom)
   if (noBom.length) items.push({ key: 'bom', tone: 'warning', text: t('dermat_orders.attention.noBom', 'No BOM yet for {count} product(s)', { count: noBom.length }), action: { label: t('dermat_orders.attention.see', 'See'), tab: 'products' } })
   if (shortCount) items.push({ key: 'short', tone: 'warning', text: t('dermat_orders.attention.short', '{count} material(s) short for this order', { count: shortCount }), action: { label: t('dermat_orders.attention.see', 'See'), tab: 'materials' } })

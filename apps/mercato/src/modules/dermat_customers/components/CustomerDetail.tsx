@@ -22,9 +22,12 @@ import { useGuardedMutation } from '@open-mercato/ui/backend/injection/useGuarde
 import { flash } from '@open-mercato/ui/backend/FlashMessages'
 import { ErrorMessage, LoadingMessage } from '@open-mercato/ui/backend/detail'
 import { CustomerStatement } from '../../dermat_accounts/components/CustomerStatement'
+import { SampleChargesCard } from '../../dermat_accounts/components/SampleChargesCard'
 import { usePaymentTerms } from '../../dermat_lists/components/usePaymentTerms'
 import { paymentTermLabel } from '../../dermat_lists/lib/paymentTerms'
 import { CustomerSamples } from './CustomerSamples'
+import { SendRegistrationButton } from '../../dermat_accounts/components/registration/SendRegistrationButton'
+import { LinksSentPanel } from '../../dermat_orders/components/links/LinksSentPanel'
 import { BackLink } from '../../dermat_departments/components/BackLink'
 
 type Row = Record<string, unknown> & { id: string }
@@ -267,9 +270,8 @@ export function CustomerDetail({ customerId }: { customerId: string }) {
   const [editOpen, setEditOpen] = React.useState(false)
 
   const load = React.useCallback(async () => {
-    const [companyCall, addressCall, orderCall] = await Promise.all([
+    const [companyCall, orderCall] = await Promise.all([
       apiCall<{ items?: Row[] }>(`/api/customers/companies?id=${encodeURIComponent(customerId)}&pageSize=1`, undefined, { fallback: { items: [] } }),
-      apiCall<{ items?: Address[] }>(`/api/customers/addresses?entityId=${encodeURIComponent(customerId)}&pageSize=20`, undefined, { fallback: { items: [] } }),
       apiCall<{ items?: OrderRow[] }>(`/api/dermat_orders/orders?customerId=${encodeURIComponent(customerId)}&pageSize=100`, undefined, { fallback: { items: [] } }),
     ])
     const row = companyCall.result?.items?.[0]
@@ -278,13 +280,18 @@ export function CustomerDetail({ customerId }: { customerId: string }) {
       return
     }
     setCompany(row)
-    setAddresses(addressCall.result?.items ?? [])
     setOrders(orderCall.result?.items ?? [])
   }, [customerId, t])
 
   React.useEffect(() => {
     load()
   }, [load])
+
+  const seesAddresses = granted.ready && granted.has('customers.activities.view')
+  React.useEffect(() => {
+    if (!seesAddresses) return
+    apiCall<{ items?: Address[] }>(`/api/customers/addresses?entityId=${encodeURIComponent(customerId)}&pageSize=20`, { headers: { 'x-om-forbidden-redirect': '0' } }, { fallback: { items: [] } }).then((call) => setAddresses(call.result?.items ?? []))
+  }, [customerId, seesAddresses])
 
   if (loadError) {
     return (
@@ -346,6 +353,13 @@ export function CustomerDetail({ customerId }: { customerId: string }) {
     [t('dermat_customers.detail.manager', 'Sales manager'), field(company, 'sales_manager') ?? '—'],
     [t('dermat_customers.detail.phone', 'Phone'), readable(company.primary_phone) ?? '—'],
     [t('dermat_customers.detail.email', 'Email'), readable(company.primary_email) ?? '—'],
+    ...([
+      [t('dermat_customers.detail.pan', 'PAN no.'), field(company, 'pan_no')],
+      [t('dermat_customers.detail.vat', 'VAT no.'), field(company, 'vat_no')],
+      [t('dermat_customers.detail.transporter', 'Transporter / delivery type'), field(company, 'transporter')],
+      [t('dermat_customers.detail.insurance', 'Undertaking / insurance policy no.'), field(company, 'insurance_policy_no')],
+      [t('dermat_customers.detail.dispatch', 'Special dispatch instructions'), field(company, 'dispatch_instructions')],
+    ].filter((entry): entry is [string, string] => Boolean(entry[1]))),
   ]
 
   return (
@@ -387,6 +401,9 @@ export function CustomerDetail({ customerId }: { customerId: string }) {
                   {t('dermat_customers.detail.edit', 'Edit details')}
                 </Link>
               </Button>
+              ) : null}
+              {granted.has('dermat_accounts.view') && company ? (
+                <SendRegistrationButton customerId={customerId} customerName={readable(company.display_name) ?? null} email={readable(company.primary_email) ?? ''} phone={readable(company.primary_phone) ?? ''} />
               ) : null}
               {granted.has('dermat_orders.manage') ? (
               <Button asChild size="sm">
@@ -481,14 +498,26 @@ export function CustomerDetail({ customerId }: { customerId: string }) {
               </CardContent>
             </Card>
 
-            <Card className="lg:col-span-8 lg:row-start-2">
-              <CardContent className="pt-4">
-                <CustomerStatement customerId={customerId} customerName={name} />
-              </CardContent>
-            </Card>
+            {granted.has('dermat_accounts.view') ? (
+              <>
+                <Card className="lg:col-span-8 lg:row-start-2">
+                  <CardContent className="pt-4">
+                    <CustomerStatement customerId={customerId} customerName={name} />
+                  </CardContent>
+                </Card>
+
+                <div className="lg:col-span-8">
+                  <SampleChargesCard customerId={customerId} />
+                </div>
+              </>
+            ) : null}
 
             <div className="lg:col-span-12">
               <CustomerSamples customerId={customerId} />
+            </div>
+
+            <div className="lg:col-span-12">
+              <LinksSentPanel customerId={customerId} />
             </div>
 
             <div className="space-y-5 lg:col-span-4">

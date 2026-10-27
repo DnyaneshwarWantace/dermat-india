@@ -17,8 +17,8 @@ export type PiLine = {
 export type PiView = {
   id: string
   code: string
-  orderId: string
-  orderNo: string
+  orderId: string | null
+  orderNo: string | null
   customerId: string
   customerName: string
   customerGstin: string | null
@@ -96,6 +96,9 @@ export type InvoiceView = {
   vehicleNo: string | null
   lrNo: string | null
   ewayBillNo: string | null
+  irn: string | null
+  ackNo: string | null
+  ackDate: string | null
   terms: string | null
   bankDetails: string | null
   notes: string | null

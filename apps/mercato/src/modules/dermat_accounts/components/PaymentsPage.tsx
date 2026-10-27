@@ -25,7 +25,7 @@ import { rupeeText } from '../../dermat_products/lib/whatsapp'
 import { PaymentDialog, type PaymentRow } from './PaymentDialog'
 
 const ALL = '__all'
-const KIND_LABEL: Record<string, string> = { advance: 'Advance', balance: 'Balance', other: 'Other' }
+const KIND_LABEL: Record<string, string> = { advance: 'Advance', balance: 'Balance', other: 'Other', sample: 'Sample charge' }
 
 function day(value: string): string {
   return new Date(`${value}T00:00:00`).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
@@ -162,7 +162,7 @@ export function PaymentsPage() {
           </div>
 
           {data ? (
-            <div className="flex items-center gap-3 rounded-lg border bg-card p-4 shadow-xs">
+            <div data-sheet-compact className="flex items-center gap-3 rounded-lg border bg-card p-4 shadow-xs">
               <span className="flex h-10 w-10 items-center justify-center rounded-full bg-status-success-bg text-status-success-icon">
                 <IndianRupee className="h-4 w-4" aria-hidden="true" />
               </span>
@@ -199,9 +199,15 @@ export function PaymentsPage() {
                       <td className="px-4 py-3 text-xs tabular-nums">{day(row.paidOn)}</td>
                       <td className="px-4 py-3">
                         <span className="block font-medium">{row.customerName}</span>
-                        <Link href={`/backend/orders/${row.orderId}`} className="font-mono text-xs text-primary hover:underline">
-                          {row.orderNo}
-                        </Link>
+                        {row.orderId ? (
+                          <Link href={`/backend/orders/${row.orderId}`} className="font-mono text-xs text-primary hover:underline">
+                            {row.orderNo}
+                          </Link>
+                        ) : (
+                          <Link href={`/backend/customers/companies/${row.customerId}`} className="font-mono text-xs text-primary hover:underline">
+                            {row.orderNo || t('dermat_accounts.pay.sampleNoOrder', 'Sample (no order)')}
+                          </Link>
+                        )}
                       </td>
                       <td className="px-4 py-3 text-xs">{KIND_LABEL[row.kind] ?? row.kind}</td>
                       <td className={cn('px-4 py-3 text-right font-semibold tabular-nums', row.voided && 'line-through')}>{rupeeText(row.amount)}</td>
@@ -213,7 +219,7 @@ export function PaymentsPage() {
                       </td>
                       <td className="px-4 py-3 font-mono text-xs">{row.invoiceId ? <Link href={`/backend/accounts/invoices/${row.invoiceId}`} className="text-primary hover:underline">{row.invoiceCode}</Link> : '—'}</td>
                       <td className="px-4 py-3">
-                        {!row.voided ? (
+                        {!row.voided && row.kind !== 'sample' ? (
                           <span className="flex justify-end gap-1">
                             <Button type="button" variant="ghost" size="sm" onClick={() => setDialog({ payment: row })} aria-label={t('dermat_accounts.pay.edit', 'Correct')}>
                               <Pencil className="h-4 w-4" aria-hidden="true" />

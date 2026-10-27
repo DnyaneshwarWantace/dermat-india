@@ -1,8 +1,27 @@
+import { DermatOrderLine, DermatOrderStage } from '../../dermat_orders/data/entities'
 import { currentUserName, type OrderContext } from '../../dermat_orders/lib/server'
 import { createDraftBom, prepareDraftBom } from '../../dermat_boms/lib/service'
-import { RdRequest, RdTrial, type RdFormulaLine, type RdReading, type RdTrialStatus } from '../data/entities'
-import type { RdTrialAction, RdTrialUpdate } from '../data/validators'
+import { RdRequest, RdTrial, type RdFormulaLine, type RdReading, type RdRound, type RdTrialStatus } from '../data/entities'
+import type { RdAction, RdTrialAction, RdTrialUpdate } from '../data/validators'
+import { notifyStabilityFailedAfterApproval } from './notify'
 import { RdError, findRequest } from './service'
+
+export const TRIAL_ATTACHMENT_ENTITY = 'dermat_rnd:trial'
+
+export function approvalProofRecordId(trialId: string): string {
+  return `${trialId}:approval`
+}
+
+export async function approvalProofCounts(ctx: OrderContext, trialIds: string[]): Promise<Map<string, number>> {
+  if (!trialIds.length) return new Map()
+  const rows = await ctx.em.getConnection().execute<Array<{ record_id: string; files: string | number }>>(
+    `select record_id, count(*) as files from attachments
+      where entity_id = ? and tenant_id = ? and organization_id = ? and record_id in (${trialIds.map(() => '?').join(', ')})
+      group by record_id`,
+    [TRIAL_ATTACHMENT_ENTITY, ctx.tenantId, ctx.organizationId, ...trialIds.map(approvalProofRecordId)],
+  )
+  return new Map(rows.map((row) => [row.record_id.replace(/:approval$/, ''), Number(row.files)]))
+}
 
 const PERCENT_TOLERANCE = 0.001
 const BOM_BATCH_KG = 100
@@ -74,7 +93,7 @@ export async function createTrial(ctx: OrderContext, requestId: string, copyFrom
     organizationId: ctx.organizationId,
     tenantId: ctx.tenantId,
     requestId: request.id,
-    code: `${request.code}/T${trialNo}`,
+    code: `${request.code}-${String(trialNo).padStart(2, '0')}`,
     trialNo,
     batchDate: todayIst(),
     chemistName: byName,
@@ -136,10 +155,17 @@ async function approve(ctx: OrderContext, trial: RdTrial, byName: string | null)
   request.bomProductId = null
   stampRequest(request, 'formula_approved', byName, `${trial.code}${trial.stabilityStatus === 'running' ? ' (stability still running)' : ''}`)
   request.updatedAt = new Date()
+  if (request.orderId) {
+    const stage = await ctx.em.findOne(DermatOrderStage, { orderId: request.orderId, stageKey: 'sampling' })
+    if (stage) stage.data = { ...(stage.data ?? {}), rd_number: trial.code }
+    const lines = await ctx.em.find(DermatOrderLine, { orderId: request.orderId })
+    for (const line of lines) if (!line.rdNumber || line.rdNumber === request.code || line.rdNumber.startsWith(`${request.code}-`)) line.rdNumber = trial.code
+  }
 }
 
 async function makeBom(ctx: OrderContext, trial: RdTrial, productId: string | undefined, byName: string | null) {
   if (trial.status !== 'approved') throw new RdError('Approve the trial before making its BOM', 409)
+  if (!(await approvalProofCounts(ctx, [trial.id])).get(trial.id)) throw new RdError('Upload the approval proof (photo or screenshot of the client approval) on this trial first', 409)
   if (!productId) throw new RdError('Pick the Bulk product this formula is for')
   const lines = resolvedLines(trial.formula ?? [])
   const unlinked = lines.filter((line) => !line.productId)
@@ -168,6 +194,7 @@ export async function actOnTrial(ctx: OrderContext, trial: RdTrial, input: RdTri
   const byName = await currentUserName(ctx)
   let note: string | null = clean(input.remarks) ?? clean(input.note)
   let bomId: string | undefined
+  let failedAfterApproval: RdRequest | null = null
   switch (input.action) {
     case 'submit':
       if (trial.status !== 'draft') throw new RdError('Only a draft trial can be sent for testing', 409)
@@ -208,8 +235,30 @@ export async function actOnTrial(ctx: OrderContext, trial: RdTrial, input: RdTri
     case 'finish_stability':
       if (!trial.stability || trial.stabilityStatus !== 'running') throw new RdError('Stability is not running for this trial', 409)
       if (!input.result) throw new RdError('Did the stability study pass or fail?')
-      trial.stability = { ...trial.stability, conclusion: clean(input.remarks) }
+      trial.stability = { ...trial.stability, conclusion: clean(input.remarks), endDate: input.readingDate ?? todayIst() }
       trial.stabilityStatus = input.result === 'pass' ? 'passed' : 'failed'
+      if (input.result === 'fail' && trial.status === 'approved') {
+        const request = await findRequest(ctx, trial.requestId)
+        stampRequest(request, 'stability_failed', byName, `${trial.code}${note ? ` · ${note}` : ''}`)
+        request.updatedAt = new Date()
+        failedAfterApproval = request
+      }
+      break
+    case 'record_micro':
+      if (trial.status === 'draft') throw new RdError('Send the trial for testing first', 409)
+      if (input.microRequired === false) {
+        trial.micro = { required: false, testingDate: null, values: {}, releasedDate: null, result: null, remarks: clean(input.remarks), by: byName, at: new Date().toISOString() }
+        note = 'Micro not required'
+        break
+      }
+      if (!input.result) throw new RdError('Is the micro result a pass or a fail?')
+      trial.micro = { required: true, testingDate: input.testingDate ?? todayIst(), values: input.values ?? {}, releasedDate: input.releasedDate ?? null, result: input.result, remarks: clean(input.remarks), by: byName, at: new Date().toISOString() }
+      note = `Micro ${input.result}${note ? ` · ${note}` : ''}`
+      break
+    case 'set_details':
+      trial.productCode = clean(input.productCode)
+      trial.sampleReceivedBy = clean(input.sampleReceivedBy)
+      note = null
       break
     case 'approve':
       await approve(ctx, trial, byName)
@@ -230,13 +279,14 @@ export async function actOnTrial(ctx: OrderContext, trial: RdTrial, input: RdTri
       break
     }
   }
-  if (input.action !== 'make_bom') stampTrial(trial, input.action, byName, note)
+  if (input.action !== 'make_bom' && input.action !== 'set_details') stampTrial(trial, input.action, byName, note)
   trial.updatedAt = new Date()
   await ctx.em.flush()
+  if (failedAfterApproval) await notifyStabilityFailedAfterApproval(ctx, failedAfterApproval, trial, clean(input.remarks))
   return { bomId }
 }
 
-export function trialView(trial: RdTrial) {
+export function trialView(trial: RdTrial, proofCount = 0) {
   const lines = resolvedLines(trial.formula ?? [])
   const totals = formulaTotals(trial.formula ?? [])
   const batch = trial.batchSize == null ? null : Number(trial.batchSize)
@@ -257,6 +307,10 @@ export function trialView(trial: RdTrial) {
     observations: trial.observations ?? null,
     stability: trial.stability ?? null,
     stabilityStatus: trial.stabilityStatus,
+    productCode: trial.productCode ?? null,
+    sampleReceivedBy: trial.sampleReceivedBy ?? null,
+    micro: trial.micro ?? null,
+    approvalProofs: proofCount,
     history: trial.history ?? [],
     createdAt: trial.createdAt.toISOString(),
     updatedAt: trial.updatedAt.toISOString(),
@@ -264,3 +318,63 @@ export function trialView(trial: RdTrial) {
 }
 
 export type RdTrialView = ReturnType<typeof trialView>
+
+function applyActives(lines: RdFormulaLine[], add: RdAction['addActives'], remove: RdAction['removeActives']): RdFormulaLine[] {
+  const removed = new Set((remove ?? []).map((name) => name.toLowerCase()))
+  const kept = lines.filter((line) => !removed.has(line.name.toLowerCase()) && !(line.code && removed.has(line.code.toLowerCase())))
+  const present = new Set(kept.map((line) => line.productId).filter(Boolean))
+  const added = (add ?? []).filter((ref) => !present.has(ref.productId)).map((ref, index) => ({
+    id: `fb-${Date.now().toString(36)}-${index}`,
+    phase: null,
+    productId: ref.productId,
+    code: ref.code,
+    name: ref.name,
+    function: 'Active',
+    percent: 0,
+    isBalance: false,
+    note: 'Added from client feedback',
+  }))
+  return [...kept, ...added]
+}
+
+function feedbackNote(round: RdRound, input: RdAction): string {
+  const parts = [`Client feedback (round ${round.round})${input.feedback ? `: ${input.feedback.trim()}` : ''}`]
+  if (input.addActives?.length) parts.push(`Add: ${input.addActives.map((ref) => ref.name).join(', ')}`)
+  if (input.removeActives?.length) parts.push(`Remove: ${input.removeActives.join(', ')}`)
+  return parts.join(' · ')
+}
+
+export async function followUpFeedback(ctx: OrderContext, request: RdRequest, input: RdAction) {
+  const rounds = request.rounds ?? []
+  const round = rounds[rounds.length - 1]
+  if (!round || !round.result || round.result === 'approved') return
+  const byName = await currentUserName(ctx)
+  const trials = await listTrials(ctx, request.id)
+  const source = (round.trialId ? trials.find((trial) => trial.id === round.trialId) : null) ?? trials[trials.length - 1] ?? null
+  const step = round.result === 'rejected' || !source ? 'new' : input.nextStep ?? 'new'
+  const note = feedbackNote(round, input)
+  if (source && round.result === 'rejected' && !['approved', 'rejected'].includes(source.status)) {
+    source.status = 'rejected'
+    stampTrial(source, 'reject', byName, note)
+  }
+  if (step === 'same' && source) {
+    if (request.approvedTrialId === source.id) request.approvedTrialId = null
+    source.status = 'draft'
+    source.observations = null
+    source.aim = [source.aim, note].filter(Boolean).join('\n')
+    source.formula = applyActives(source.formula ?? [], input.addActives, input.removeActives)
+    stampTrial(source, 'revision', byName, note)
+    source.updatedAt = new Date()
+    round.nextStep = 'same'
+    round.nextTrialCode = source.code
+  } else {
+    const created = await createTrial(ctx, request.id, source?.id ?? null)
+    created.aim = note
+    created.formula = applyActives(created.formula ?? [], input.addActives, input.removeActives)
+    round.nextStep = 'new'
+    round.nextTrialCode = created.code
+  }
+  request.rounds = [...rounds.slice(0, -1), { ...round }]
+  request.updatedAt = new Date()
+  await ctx.em.flush()
+}

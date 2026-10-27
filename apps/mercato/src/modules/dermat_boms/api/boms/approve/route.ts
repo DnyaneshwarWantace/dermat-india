@@ -6,6 +6,8 @@ import { BomHeader } from '../../../data/entities'
 import { bomActionSchema } from '../../../data/validators'
 import { BomError, assertReadyToApprove, findBom, serializeBom } from '../../../lib/service'
 import { currentUserName, resolveBomContext } from '../../../lib/server'
+import { resolveOrderContext } from '../../../../dermat_orders/lib/server'
+import { syncFormulationSteps } from '../../../../dermat_orders/lib/autoSteps'
 import { bomErrorResponse, enforceBomLock, runGuarded } from '../../../lib/guard'
 
 export const metadata = {
@@ -44,6 +46,8 @@ async function POST(req: Request) {
         header.approvedAt = new Date()
         await em.flush()
       })
+      const orderCtx = await resolveOrderContext(req)
+      if (!('error' in orderCtx)) await syncFormulationSteps(orderCtx, bom.productId, bom.orderId ?? null)
       return NextResponse.json({ ok: true })
     })
   } catch (error) {

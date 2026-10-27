@@ -34,23 +34,27 @@ type Row = {
   deliveredOn: string | null
   ewayNeeded: boolean
   waitingSince: string | null
+  atStage?: string
+  onHold?: boolean
+  deliveryDate?: string | null
 }
 
-type View = 'ready' | 'done' | 'all'
+type View = 'coming' | 'ready' | 'done' | 'all'
+type Summary = { coming: number; ready: number; dispatched: number; awaitingDelivery: number }
 
 export function DispatchRegister() {
   const t = useT()
   const [view, setView] = React.useState<View>('all')
   const [search, setSearch] = React.useState('')
   const [rows, setRows] = React.useState<Row[] | null>(null)
-  const [summary, setSummary] = React.useState<{ ready: number; dispatched: number; awaitingDelivery: number } | null>(null)
+  const [summary, setSummary] = React.useState<Summary | null>(null)
   const [error, setError] = React.useState<string | null>(null)
 
   React.useEffect(() => {
     const handle = window.setTimeout(async () => {
       const query = new URLSearchParams({ view })
       if (search.trim()) query.set('q', search.trim())
-      const call = await apiCall<{ items?: Row[]; summary?: { ready: number; dispatched: number; awaitingDelivery: number }; error?: string }>(`/api/dermat_orders/dispatches?${query.toString()}`)
+      const call = await apiCall<{ items?: Row[]; summary?: Summary; error?: string }>(`/api/dermat_orders/dispatches?${query.toString()}`)
       if (!call.ok) setError(call.result?.error ?? t('dermat_orders.dispatches.loadError', 'Could not load dispatches.'))
       else {
         setError(null)
@@ -95,8 +99,9 @@ export function DispatchRegister() {
           </header>
 
           {summary ? (
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <div data-sheet-compact className="grid grid-cols-2 gap-3 lg:grid-cols-4">
               {[
+                { label: t('dermat_orders.dispatches.coming', 'Coming (packing, QA, billing)'), value: summary.coming },
                 { label: t('dermat_orders.dispatches.ready', 'Ready to dispatch'), value: summary.ready },
                 { label: t('dermat_orders.dispatches.dispatched', 'Dispatched'), value: summary.dispatched },
                 { label: t('dermat_orders.dispatches.awaiting', 'Delivery not confirmed'), value: summary.awaitingDelivery },
@@ -112,6 +117,7 @@ export function DispatchRegister() {
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <SegmentedControl value={view} onValueChange={(value) => setView(value as View)} aria-label={t('dermat_orders.dispatches.show', 'Show')}>
               <SegmentedControlItem value="all">{t('dermat_orders.dispatches.all', 'All')}</SegmentedControlItem>
+              <SegmentedControlItem value="coming">{t('dermat_orders.dispatches.comingTab', 'Coming')}</SegmentedControlItem>
               <SegmentedControlItem value="ready">{t('dermat_orders.dispatches.readyTab', 'Ready to dispatch')}</SegmentedControlItem>
               <SegmentedControlItem value="done">{t('dermat_orders.dispatches.doneTab', 'Dispatched')}</SegmentedControlItem>
             </SegmentedControl>
@@ -140,14 +146,14 @@ export function DispatchRegister() {
                   {rows.map((row) => (
                     <tr key={row.orderId} className="align-top hover:bg-muted/30">
                       <td className="px-3 py-2">
-                        <Link href={`/backend/orders/${row.orderId}/stages/dispatch`} className="font-mono font-medium hover:underline">
+                        <Link href={row.status === 'coming' ? `/backend/orders/${row.orderId}` : `/backend/orders/${row.orderId}/stages/dispatch`} className="font-mono font-medium hover:underline">
                           {row.orderNo}
                         </Link>
                         {row.priority === 'urgent' ? <span className="ml-2 rounded-sm bg-status-error-bg px-1.5 py-0.5 text-xs text-status-error-text">{t('dermat_orders.priority.urgent', 'Urgent')}</span> : null}
                         <span className="block">{row.customer ?? '—'}</span>
                         {row.shippingAddress ? <span className="block max-w-xs truncate text-xs text-muted-foreground">{row.shippingAddress}</span> : null}
                       </td>
-                      <td className="px-3 py-2 font-mono text-xs">{row.invoices.length ? row.invoices.join(', ') : <span className="font-sans text-status-warning-text">{t('dermat_orders.dispatches.noInvoice', 'No invoice yet')}</span>}</td>
+                      <td className="px-3 py-2 font-mono text-xs">{row.invoices.length ? row.invoices.join(', ') : row.status === 'coming' ? '—' : <span className="font-sans text-status-warning-text">{t('dermat_orders.dispatches.noInvoice', 'No invoice yet')}</span>}</td>
                       <td className="px-3 py-2 text-right tabular-nums">
                         {formatQty(row.pieces, 0)}
                         <span className="block text-xs text-muted-foreground">{row.packages ? t('dermat_orders.dispatches.boxes', '{count} boxes', { count: row.packages }) : '—'}</span>
@@ -161,7 +167,12 @@ export function DispatchRegister() {
                         {row.ewayBillNo ? <span className="font-mono">{row.ewayBillNo}</span> : row.ewayNeeded ? t('dermat_orders.dispatches.ewayNeeded', 'Needed (above ₹50,000)') : t('dermat_orders.dispatches.ewayNotNeeded', 'Not needed')}
                       </td>
                       <td className="px-3 py-2">
-                        {row.status === 'done' ? (
+                        {row.status === 'coming' ? (
+                          <span className="flex flex-col items-start gap-1">
+                            <StatusBadge variant={row.onHold ? 'error' : 'neutral'}>{t('dermat_orders.dispatches.atStage', 'At {stage}', { stage: row.atStage ?? '' })}</StatusBadge>
+                            {row.deliveryDate ? <span className="text-xs text-muted-foreground">{t('dermat_orders.dispatches.due', 'Due {date}', { date: formatDate(row.deliveryDate) })}</span> : null}
+                          </span>
+                        ) : row.status === 'done' ? (
                           row.deliveredOn ? (
                             <StatusBadge variant="success">{t('dermat_orders.dispatches.delivered', 'Delivered {date}', { date: formatDate(row.deliveredOn) })}</StatusBadge>
                           ) : (

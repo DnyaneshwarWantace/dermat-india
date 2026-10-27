@@ -14,6 +14,8 @@ import { SegmentedControl, SegmentedControlItem } from '@open-mercato/ui/primiti
 import { apiCall } from '@open-mercato/ui/backend/utils/apiCall'
 import { flash } from '@open-mercato/ui/backend/FlashMessages'
 import { useGranted } from '../../dermat_departments/components/useGranted'
+import { ExportButton } from '../../dermat_products/components/ExportButton'
+import { openServerExport } from '../../dermat_products/lib/csvExport'
 import { REQUEST_STATUS, TRIAL_STATUS, dayText } from './labels'
 import { RequestFormDialog } from './request/RequestFormDialog'
 import { EMPTY_REQUEST_FORM, type RequestForm } from './request/requestForm'
@@ -61,7 +63,16 @@ export function RdRequestsPage({ defaultView = 'open', title, detailBase = '/bac
   const columns = React.useMemo<ColumnDef<Row>[]>(
     () => [
       { accessorKey: 'code', header: t('dermat_rnd.col.code', 'R&D no.'), cell: ({ row }) => <Link href={`${detailBase}/${row.original.id}`} className="font-mono font-semibold text-primary hover:underline">{row.original.code}</Link> },
-      { accessorKey: 'productName', header: t('dermat_rnd.col.product', 'Product'), cell: ({ row }) => <span className="font-medium">{[row.original.productName, row.original.brand].filter(Boolean).join(' · ')}</span> },
+      {
+        accessorKey: 'productName',
+        header: t('dermat_rnd.col.product', 'Product'),
+        cell: ({ row }) => (
+          <span className="flex flex-wrap items-center gap-2">
+            <span className="font-medium">{[row.original.productName, row.original.brand].filter(Boolean).join(' · ')}</span>
+            {row.original.urgency === 'urgent' ? <StatusBadge variant="error">{t('dermat_rnd.urgent', 'Urgent')}</StatusBadge> : null}
+          </span>
+        ),
+      },
       { accessorKey: 'customerName', header: t('dermat_rnd.col.client', 'Client'), cell: ({ row }) => <span className="text-sm">{row.original.customerName ?? (row.original.kind === 'npd' ? t('dermat_rnd.npd', 'New product') : '—')}</span> },
       {
         accessorKey: 'status',
@@ -117,6 +128,14 @@ export function RdRequestsPage({ defaultView = 'open', title, detailBase = '/bac
             onRowClick={(row) => router.push(`${detailBase}/${row.id}`)}
             actions={
               <div className="flex flex-wrap gap-2">
+                <ExportButton
+                  label={t('dermat_rnd.exportIndex', 'Trial index (Excel)')}
+                  onExport={() => {
+                    const query = new URLSearchParams({ view })
+                    if (search.trim()) query.set('search', search.trim())
+                    openServerExport(`/api/dermat_rnd/trials/export?${query.toString()}`)
+                  }}
+                />
                 <Button asChild variant="outline">
                   <Link href="/backend/rnd/report">
                     <BarChart3 className="mr-2 size-4" aria-hidden="true" />

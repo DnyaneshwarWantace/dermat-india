@@ -225,8 +225,10 @@ export function PlanningBoard() {
     }
   }
 
+  const kindRows = (rows ?? []).filter((row) => (filter === 'rm' ? row.kind === 'raw_material' : filter === 'pm' ? row.kind === 'packing_material' : true))
+
   const reserveAll = () => {
-    const entries = (rows ?? []).flatMap((row) =>
+    const entries = kindRows.flatMap((row) =>
       row.sources.filter((source) => source.orderId && source.reserved < source.required).map((source) => ({ orderId: source.orderId as string, productId: row.productId, quantity: source.required })),
     )
     if (!entries.length) {
@@ -239,7 +241,7 @@ export function PlanningBoard() {
   }
 
   const buyTarget = (path: string, extra = '') => {
-    const buy = (rows ?? []).filter((row) => row.toOrder > 0)
+    const buy = kindRows.filter((row) => row.toOrder > 0)
     if (!buy.length) return
     const itemsParam = buy.map((row) => `${row.productId}:${row.toOrder}`).join(',')
     const ordersParam = pickedOrders.map((order) => `${order.id}:${encodeURIComponent(order.orderNo)}`).join(',')
@@ -531,7 +533,7 @@ export function PlanningBoard() {
             </aside>
 
             <section className="flex min-w-0 flex-col gap-4 xl:col-span-8">
-              <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+              <div data-sheet-compact className="grid grid-cols-2 gap-3 md:grid-cols-4">
                 {[
                   { label: t('dermat_planning.board.tileOrders', 'Orders picked'), value: pickedOrderIds.length + extras.length, icon: <ClipboardCheck className="h-4 w-4" />, tone: 'bg-muted text-muted-foreground' },
                   { label: t('dermat_planning.board.tileMaterials', 'Materials'), value: counts.materials, icon: <Layers className="h-4 w-4" />, tone: 'bg-status-info-bg text-status-info-icon' },
@@ -595,12 +597,12 @@ export function PlanningBoard() {
                       }
                     />
                     {!granted.ready || granted.has('dermat_purchase.indent') ? (
-                      <Button type="button" variant="outline" onClick={raiseIndent} disabled={!(rows ?? []).some((row) => row.toOrder > 0)}>
-                        {t('dermat_planning.board.raiseIndent', 'Raise indent for what to buy')}
+                      <Button type="button" variant="outline" onClick={raiseIndent} disabled={!kindRows.some((row) => row.toOrder > 0)}>
+                        {filter === 'rm' ? t('dermat_planning.board.raiseIndentRm', 'Raise indent for RM to buy') : filter === 'pm' ? t('dermat_planning.board.raiseIndentPm', 'Raise indent for PM to buy') : t('dermat_planning.board.raiseIndent', 'Raise indent for what to buy')}
                       </Button>
                     ) : null}
                     {!granted.ready || granted.has('dermat_purchase.manage') ? (
-                      <Button type="button" variant="outline" onClick={raisePo} disabled={!(rows ?? []).some((row) => row.toOrder > 0)}>
+                      <Button type="button" variant="outline" onClick={raisePo} disabled={!kindRows.some((row) => row.toOrder > 0)}>
                         <ShoppingCart className="mr-1.5 h-4 w-4" aria-hidden="true" />
                         {t('dermat_planning.board.raisePo', 'Raise PO for what to buy')}
                       </Button>
@@ -608,7 +610,7 @@ export function PlanningBoard() {
                     {canReserve ? (
                       <Button type="button" onClick={reserveAll} disabled={busy || !pickedOrderIds.length || !rows?.length}>
                         <Lock className="mr-1.5 h-4 w-4" aria-hidden="true" />
-                        {t('dermat_planning.board.reserveAll', 'Reserve all that is free')}
+                        {filter === 'rm' ? t('dermat_planning.board.reserveRm', 'Reserve free RM') : filter === 'pm' ? t('dermat_planning.board.reservePm', 'Reserve free PM') : t('dermat_planning.board.reserveAll', 'Reserve all that is free')}
                       </Button>
                     ) : null}
                   </div>

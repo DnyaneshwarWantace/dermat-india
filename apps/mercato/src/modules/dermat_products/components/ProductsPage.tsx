@@ -29,7 +29,7 @@ type CategoryNode = { id: string; name: string; children?: CategoryNode[]; desce
 type ProductsResponse = { items?: Row[]; total?: number; totalPages?: number }
 type Stock = { onHand: number; reserved: number; available: number }
 
-const PAGE_SIZE = 50
+const PAGE_SIZE = 100
 
 function cell(row: Row, key: string): string {
   const direct = row[key] ?? row[`cf_${key}`]
@@ -46,6 +46,7 @@ function formatQuantity(value: number): string {
 export function ProductsPage() {
   const t = useT()
   const granted = useGranted()
+  const canSeeSupplier = granted.ready && granted.has('dermat_products.supplier')
   const canManage = !granted.ready || granted.has('catalog.products.manage')
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -248,7 +249,36 @@ export function ProductsPage() {
   )
 
   const columns = React.useMemo<ColumnDef<Row>[]>(() => {
-    const base: ColumnDef<Row>[] = [
+    const raw = kind === 'raw_material'
+    const rawBase: ColumnDef<Row>[] = [
+      {
+        id: 'item_code',
+        header: config.codeLabel,
+        size: 90,
+        cell: ({ row }) => <span className="whitespace-nowrap font-mono text-xs">{cell(row.original, 'item_code')}</span>,
+      },
+      {
+        id: 'title',
+        header: t('dermat_products.list.nameInci', 'Name · INCI'),
+        size: 300,
+        cell: ({ row }) => {
+          const inci = cell(row.original, 'inci_name')
+          return (
+            <span className="flex min-w-56 max-w-sm flex-col leading-tight">
+              <span className="truncate text-sm font-medium" title={cell(row.original, 'title')}>
+                {cell(row.original, 'title')}
+              </span>
+              {inci !== '—' ? (
+                <span className="truncate text-xs text-muted-foreground" title={inci}>
+                  {inci}
+                </span>
+              ) : null}
+            </span>
+          )
+        },
+      },
+    ]
+    const base: ColumnDef<Row>[] = raw && !editing ? rawBase : [
       {
         id: 'title',
         header: `${config.codeLabel} · ${t('dermat_products.list.name', 'Name')}`,
@@ -269,12 +299,15 @@ export function ProductsPage() {
           ),
       },
     ]
-    const kindColumns: ColumnDef<Row>[] = config.columns.map((column) => ({
+    const kindColumns: ColumnDef<Row>[] = config.columns.filter((column) => canSeeSupplier || column.key !== 'supplier').map((column) => ({
       id: column.key,
       header: column.label,
       cell: ({ row }) => editable(row.original, column.key, Boolean(config.fields.find((field) => field.key === column.key)?.numeric)),
     }))
-    const tail: ColumnDef<Row>[] = [
+    const tail: ColumnDef<Row>[] = raw ? [
+      { id: 'stock', header: t('dermat_products.list.stock', 'Stock'), cell: ({ row }) => <span className="tabular-nums">{formatQuantity(stock[row.original.id]?.onHand ?? 0)}</span> },
+      { id: 'unit', header: t('dermat_products.list.unit', 'Unit'), cell: ({ row }) => cell(row.original, 'default_unit') },
+    ] : [
       {
         id: 'stock',
         header: t('dermat_products.list.stock', 'Stock'),
@@ -286,7 +319,7 @@ export function ProductsPage() {
       },
     ]
     return [...base, ...kindColumns, ...tail]
-  }, [config, editable, editing, stock, t])
+  }, [config, editable, editing, stock, t, canSeeSupplier, kind])
 
   const createHref = `/backend/products/new/${config.slug}`
 
@@ -310,7 +343,7 @@ export function ProductsPage() {
     downloadCsv(config.title, [
       { header: config.codeLabel, value: (row) => value(row, 'item_code') },
       { header: t('dermat_products.list.name', 'Name'), value: (row) => value(row, 'title') },
-      ...config.fields.map((field) => ({ header: field.label, value: (row: Row) => value(row, field.key) })),
+      ...config.fields.filter((field) => canSeeSupplier || field.key !== 'supplier').map((field) => ({ header: field.label, value: (row: Row) => value(row, field.key) })),
       { header: t('dermat_products.export.unit', 'Unit'), value: (row) => value(row, 'default_unit') },
       { header: t('dermat_products.export.onHand', 'On hand'), value: (row) => levels[row.id]?.onHand ?? 0 },
       { header: t('dermat_products.export.reserved', 'Reserved'), value: (row) => levels[row.id]?.reserved ?? 0 },

@@ -106,7 +106,7 @@ export function GrnsPage() {
             </div>
           </header>
 
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <div data-sheet-compact className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             {tiles.map((tile) => {
               const active = view === tile.view
               return (

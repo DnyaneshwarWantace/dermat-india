@@ -31,6 +31,7 @@ import { subStageProgress } from './subStages'
 import { useStageAction } from './useStageAction'
 import { useOrderMaterials } from './useOrderMaterials'
 import { OrderMoneyCard } from './OrderMoneyCard'
+import { QuickRepeatDialog } from './QuickRepeatDialog'
 import { AttentionList, DocumentsOverview, orderAttention, type OrderTab } from './OrderPanels'
 import type { Order, Stage } from './types'
 import { ExportButton } from '../../dermat_products/components/ExportButton'
@@ -38,9 +39,11 @@ import { WhatsAppMenu } from '../../dermat_products/components/WhatsAppMenu'
 import { customerMessages } from './customerMessages'
 import { openServerExport } from '../../dermat_products/lib/csvExport'
 import { paymentTermLabel } from '../../dermat_lists/lib/paymentTerms'
+import { LinksSentPanel } from './links/LinksSentPanel'
 import { useStageSettings } from './useStageSettings'
 import { MaterialsAccount, useOrderFile } from './OrderFile'
 import { BackLink } from '../../dermat_departments/components/BackLink'
+import { PmTrailPanel } from './PmTrailPanel'
 
 
 const KIND_LABEL: Record<string, string> = { raw_material: 'RM', packing_material: 'PM', bulk: 'Bulk', finished_goods: 'FG' }
@@ -50,12 +53,11 @@ type RailBlock = { kind: 'single'; key: string } | { kind: 'arms'; lanes: Array<
 const RAIL: RailBlock[] = [
   { kind: 'single', key: 'order' },
   { kind: 'single', key: 'advance' },
-  { kind: 'single', key: 'sampling' },
   {
     kind: 'arms',
     lanes: [
       { label: 'Packaging arm', keys: ['artwork'] },
-      { label: 'Formula arm', keys: ['formulation', 'planning'] },
+      { label: 'Formula arm', keys: ['sampling', 'formulation', 'planning'] },
     ],
   },
   { kind: 'single', key: 'manufacturing' },
@@ -108,7 +110,13 @@ function StageCard({ order, stage, onOpen }: { order: Order; stage: Stage; onOpe
           ? t('dermat_orders.rail.waiting', 'Coming')
           : stage.status === 'skipped'
             ? t('dermat_orders.rail.skipped', 'Skipped')
-            : stage.responsibleName ?? (stage.status === 'done' ? stage.completedByName : null) ?? t('dermat_orders.rail.unassigned', 'Not assigned')}
+            : stage.locked
+              ? stage.status === 'done'
+                ? t('dermat_orders.rail.done', 'Done')
+                : stage.status === 'on_hold'
+                  ? t('dermat_orders.rail.onHold', 'On hold')
+                  : null
+              : stage.responsibleName ?? (stage.status === 'done' ? stage.completedByName : null) ?? t('dermat_orders.rail.unassigned', 'Not assigned')}
       </div>
       {progress.total && !stage.locked && stage.status !== 'waiting' && stage.status !== 'skipped' ? (
         <div className="mt-1.5 space-y-1">
@@ -157,7 +165,7 @@ export function OrderView({ orderId }: { orderId: string }) {
   const [cancelBusy, setBusy] = React.useState(false)
   const busy = cancelBusy || stageRunner.busy
   const [cancelOpen, setCancelOpen] = React.useState(false)
-  const materials = useOrderMaterials(order)
+  const materials = useOrderMaterials(granted.ready && granted.has('dermat_boms.view') ? order : null)
   const file = useOrderFile(order)
   const [cancelReason, setCancelReason] = React.useState('')
   const [tab, setTab] = React.useState<OrderTab>('work')
@@ -276,6 +284,8 @@ export function OrderView({ orderId }: { orderId: string }) {
   const shortCount = file ? (file.open ? file.summary.short + (file.summary.reserveProblems ?? 0) : 0) : null
   const statusLabel = t(`dermat_orders.status.${order.status}`, order.status)
   const limited = Boolean(order.access && !order.access.full)
+  const viewable = new Set(order.access?.view ?? order.access?.stages ?? [])
+  const seesMaterials = !limited || ['planning', 'formulation', 'manufacturing', 'filling', 'packing'].some((key) => viewable.has(key))
   const attention = orderAttention(order, shortCount, t).filter((item) => !limited || (item.action?.stageKey ? !stagesByKey.get(item.action.stageKey)?.locked : false))
   const goToStage = (key: string) => {
     setTab('work')
@@ -334,6 +344,7 @@ export function OrderView({ orderId }: { orderId: string }) {
                 </Link>
               </Button>
               ) : null}
+              {granted.has('dermat_orders.manage') && order.status !== 'cancelled' ? <QuickRepeatDialog order={order} /> : null}
               {order.status !== 'cancelled' && order.status !== 'completed' && granted.has('dermat_orders.manage') ? (
                 <>
                   <Button type="button" variant="destructive-ghost" size="sm" onClick={() => setCancelOpen(true)}>
@@ -404,7 +415,7 @@ export function OrderView({ orderId }: { orderId: string }) {
               <SegmentedControl value={tab} onValueChange={(value) => setTab(value as OrderTab)} aria-label={t('dermat_orders.view.sections', 'Order sections')}>
                 <SegmentedControlItem value="work">{t('dermat_orders.view.tabWork', 'Stage work')}</SegmentedControlItem>
                 <SegmentedControlItem value="products">{t('dermat_orders.view.tabProducts', 'Products & specs')}</SegmentedControlItem>
-                <SegmentedControlItem value="materials">{t('dermat_orders.view.tabMaterials', 'Materials')}</SegmentedControlItem>
+                {seesMaterials ? <SegmentedControlItem value="materials">{t('dermat_orders.view.tabMaterials', 'Materials')}</SegmentedControlItem> : null}
                 {limited ? null : <SegmentedControlItem value="record">{t('dermat_orders.view.tabRecord', 'Order record')}</SegmentedControlItem>}
                 <SegmentedControlItem value="documents">{t('dermat_orders.view.tabDocuments', 'Documents')}</SegmentedControlItem>
                 {order.canSeeMoney ? <SegmentedControlItem value="money">{t('dermat_orders.view.tabMoney', 'Money')}</SegmentedControlItem> : null}
@@ -480,9 +491,15 @@ export function OrderView({ orderId }: { orderId: string }) {
             </CardContent>
           </Card>
               ) : null}
-              {tab === 'materials' ? <MaterialsAccount file={file} order={order} /> : null}
+              {tab === 'materials' && seesMaterials ? (
+                <div className="space-y-4">
+                  <MaterialsAccount file={file} order={order} />
+                  <PmTrailPanel orderId={order.id} mode="trail" refreshKey={order.updatedAt} />
+                </div>
+              ) : null}
               {tab === 'record' && !limited ? <OrderRecord file={file} /> : null}
               {tab === 'documents' ? <DocumentsOverview order={limited ? { ...order, stages: order.stages.filter((stage) => !stage.locked) } : order} onStage={goToStage} /> : null}
+              {tab === 'documents' && !limited ? <LinksSentPanel orderId={order.id} /> : null}
               {tab === 'money' && order.canSeeMoney ? <OrderMoneyCard order={order} onChanged={load} /> : null}
               {tab === 'history' ? <OrderHistory events={order.events} /> : null}
             </div>
@@ -540,7 +557,8 @@ export function OrderView({ orderId }: { orderId: string }) {
               </span>
             </Info>
             <Info label={t('dermat_orders.view.pieces', 'Total pieces')}>{formatQty(totalPieces, 0)}</Info>
-            <Info label={t('dermat_orders.view.salesManager', 'Sales manager')}>{order.salesManager ?? '—'}</Info>
+            <Info label={t('dermat_orders.view.salesPerson', 'Sales person')}>{order.salesManager ?? '—'}</Info>
+            <Info label={t('dermat_orders.view.coordinator', 'Coordinator (POC)')}>{order.coordinator ?? '—'}</Info>
             {order.paymentTerms || order.paymentRemarks ? (
               <Info label={t('dermat_orders.view.payment', 'Payment')}>
                 {[paymentTermLabel(order.paymentTerms), order.paymentRemarks].filter(Boolean).join(' · ')}

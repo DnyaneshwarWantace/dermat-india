@@ -4,7 +4,9 @@ import * as React from 'react'
 import { ListSelectItems } from '../../dermat_lists/components/ListSelectItems'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, CheckCircle2, ChevronLeft, ChevronRight, ClipboardList, Copy, FileStack, Package, Plus, StickyNote, Trash2, UserRound } from 'lucide-react'
+import { ArrowLeft, CheckCircle2, ChevronLeft, ChevronRight, ClipboardList, Copy, FileStack, Package, Plus, StickyNote, Trash2, UserRound, X } from 'lucide-react'
+import { Checkbox } from '@open-mercato/ui/primitives/checkbox'
+import { IconButton } from '@open-mercato/ui/primitives/icon-button'
 import { useT } from '@open-mercato/shared/lib/i18n/context'
 import { cn } from '@open-mercato/shared/lib/utils'
 import { Page, PageBody } from '@open-mercato/ui/backend/Page'
@@ -23,6 +25,8 @@ import { useGuardedMutation } from '@open-mercato/ui/backend/injection/useGuarde
 import { flash } from '@open-mercato/ui/backend/FlashMessages'
 import { ErrorMessage, LoadingMessage } from '@open-mercato/ui/backend/detail'
 import { LINE_SPEC_SECTIONS, PARTY_SIDE } from '../lib/specs'
+import { SuggestInput } from '../../dermat_lists/components/SuggestInput'
+import { PackingCodeField } from './order/PackingCodeField'
 import { priceOrder } from '../lib/pricing'
 import { SearchPicker, type PickerOption } from './SearchPicker'
 import { formatDate, formatQty, todayIso } from './format'
@@ -30,6 +34,8 @@ import { paymentTermLabel } from '../../dermat_lists/lib/paymentTerms'
 import { usePaymentTerms } from '../../dermat_lists/components/usePaymentTerms'
 import { loadAddresses, loadBomStatus, loadCustomer, loadCustomerOrders, loadProductDetails, searchCustomers, searchFinishedGoods, type CustomerAddress } from './loaders'
 import type { BomRef, Customer, Order, OrderListItem, ProductInfo } from './types'
+
+type PiSource = { id: string; code: string; orderId: string | null; customerId: string; pricesIncludeGst: boolean; advanceAmount: number | null; lines: Array<{ productId: string; code: string | null; title: string; brandName: string | null; packSize: string | null; quantity: number; rate: number | null; gstPercent: number; discountPercent: number }> }
 
 type LineDraft = {
   key: string
@@ -44,6 +50,7 @@ type LineDraft = {
   discountPercent: string
   batchNo: string
   sampleNeeded: boolean
+  sameAs: { id: string; title: string } | null
   rdNumber: string
   specs: Record<string, Record<string, string>>
 }
@@ -55,6 +62,11 @@ type Header = {
   orderType: 'new' | 'repeat' | 'revision'
   sourceOrderId: string | null
   salesManager: string
+  coordinator: string
+  advancePaid: boolean
+  advanceAmount: string
+  advanceDate: string
+  advanceRef: string
   paymentTerms: string
   paymentRemarks: string
   productRemarks: string
@@ -74,6 +86,11 @@ const EMPTY_HEADER: Header = {
   orderType: 'new',
   sourceOrderId: null,
   salesManager: '',
+  coordinator: '',
+  advancePaid: false,
+  advanceAmount: '',
+  advanceDate: '',
+  advanceRef: '',
   paymentTerms: '',
   paymentRemarks: '',
   productRemarks: '',
@@ -90,7 +107,7 @@ let lineCounter = 0
 
 function newLine(): LineDraft {
   lineCounter += 1
-  return { key: `line-${lineCounter}`, product: null, bom: undefined, brandName: '', packSize: '', mrp: '', quantity: '', rate: '', gstPercent: '18', discountPercent: '', batchNo: '', sampleNeeded: false, rdNumber: '', specs: {} }
+  return { key: `line-${lineCounter}`, product: null, bom: undefined, brandName: '', packSize: '', mrp: '', quantity: '', rate: '', gstPercent: '18', discountPercent: '', batchNo: '', sampleNeeded: true, sameAs: null, rdNumber: '', specs: {} }
 }
 
 function linesFromOrder(order: Order, keepBatch: boolean): LineDraft[] {
@@ -107,6 +124,7 @@ function linesFromOrder(order: Order, keepBatch: boolean): LineDraft[] {
     discountPercent: line.discountPercent ? String(line.discountPercent) : '',
     batchNo: keepBatch ? (line.batchNo ?? '') : '',
     sampleNeeded: keepBatch ? Boolean(line.sampleNeeded) : false,
+    sameAs: line.sameAsProductId ? { id: line.sameAsProductId, title: '' } : null,
     rdNumber: line.rdNumber ?? '',
     specs: line.specs ?? {},
   }))
@@ -155,7 +173,7 @@ function BomChip({ bom, productId }: { bom: BomRef | undefined; productId: strin
   )
 }
 
-export function OrderForm({ orderId, copyFrom, customerId }: { orderId?: string; copyFrom?: string; customerId?: string }) {
+export function OrderForm({ orderId, copyFrom, customerId, fromPi }: { orderId?: string; copyFrom?: string; customerId?: string; fromPi?: string }) {
   const t = useT()
   const router = useRouter()
   const { runMutation } = useGuardedMutation({ contextId: `dermat-order-${orderId ?? 'new'}` })
@@ -189,12 +207,14 @@ export function OrderForm({ orderId, copyFrom, customerId }: { orderId?: string;
       if (orderId) {
         setExisting(order)
         setHeader({
+          ...EMPTY_HEADER,
           orderDate: order.orderDate,
           deliveryDate: order.deliveryDate ?? '',
           customerPoRef: order.customerPoRef ?? '',
           orderType: order.orderType,
           sourceOrderId: order.sourceOrderId,
           salesManager: order.salesManager ?? '',
+          coordinator: order.coordinator ?? '',
           paymentTerms: order.paymentTerms ?? '',
           paymentRemarks: order.paymentRemarks ?? '',
           productRemarks: order.productRemarks ?? '',
@@ -213,6 +233,7 @@ export function OrderForm({ orderId, copyFrom, customerId }: { orderId?: string;
           orderType: 'repeat',
           sourceOrderId: order.id,
           salesManager: order.salesManager ?? '',
+          coordinator: order.coordinator ?? '',
           paymentTerms: order.paymentTerms ?? '',
           paymentRemarks: order.paymentRemarks ?? '',
           productRemarks: order.productRemarks ?? '',
@@ -230,6 +251,62 @@ export function OrderForm({ orderId, copyFrom, customerId }: { orderId?: string;
       cancelled = true
     }
   }, [orderId, copyFrom, t])
+
+  const [piSource, setPiSource] = React.useState<{ id: string; code: string } | null>(null)
+
+  React.useEffect(() => {
+    if (!fromPi || orderId || copyFrom) return
+    let cancelled = false
+    void (async () => {
+      const call = await apiCall<PiSource>(`/api/dermat_accounts/proformas?id=${encodeURIComponent(fromPi)}`)
+      const pi = call.result
+      if (cancelled || !call.ok || !pi) return
+      if (pi.orderId) {
+        flash(t('dermat_orders.form.piUsed', 'Proforma {code} already has an order.', { code: pi.code }), 'error')
+        return
+      }
+      const found = await loadCustomer(pi.customerId)
+      if (cancelled) return
+      if (found) setCustomer(found)
+      setPiSource({ id: pi.id, code: pi.code })
+      const free = pi.lines.filter((line) => !line.productId)
+      setHeader((prev) => ({
+        ...prev,
+        salesManager: prev.salesManager || found?.salesManager || '',
+        paymentTerms: found?.paymentTerms || prev.paymentTerms,
+        paymentRemarks: found?.paymentRemarks || prev.paymentRemarks,
+        pricesIncludeGst: pi.pricesIncludeGst,
+        advancePaid: Boolean(pi.advanceAmount),
+        advanceAmount: pi.advanceAmount ? String(pi.advanceAmount) : '',
+        productRemarks: free.length ? [`From proforma ${pi.code}:`, ...free.map((line) => `${line.title}${line.packSize ? ` ${line.packSize}` : ''} × ${line.quantity} @ ₹${line.rate ?? 0}`), prev.productRemarks].filter(Boolean).join('\n') : prev.productRemarks,
+        billingRemarks: free.some((line) => /charge/i.test(line.title)) ? [prev.billingRemarks, ...free.filter((line) => /charge/i.test(line.title)).map((line) => `${line.title}: ₹${line.rate ?? 0}`)].filter(Boolean).join('\n') : prev.billingRemarks,
+      }))
+      const withProduct = pi.lines.filter((line) => line.productId)
+      if (withProduct.length) {
+        const drafts = await Promise.all(
+          withProduct.map(async (line) => {
+            const [details, bom] = await Promise.all([loadProductDetails(line.productId), loadBomStatus(line.productId)])
+            return {
+              ...newLine(),
+              product: { id: line.productId, title: line.title, code: line.code, sku: null, kind: 'finished_goods', unit: null, ...details },
+              bom,
+              brandName: line.brandName ?? details.brandName ?? '',
+              packSize: line.packSize ?? details.packSize ?? '',
+              mrp: details.mrp == null ? '' : String(details.mrp),
+              quantity: String(line.quantity),
+              rate: line.rate == null ? '' : String(line.rate),
+              gstPercent: String(line.gstPercent ?? 18),
+              discountPercent: line.discountPercent ? String(line.discountPercent) : '',
+            }
+          }),
+        )
+        if (!cancelled) setLines(drafts)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [fromPi, orderId, copyFrom, t])
 
   React.useEffect(() => {
     if (!customerId || orderId || copyFrom) return
@@ -312,6 +389,7 @@ export function OrderForm({ orderId, copyFrom, customerId }: { orderId?: string;
               packSize: line.packSize || details.packSize || '',
               brandName: line.brandName || details.brandName || '',
               mrp: line.mrp || (details.mrp == null ? '' : String(details.mrp)),
+              specs: details.packagingCode && !line.specs.primary?.packing_code ? { ...line.specs, primary: { ...(line.specs.primary ?? {}), packing_code: details.packagingCode } } : line.specs,
             }
           : line,
       ),
@@ -332,7 +410,7 @@ export function OrderForm({ orderId, copyFrom, customerId }: { orderId?: string;
       prev.map((line) => {
         if (line.key !== key) return line
         const current = { ...(line.specs[section] ?? {}) }
-        for (const field of def.fields) if (!field.options && !current[field.key]?.trim()) current[field.key] = PARTY_SIDE
+        for (const field of def.fields) if (!current[field.key]?.trim()) current[field.key] = PARTY_SIDE
         return { ...line, specs: { ...line.specs, [section]: current } }
       }),
     )
@@ -368,10 +446,11 @@ export function OrderForm({ orderId, copyFrom, customerId }: { orderId?: string;
       flash(t('dermat_orders.errors.delivery', 'Delivery date is before the order date.'), 'error')
       return
     }
-    const { revisionNote, ...headerFields } = header
+    const { revisionNote, advancePaid, advanceAmount, advanceDate, advanceRef, ...headerFields } = header
+    const prepaid = !existing && advancePaid && toNumber(advanceAmount) ? { amount: toNumber(advanceAmount), receivedOn: advanceDate || null, reference: advanceRef || null } : null
     const body = {
       ...headerFields,
-      ...(existing ? { revisionNote: revisionNote || null } : {}),
+      ...(existing ? { revisionNote: revisionNote || null } : { advanceReceived: prepaid, fromPiId: piSource?.id ?? null }),
       billingAddress: header.billingAddress || null,
       shippingAddress: header.shippingAddress || null,
       deliveryDate: header.deliveryDate || null,
@@ -386,7 +465,8 @@ export function OrderForm({ orderId, copyFrom, customerId }: { orderId?: string;
         gstPercent: toNumber(line.gstPercent) ?? 18,
         discountPercent: toNumber(line.discountPercent) ?? 0,
         batchNo: line.batchNo || null,
-        sampleNeeded: line.sampleNeeded,
+        sampleNeeded: line.sameAs ? false : line.sampleNeeded,
+        sameAsProductId: line.sameAs?.id ?? null,
         rdNumber: line.rdNumber || null,
         specs: line.specs,
       })),
@@ -568,7 +648,7 @@ export function OrderForm({ orderId, copyFrom, customerId }: { orderId?: string;
                       : t('dermat_orders.form.newTitle', 'Book a new order')}
                 </h1>
                 <p className="text-xs text-muted-foreground">
-                  {t('dermat_orders.form.subtitle', 'The order number is given when you save. It then waits at "Advance received" until Accounts verifies the advance.')}
+                  {t('dermat_orders.form.subtitle', 'The order number is given when you save. It then waits at "Advance pending" until Accounts verifies the advance.')}
                 </p>
               </div>
             </div>
@@ -634,7 +714,13 @@ export function OrderForm({ orderId, copyFrom, customerId }: { orderId?: string;
                   <Input type="date" value={header.deliveryDate} onChange={(event) => patchHeader({ deliveryDate: event.target.value })} />
                 </Field>
                 <Field label={t('dermat_orders.form.orderType', 'Order type')} className="md:col-span-3">
-                  <Select value={header.orderType} onValueChange={(value) => patchHeader({ orderType: value as Header['orderType'] })}>
+                  <Select
+                    value={header.orderType}
+                    onValueChange={(value) => {
+                      patchHeader({ orderType: value as Header['orderType'] })
+                      setLines((prev) => prev.map((line) => ({ ...line, sampleNeeded: value === 'repeat' ? false : !line.sameAs })))
+                    }}
+                  >
                     <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
@@ -648,8 +734,11 @@ export function OrderForm({ orderId, copyFrom, customerId }: { orderId?: string;
                 <Field label={t('dermat_orders.form.poRef', 'Customer PO / reference')} className="md:col-span-3">
                   <Input value={header.customerPoRef} onChange={(event) => patchHeader({ customerPoRef: event.target.value })} placeholder="e.g. PO-2291" />
                 </Field>
-                <Field label={t('dermat_orders.form.salesManager', 'Sales POC')} className="md:col-span-3">
+                <Field label={t('dermat_orders.form.salesPerson', 'Sales person')} className="md:col-span-3">
                   <Input value={header.salesManager} onChange={(event) => patchHeader({ salesManager: event.target.value })} />
+                </Field>
+                <Field label={t('dermat_orders.form.coordinator', 'Coordinator (POC)')} className="md:col-span-3">
+                  <Input value={header.coordinator} onChange={(event) => patchHeader({ coordinator: event.target.value })} />
                 </Field>
                 <Field label={t('dermat_orders.form.paymentTerms', 'Payment terms')} className="md:col-span-3">
                   <Select value={header.paymentTerms || '__none'} onValueChange={(value) => patchHeader({ paymentTerms: value === '__none' ? '' : value })}>
@@ -669,6 +758,27 @@ export function OrderForm({ orderId, copyFrom, customerId }: { orderId?: string;
                 <Field label={t('dermat_orders.form.paymentRemarks', 'Payment remarks')} className="md:col-span-6">
                   <Input value={header.paymentRemarks} onChange={(event) => patchHeader({ paymentRemarks: event.target.value })} placeholder="e.g. 40% advance 60% before dispatch" />
                 </Field>
+                {!existing ? (
+                  <div className="flex flex-col gap-2 rounded-md border bg-muted/20 p-3 md:col-span-12">
+                    <label className="flex items-center gap-2 text-sm font-medium">
+                      <Checkbox checked={header.advancePaid} onCheckedChange={(checked) => patchHeader({ advancePaid: checked === true })} />
+                      {t('dermat_orders.form.advancePaid', 'Advance already received (before booking)')}
+                    </label>
+                    {header.advancePaid ? (
+                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                        <Field label={t('dermat_orders.form.advanceAmount', 'Amount received (₹)')} required>
+                          <Input type="number" min={0} step="any" value={header.advanceAmount} onChange={(event) => patchHeader({ advanceAmount: event.target.value })} />
+                        </Field>
+                        <Field label={t('dermat_orders.form.advanceDate', 'Received on (blank = today)')}>
+                          <Input type="date" value={header.advanceDate} onChange={(event) => patchHeader({ advanceDate: event.target.value })} />
+                        </Field>
+                        <Field label={t('dermat_orders.form.advanceRef', 'UTR / reference')}>
+                          <Input value={header.advanceRef} onChange={(event) => patchHeader({ advanceRef: event.target.value })} />
+                        </Field>
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
                 <Field label={t('dermat_orders.form.priority', 'Priority')} className="md:col-span-3">
                   <Select value={header.priority} onValueChange={(value) => patchHeader({ priority: value === 'urgent' ? 'urgent' : 'normal' })}>
                     <SelectTrigger>
@@ -840,9 +950,25 @@ export function OrderForm({ orderId, copyFrom, customerId }: { orderId?: string;
                               </td>
                               <td className="px-2 py-2">
                                 <label className="mb-1 flex items-center gap-1.5 text-xs">
-                                  <input type="checkbox" className="h-3.5 w-3.5 rounded-sm border-input" checked={line.sampleNeeded} onChange={(event) => patchLine(line.key, { sampleNeeded: event.target.checked })} />
+                                  <Checkbox checked={line.sampleNeeded} disabled={Boolean(line.sameAs)} onCheckedChange={(checked) => patchLine(line.key, { sampleNeeded: checked === true })} />
                                   {t('dermat_orders.form.sampleNeeded', 'Sample needed')}
                                 </label>
+                                <div className="mb-1 flex items-center gap-1">
+                                  <div className="min-w-0 flex-1">
+                                    <SearchPicker
+                                      value={line.sameAs ? { id: line.sameAs.id, primary: line.sameAs.title || t('dermat_orders.form.sameAsLinked', 'Same formula product'), value: line.sameAs } : null}
+                                      placeholder={t('dermat_orders.form.sameAs', 'Same formula as…')}
+                                      searchPlaceholder={t('dermat_orders.form.sameAsSearch', 'Product with the same formula')}
+                                      load={async (search) => (await searchFinishedGoods(search)).map((option) => ({ ...option, value: { id: option.id, title: option.primary } }))}
+                                      onSelect={(option) => patchLine(line.key, { sameAs: { id: option.id, title: option.primary }, sampleNeeded: false })}
+                                    />
+                                  </div>
+                                  {line.sameAs ? (
+                                    <IconButton type="button" variant="ghost" size="sm" aria-label={t('dermat_orders.form.sameAsClear', 'Clear same formula')} onClick={() => patchLine(line.key, { sameAs: null, sampleNeeded: header.orderType !== 'repeat' })}>
+                                      <X className="size-4" aria-hidden="true" />
+                                    </IconButton>
+                                  ) : null}
+                                </div>
                                 <Input value={line.rdNumber} onChange={(event) => patchLine(line.key, { rdNumber: event.target.value })} placeholder={t('dermat_orders.form.rdPlaceholder', 'R&D no.')} aria-label={t('dermat_orders.form.rdNumber', 'R&D number')} />
                               </td>
                               <td className="px-2 py-2 pt-4 text-right font-medium tabular-nums">{total > 0 ? `₹${formatQty(total, 2)}` : '—'}</td>
@@ -931,16 +1057,24 @@ export function OrderForm({ orderId, copyFrom, customerId }: { orderId?: string;
                                 {field.label}
                               </Label>
                               <div className="col-span-3">
-                                {field.options ? (
-                                  <Select value={value || '__none'} onValueChange={(next) => setSpec(line.key, section.key, field.key, next === '__none' ? '' : next)}>
-                                    <SelectTrigger className="h-8">
-                                      <SelectValue />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      <SelectItem value="__none">—</SelectItem>
-                                      <ListSelectItems listKey={field.listKey} fallback={field.options} current={value} extra={[PARTY_SIDE]} />
-                                    </SelectContent>
-                                  </Select>
+                                {section.key === 'primary' && field.key === 'packing_code' ? (
+                                  <PackingCodeField
+                                    value={value}
+                                    onPick={(code) => {
+                                      setSpec(line.key, section.key, field.key, code.code)
+                                      if (!line.specs.primary?.name) setSpec(line.key, section.key, 'name', code.name)
+                                    }}
+                                    onClear={() => setSpec(line.key, section.key, field.key, '')}
+                                  />
+                                ) : field.listKey ? (
+                                  <SuggestInput
+                                    listKey={field.listKey}
+                                    id={`spec-${line.key}-${section.key}-${field.key}`}
+                                    className="h-8"
+                                    value={value}
+                                    placeholder={field.options?.join(' / ')}
+                                    onChange={(event) => setSpec(line.key, section.key, field.key, event.target.value)}
+                                  />
                                 ) : (
                                   <Input className="h-8" value={value} onChange={(event) => setSpec(line.key, section.key, field.key, event.target.value)} />
                                 )}
@@ -992,7 +1126,8 @@ export function OrderForm({ orderId, copyFrom, customerId }: { orderId?: string;
                       [t('dermat_orders.form.deliveryDate', 'Delivery date'), header.deliveryDate ? formatDate(header.deliveryDate) : '—'],
                       [t('dermat_orders.form.orderType', 'Order type'), header.orderType === 'new' ? 'New' : header.orderType === 'repeat' ? 'Repeat' : 'Revision'],
                       [t('dermat_orders.form.poRef', 'Customer PO / reference'), header.customerPoRef || '—'],
-                      [t('dermat_orders.form.salesManager', 'Sales POC'), header.salesManager || '—'],
+                      [t('dermat_orders.form.salesPerson', 'Sales person'), header.salesManager || '—'],
+                      [t('dermat_orders.form.coordinator', 'Coordinator (POC)'), header.coordinator || '—'],
                       [t('dermat_orders.form.paymentTerms', 'Payment terms'), header.paymentTerms ? paymentTermLabel(header.paymentTerms) : '—'],
                       [t('dermat_orders.form.paymentRemarks', 'Payment remarks'), header.paymentRemarks || '—'],
                       [t('dermat_orders.form.priority', 'Priority'), header.priority === 'urgent' ? t('dermat_orders.priority.urgent', 'Urgent') : t('dermat_orders.priority.normal', 'Normal')],

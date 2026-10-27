@@ -18,7 +18,7 @@ export const STORE_STAGE_KEYS: StoreStage[] = ['manufacturing', 'filling', 'pack
 
 export const STORE_LABEL: Record<StoreKey, string> = { rm: 'RM store', pm: 'PM store' }
 
-const PRIMARY_PM = ['tube', 'bottle', 'jar', 'cap', 'pump', 'dropper', 'nozzle', 'lid', 'closure', 'container', 'spray', 'roll on', 'roll-on', 'sachet', 'pouch', 'can', 'vial', 'applicator']
+const PRIMARY_PM = ['tube', 'bottle', 'jar', 'cap', 'pump', 'dropper', 'nozzle', 'lid', 'closure', 'container', 'spray', 'roll on', 'roll-on', 'sachet', 'pouch', 'can', 'vial', 'applicator', 'label', 'sticker']
 
 const EPSILON = 0.000001
 
@@ -80,7 +80,7 @@ async function packingTypes(ctx: OrderContext, productIds: string[]): Promise<Ma
 
 export function isPrimaryPack(title: string, type: string | null | undefined): boolean {
   const text = `${type ?? ''} ${title}`.toLowerCase()
-  if (/\b(carton|label|leaflet|shipper|tray|box|sleeve|sticker|insert|spatula|shrink)\b/.test(text) && !type) return false
+  if (/\b(carton|leaflet|shipper|tray|box|sleeve|insert|spatula|shrink)\b/.test(text) && !type) return false
   if (type) return PRIMARY_PM.some((word) => type.toLowerCase().includes(word))
   return PRIMARY_PM.some((word) => new RegExp(`\\b${word}\\b`).test(text))
 }
@@ -177,7 +177,9 @@ export async function createRequests(ctx: StoreContext, input: RequestCreateInpu
   if (order.status === 'cancelled') throw new StoreError('This order is cancelled', 409)
   const stage = await ctx.em.findOne(DermatOrderStage, { orderId: order.id, stageKey: input.stageKey })
   const label = stageDef(input.stageKey)?.label ?? input.stageKey
-  if (!stage || stage.status === 'waiting') throw new StoreError(`${label} has not started yet`, 409)
+  const manufacturing = input.stageKey === 'packing' && stage?.status === 'waiting' ? await ctx.em.findOne(DermatOrderStage, { orderId: order.id, stageKey: 'manufacturing' }) : null
+  const packingEarly = Boolean(manufacturing && (manufacturing.status === 'done' || (manufacturing.status === 'open' && manufacturing.data?.__started)))
+  if (!stage || (stage.status === 'waiting' && !packingEarly)) throw new StoreError(input.stageKey === 'packing' ? 'Packing material can be asked once manufacturing has started' : `${label} has not started yet`, 409)
   if (stage.status === 'done' || stage.status === 'skipped') throw new StoreError(`${label} is already finished`, 409)
   const merged = new Map<string, number>()
   for (const line of input.lines) merged.set(line.productId, (merged.get(line.productId) ?? 0) + line.quantity)

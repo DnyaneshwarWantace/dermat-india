@@ -46,3 +46,28 @@ export const bomListQuerySchema = z.object({
 export type BomCreateInput = z.infer<typeof bomCreateSchema>
 export type BomUpdateInput = z.infer<typeof bomUpdateSchema>
 export type BomItemInput = z.infer<typeof bomItemInputSchema>
+
+export const PACKAGING_KINDS = ['tube', 'jar', 'bottle', 'other'] as const
+
+export const packagingCodeInputSchema = z.object({
+  code: z.string().trim().min(1).max(40),
+  name: z.string().trim().min(1).max(200),
+  kind: z.enum(PACKAGING_KINDS),
+  size: z.string().trim().max(60).optional().nullable(),
+  specs: z.string().trim().max(1000).optional().nullable(),
+  components: z.array(z.object({ productId: z.string().uuid(), qty: decimal.positive().max(1000) })).max(30).default([]),
+  printedItems: z.array(z.string().trim().min(1).max(60)).max(10).default([]),
+  notes: z.string().trim().max(2000).optional().nullable(),
+})
+
+export const packagingCodeUpdateSchema = packagingCodeInputSchema.extend({ id: z.string().uuid() })
+
+export const packagingCodeQuerySchema = z.object({
+  id: z.string().uuid().optional(),
+  code: z.string().trim().max(40).optional(),
+  search: z.string().trim().max(200).optional(),
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(50),
+})
+
+export type PackagingCodeInput = z.infer<typeof packagingCodeInputSchema>
